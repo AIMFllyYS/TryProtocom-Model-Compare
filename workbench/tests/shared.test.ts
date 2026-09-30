@@ -5,6 +5,8 @@ import { inferVendor, parseModelInput, iconFor, suggestHarness } from '../shared
 import { runHeader, buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { DELIVERABLES, evalDeliverable } from '../shared/deliverables';
 import { settleQuota, unitPrice } from '../shared/quota';
+import { activityOf, isBusy, FAIL_WINDOW } from '../shared/activity';
+import type { JobInfo } from '../shared/types';
 
 test('供应商推断', () => {
   const cases: [string, string | null][] = [['GPT-6.1-Sol', 'OpenAI'], ['o4-mini', 'OpenAI'], ['claude-opus-5.5', 'Anthropic'], ['Gemini-3.5-Pro', 'Google'], ['DeepSeek-V4', 'DeepSeek'],
@@ -124,4 +126,28 @@ test('回收站：作废的运行移出所有评估入口，可恢复，永久�
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('运行 ↔ 后台任务关联（登记 / 评分进度）', () => {
+  const now = 1_000_000;
+  const J = (id: string, kind: JobInfo['kind'], status: JobInfo['status'], qa: number, subject: JobInfo['subject'], ended: number | null = null): JobInfo =>
+    ({ id, kind, title: id, status, started_at: qa, queued_at: qa, ended_at: ended, code: null, lines: 0, subject });
+  const ref = 'OpenAI/GPT-6.1-Sol/T01/r1';
+  // 登记排队中：前面还有一个别的评分在跑
+  let jobs = [J('other', 'grade', 'running', now - 5000, { run_ids: ['X'] }), J('reg', 'register', 'queued', now - 1000, { refs: [ref] })];
+  let a = activityOf(jobs, ref, null, now)!;
+  assert.equal(a.phase, 'queued'); assert.equal(a.ahead, 1); assert.ok(isBusy(a));
+  // 登记完成、接着评分：前端还不知道 run_id，也能靠 refs 找到评分任务
+  jobs = [J('reg', 'register', 'done', now - 9000, { refs: [ref] }, now - 8000), J('g', 'grade', 'running', now - 8500, { refs: [ref], run_ids: ['T01-a'] })];
+  assert.equal(activityOf(jobs, ref, null, now)!.phase, 'grade');
+  assert.equal(activityOf(jobs, undefined, 'T01-a', now)!.job.id, 'g');
+  // 失败：30 分钟内显示，之后不再显示；之后重试成功也不再显示
+  jobs = [J('g', 'grade', 'failed', now - 9000, { run_ids: ['T01-a'] }, now - 1000)];
+  assert.equal(activityOf(jobs, undefined, 'T01-a', now)!.phase, 'failed');
+  assert.ok(!isBusy(activityOf(jobs, undefined, 'T01-a', now)));
+  assert.equal(activityOf(jobs, undefined, 'T01-a', now + FAIL_WINDOW), null);
+  jobs.push(J('g2', 'grade', 'done', now - 500, { run_ids: ['T01-a'] }, now - 100));
+  assert.equal(activityOf(jobs, undefined, 'T01-a', now), null);
+  // 无关任务（导出等）不挂到运行上
+  assert.equal(activityOf([J('e', 'export', 'running', now, { refs: [ref] })], ref, null, now), null);
 });

@@ -103,6 +103,8 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     void post('/api/settings', { current_model: k }).catch(() => {});
   }, []);
   const storeTimer = useRef<number | undefined>(undefined);
+  const blindRef = useRef(blind);
+  blindRef.current = blind;
 
   const refresh = useCallback<Wb['refresh']>(async (what = ['spec', 'store', 'agg', 'jobs', 'previews', 'procs', 'harness']) => {
     const tasks: Promise<unknown>[] = [];
@@ -142,8 +144,12 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
             const i = js.findIndex((j) => j.id === e.job.id);
             const prev = i >= 0 ? js[i] : null;
             if (prev && prev.status !== e.job.status) {
-              if (e.job.status === 'done') toast.ok(`完成：${e.job.title}`, { action: { label: '查看', run: () => go('settings', ['jobs'], { job: e.job.id }) } });
-              if (e.job.status === 'failed') toast.error(`失败：${e.job.title}${e.job.error ? ' · ' + e.job.error : ''}`, { action: { label: '查看输出', run: () => go('settings', ['jobs'], { job: e.job.id }) } });
+              const j = e.job;
+              // 登记后紧接着自动评分：不单独报“登记完成”，等评分完成再报分数
+              const followed = j.kind === 'register' && js.some((x) => x.kind === 'grade' && (x.queued_at ?? x.started_at) >= (j.queued_at ?? j.started_at) && x.subject?.refs?.some((r) => j.subject?.refs?.includes(r)));
+              if (j.status === 'done' && j.kind === 'grade' && j.subject?.run_ids?.length && j.subject.run_ids.length <= 3) announceGraded(j.subject.run_ids, blindRef.current);
+              else if (j.status === 'done' && !followed) toast.ok(`完成：${j.title}`, { action: { label: '查看', run: () => go('settings', ['jobs'], { job: j.id }) } });
+              if (j.status === 'failed') toast.error(`${j.kind === 'grade' ? '自动评分失败' : j.kind === 'register' ? '登记失败' : '失败'}：${j.title}${j.error ? ' · ' + j.error : ''}`, { action: { label: '查看输出', run: () => go('settings', ['jobs'], { job: j.id }) } });
             }
             if (i >= 0) { const c = js.slice(); c[i] = e.job; return c; }
             return [e.job, ...js];
@@ -188,6 +194,23 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     [session, spec, store, agg, jobs, previews, procs, conn, refresh, patchRun, runJob, blind, harness, current, setCurrent]);
   if (!value) return <>{fallback(err, start)}</>;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** 自动评分完成：报出分数，并给出下一步（还有人工项就直接去预览打分） */
+function announceGraded(ids: string[], blind: boolean) {
+  for (const id of ids) {
+    void get<{ run: StoreRun }>(`/api/runs/${encodeURIComponent(id)}`).then(({ run }) => {
+      const s = run.score;
+      if (!s) return;
+      const human = s.items.filter((i) => i.method === 'human' && i.status === 'pending').length;
+      const who = blind ? run.alias || '匿名' : `${run.model} r${run.run_index ?? ''}`;
+      const open = run.ws_ref ? 'ws:' + run.ws_ref : 'run:' + id;
+      toast.ok(`自动评分完成 · ${run.tkey} ${who} · ${s.gate_pass ? `${Number(s.total).toFixed(1)} 分` : '门槛未过（0 分）'}${human ? ` · 还有 ${human} 个人工项` : ''}`, {
+        ttl: 10000,
+        action: human ? { label: '去打分', run: () => go('stage', [], { open, score: id }) } : { label: '查看', run: () => (run.ws_ref ? go('runs', run.ws_ref.split('/')) : go('runs', [], { id })) },
+      });
+    }, () => toast.ok(`自动评分完成：${id}`));
+  }
 }
 
 /** CLI → 界面遥控 */

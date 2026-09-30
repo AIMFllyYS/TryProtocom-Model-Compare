@@ -90,15 +90,18 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     hub.emit({ type: 'store', updated_at: store.data.updated_at });
   };
 
-  const graderJob = (kind: Parameters<Jobs['submit']>[0]['kind'], title: string, args: string[], after?: Parameters<Jobs['submit']>[0]['after']) =>
-    jobs.submit({ kind, title, cmd: py(), args: [bench, '--data', cfg.benchData, ...args], cwd: cfg.graderDir, after });
+  const graderJob = (kind: Parameters<Jobs['submit']>[0]['kind'], title: string, args: string[], after?: Parameters<Jobs['submit']>[0]['after'], subject?: Parameters<Jobs['submit']>[0]['subject']) =>
+    jobs.submit({ kind, title, cmd: py(), args: [bench, '--data', cfg.benchData, ...args], cwd: cfg.graderDir, after, subject });
 
-  function gradeRuns(runDirs: string[] | 'all', opts: { fast?: boolean; skip?: boolean; task?: string } = {}) {
+  function gradeRuns(runDirs: string[] | 'all', opts: { fast?: boolean; skip?: boolean; task?: string; refs?: string[] } = {}) {
     const args = ['grade', ...(runDirs === 'all' ? ['--all'] : runDirs)];
     if (opts.fast) args.push('--fast');
     if (opts.skip) args.push('--skip-graded');
     if (opts.task) args.push('--task', opts.task);
-    return graderJob('grade', runDirs === 'all' ? `评分：全部运行${opts.task ? ' · ' + opts.task : ''}` : `评分：${runDirs.map((d) => path.basename(d)).join(', ')}`, args, async () => sync());
+    // 标出作用的运行，界面据此在卡片 / 详情页上显示“自动评分中”
+    const ids = runDirs === 'all' ? store.data.runs.filter((r) => !opts.task || r.task === opts.task).map((r) => r.run_id) : runDirs.map((d) => path.basename(d));
+    const refs = [...new Set([...(opts.refs || []), ...store.data.workspaces.filter((w) => w.grader_run_id && ids.includes(w.grader_run_id)).map((w) => w.ref)])];
+    return graderJob('grade', runDirs === 'all' ? `评分：全部运行${opts.task ? ' · ' + opts.task : ''}` : `评分：${runDirs.map((d) => path.basename(d)).join(', ')}`, args, async () => sync(), { run_ids: ids, refs });
   }
 
   function registerWs(ref: string, opts: { grade?: boolean; fast?: boolean }) {
@@ -129,10 +132,10 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       // 登记期间被移进了回收站：刚生成的评分目录也一起放进回收站，不评分
       const now = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
       if (now.discarded) { moveGrader(rid, 'trash'); refreshWorkspaces(); return { run_id: rid, discarded: true }; }
-      if (opts.grade) gradeRuns([path.join(cfg.benchData, 'runs', rid)], { fast: opts.fast });
+      if (opts.grade) gradeRuns([path.join(cfg.benchData, 'runs', rid)], { fast: opts.fast, refs: [ref] });
       else await sync();
       return { run_id: rid };
-    });
+    }, { refs: [ref] });
   }
 
   const openFolder = (p: string) => {

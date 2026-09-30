@@ -1,6 +1,6 @@
 // 运行：看板（进行中 → 已交付待登记 → 待评分 → 已完成），详情含实时交付清单、登记评分、得分明细、预览打分与 AI 评审提示词。
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
+import { Bot, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
 import type { ItemScore, SpecItem, StoreRun, Usage, WorkspaceRun } from '../../shared/types';
 import { FINAL_FILE } from '../../shared/deliverables';
 import { get, post } from '../api';
@@ -17,6 +17,7 @@ import { FileBrowser } from '../components/Files';
 import { ItemScorer } from '../components/ItemScorer';
 import { QuotaForm } from '../components/LaunchPad';
 import { TrashDock, TrashedNotice, isLive, runHandlers, useRunActions } from '../components/Trash';
+import { ActivityBanner, ActivityStrip, activityOf, isBusy, useRunActivity } from '../components/Activity';
 
 export interface Row { key: string; ws?: WorkspaceRun; run?: StoreRun }
 type Col = 'running' | 'delivered' | 'grading' | 'done';
@@ -76,13 +77,16 @@ function RunBoard({ rows }: { rows: Row[] }) {
     const m = r.ws ? `${r.ws.vendor}/${r.ws.model}` : `${r.run!.vendor || ''}/${r.run!.model}`;
     return (!fModel || m === fModel) && (!fTask || (r.ws?.task || r.run!.task) === fTask);
   }).sort((a, b) => String(b.ws?.started_at || b.ws?.created_at || b.run?.date || '').localeCompare(String(a.ws?.started_at || a.ws?.created_at || a.run?.date || '')));
-  const ungraded = rows.filter((r) => r.run && !r.run.graded).map((r) => r.run!.run_id);
-  const toRegister = rows.filter((r) => colOf(r) === 'delivered' && r.ws?.detect && r.ws.detect.done === r.ws.detect.total);
+  // 已经在登记 / 评分队列里的不再计入批量按钮，避免重复提交（第二次会 409 报“已登记”）
+  const busy = (r: Row) => isBusy(activityOf(wb.jobs, r.ws?.ref, r.run?.run_id ?? r.ws?.grader_run_id));
+  const ungraded = rows.filter((r) => r.run && !r.run.graded && !busy(r)).map((r) => r.run!.run_id);
+  const toRegister = rows.filter((r) => colOf(r) === 'delivered' && r.ws?.detect && r.ws.detect.done === r.ws.detect.total && !busy(r));
+  const inFlight = rows.filter(busy).length;
   const pend = wb.agg?.pending;
   const reviewAll = async () => { const r = await get<{ text: string }>('/api/review-prompt'); if (await copyText(r.text)) toast.ok('已复制 AI 评审提示词：粘贴给评分 Agent（例如 DeepSeek Harness）'); };
   const registerAll = async () => {
     for (const r of toRegister) { try { await post('/api/ws/finish', { ref: r.ws!.ref, register: true, grade: true }); } catch (e: any) { toast.error(`${r.ws!.ref}：${e.message}`); } }
-    toast.ok(`已提交 ${toRegister.length} 次登记，完成后自动评分`);
+    toast.ok(`已提交 ${toRegister.length} 次登记：卡片上会显示排队和评分进度`);
     void wb.refresh(['store', 'jobs']);
   };
   return (
@@ -93,6 +97,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
           <p className="page-sub">复制提示词即创建运行；工作台每 3 秒扫描工作目录，按交付清单点亮进度，模型写出 <code>{FINAL_FILE}</code> 即自动结束计时。点错了？右键卡片「彻底停止 / 删除」，或拖到右下角回收站。</p>
         </div>
         <div className="page-x">
+          {inFlight > 0 && <span className="act-pill" role="status"><Loader2 size={13} className="spin" />{inFlight} 次运行登记 / 评分中</span>}
           {toRegister.length > 0 && <Btn tone="tinted" icon={<FileCheck2 size={15} />} onClick={() => void registerAll()}>登记并评分 {toRegister.length} 次交付</Btn>}
           {ungraded.length > 0 && <Btn icon={<RefreshCw size={14} />} onClick={() => void wb.runJob({ kind: 'grade', runs: ungraded }, `评分 ${ungraded.length} 次运行`)}>自动评分 {ungraded.length}</Btn>}
           <Btn icon={<Bot size={15} />} onClick={() => void reviewAll()} tip="复制给评分 Agent 的提示词：先读 .agents/skills，再用 wb CLI 完成全部 Agent 审查项">AI 评审提示词{pend?.agent ? ` · ${pend.agent}` : ''}</Btn>
@@ -155,8 +160,10 @@ function RunCard({ r, nm, acts }: { r: Row; nm: ReturnType<typeof useNamer>; act
   const task = wb.spec?.tasks.find((t) => t.id === (w?.task || r.run?.task));
   const el = w?.started_at ? (w.ended_at ? Date.parse(w.ended_at) : Date.now()) - Date.parse(w.started_at) : 0;
   const lim = (task?.time_limit || 0) * 60000;
+  const act = useRunActivity(w?.ref, r.run?.run_id ?? w?.grader_run_id);
+  const busy = isBusy(act);
   return (
-    <a className={cls('run-card glass sheen', isLive(r) && 'live')} href={w ? href('runs', [w.ref]) : href('runs', [], { id: r.run!.run_id })} {...runHandlers(r, acts)}>
+    <a className={cls('run-card glass sheen', isLive(r) && 'live', busy && 'busy')} aria-busy={busy || undefined} href={w ? href('runs', [w.ref]) : href('runs', [], { id: r.run!.run_id })} {...runHandlers(r, acts)}>
       <span className="sheen-l" aria-hidden />
       <button type="button" className="rc-more icon-btn xs" aria-label="更多操作（也可以右键）" onClick={(e) => { e.preventDefault(); e.stopPropagation(); acts.open(e.currentTarget, r); }}><Ellipsis size={14} /></button>
       <div className="row gap-s">
@@ -174,9 +181,10 @@ function RunCard({ r, nm, acts }: { r: Row; nm: ReturnType<typeof useNamer>; act
         <HarnessIcon name={w?.harness || r.run?.harness} size="xs" />
         <span className="muted xs ellipsis grow">{w?.harness || r.run?.harness || '—'}</span>
         {w?.started_at && !r.run && <span className={cls('xs nowrap', lim && el > lim ? 'tone-text-bad' : 'muted')}>{new Date(w.started_at).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })} 开跑 · {fmt.min((w.ended_at ? Date.parse(w.ended_at) : Date.now()) / 60000 - Date.parse(w.started_at) / 60000)}</span>}
-        {r.run?.score && !r.run.score.complete && <Badge tone="warn">待评 {r.run.score.pending.length}</Badge>}
-        {r.run && !r.run.graded && <Badge tone="info">待自动评分</Badge>}
+        {r.run?.score && !r.run.score.complete && !busy && <Badge tone="warn">待评 {r.run.score.pending.length}</Badge>}
+        {r.run && !r.run.graded && !act && <Badge tone="info">待自动评分</Badge>}
       </div>
+      {act && <ActivityStrip a={act} />}
     </a>
   );
 }
@@ -205,6 +213,9 @@ function RunDetail({ row }: { row: Row }) {
   const preview = (score = false) => go('stage', [], { open: ws ? 'ws:' + ws.ref : 'run:' + run!.run_id, score: score && run ? run.run_id : undefined });
   const aiPrompt = async () => { const r = await get<{ text: string }>('/api/review-prompt', run ? { run_id: run.run_id } : { ref: ws!.ref }); if (await copyText(r.text)) toast.ok('已复制 AI 评审提示词'); };
   const vendor = ws?.vendor || run?.vendor, model = ws?.model || run!.model;
+  const job = useRunActivity(ws?.ref, run?.run_id ?? ws?.grader_run_id);
+  const busy = isBusy(job);
+  const regrade = () => void wb.runJob({ kind: 'grade', runs: [run!.run_id] }, '重新评分');
 
   return (
     <div className="page">
@@ -234,7 +245,7 @@ function RunDetail({ row }: { row: Row }) {
         {ws && <CopyBtn text={() => texts?.prompt || ''} label="复制提示词" />}
         {(run || ws) && <Btn icon={<Bot size={15} />} onClick={() => void aiPrompt()} tip="复制给评分 Agent 的提示词（skills 路径 + wb CLI 步骤）">AI 评审提示词</Btn>}
         <span className="grow" />
-        {run && <Btn size="sm" tone="ghost" icon={<RefreshCw size={13} />} onClick={() => void wb.runJob({ kind: 'grade', runs: [run.run_id] }, '重新评分')}>重新评分</Btn>}
+        {run && <Btn size="sm" tone="ghost" icon={busy ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} disabled={busy} tip={busy ? '正在登记 / 评分，完成后再重新评分' : undefined} onClick={regrade}>{busy ? '评分中' : '重新评分'}</Btn>}
         <IconBtn label="更多操作：彻底停止 / 删除…" onClick={(e) => acts.open(e.currentTarget, row, { detail: true })}><Ellipsis size={16} /></IconBtn>
       </div>
 
@@ -251,9 +262,10 @@ function RunDetail({ row }: { row: Row }) {
           <Btn icon={<Square size={14} />} onClick={() => void acts.endTimer(ws.ref, { timed_out: limitMs > 0 && elapsed > limitMs })}>手动结束</Btn>
         </div></Card>
       )}
-      {ws && stage === 3 && <FinishForm ws={ws} finalText={texts?.text || ''} onDone={() => void wb.refresh(['store', 'jobs'])}
+      {job && <ActivityBanner a={job} onRetry={job.job.kind === 'grade' && run ? regrade : undefined} />}
+      {ws && stage === 3 && !busy && <FinishForm ws={ws} finalText={texts?.text || ''} onDone={() => void wb.refresh(['store', 'jobs'])}
         onReopen={!ws.detect?.final ? () => void acts.reopen(ws.ref) : undefined} />}
-      {ws && stage === 4 && (
+      {ws && stage === 4 && !job && (
         <Card className="mt"><div className="action-row"><div className="grow"><b>已登记，等待自动评分</b><div className="muted small">评分会运行隐藏测试、浏览器探针、ffprobe 等，可能需要几分钟。</div></div>
           <Btn tone="ghost" onClick={() => void wb.runJob({ kind: 'grade', runs: [run!.run_id], fast: true }, '快速评分')}>快速评分</Btn>
           <Btn tone="primary" onClick={() => void wb.runJob({ kind: 'grade', runs: [run!.run_id] }, '评分')}>开始评分</Btn></div></Card>

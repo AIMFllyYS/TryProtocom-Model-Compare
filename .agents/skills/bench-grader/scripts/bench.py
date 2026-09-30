@@ -81,7 +81,7 @@ def cmd_grade(a):
         meta = load_json(rd / "meta.json")
         gate = "通过" if sc["gate_pass"] else "未通过 " + ",".join(g["id"] for g in sc["gate_fail"])
         print(f"{meta['run_id']:<22} {meta['model']} @ {meta['harness']:<16} 总分 {sc['total']:6.2f}  门槛{gate}  "
-              f"N/A {sc['na_ratio']:.0%}  待评 {len(sc['pending'])}")
+              f"N/A {sc['na_ratio']:.0%}  待评 {len(sc['pending'])}", flush=True)
 
 
 def cmd_review(a):

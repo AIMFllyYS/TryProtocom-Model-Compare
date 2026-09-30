@@ -168,4 +168,6 @@ img, svg { display: block; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  /* 进度反馈例外：关掉动画会让后台任务看起来“卡死了”。转圈放慢，不确定进度条改为原地明暗脉动（views.css） */
+  .spin, .act-bar.indet i, .act-steps li.cur i { animation-duration: 1.6s !important; animation-iteration-count: infinite !important; }
 }

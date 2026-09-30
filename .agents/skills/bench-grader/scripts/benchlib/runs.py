@@ -60,9 +60,10 @@ def grade_run(run_dir: Path, fast: bool = False, only: list[str] | None = None) 
     old = load_json(run_dir / "metrics.json")
     metrics = Metrics.from_dict(old) if (old and only) else Metrics()
     ctx = RunContext(run_dir=run_dir, meta=meta, rubric=rubric, cfg=cfg, metrics=metrics, fast=fast)
-    for p in rubric.get("probes", []):
-        if only and p["type"] not in only:
-            continue
+    probes = [p for p in rubric.get("probes", []) if not only or p["type"] in only]
+    for i, p in enumerate(probes, 1):
+        # 进度行：工作台据此显示“探针 i/n · 类型”（flush：stdout 接管道时默认整块缓冲）
+        print(f"[probe {i}/{len(probes)}] {p['type']} {meta['run_id']}", flush=True)
         fn = REGISTRY[p["type"]]
         try:
             fn(ctx, p.get("opts") or {})

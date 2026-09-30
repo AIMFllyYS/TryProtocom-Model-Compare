@@ -80,6 +80,7 @@ harness = [{'id': 'deepseek-harness', 'name': 'DeepSeek Harness', 'kind': 'app',
 prompt_head = '# 运行约定（Coding Bench v1.0 · T05 · 第 2 次运行）\n\n开始前请完整阅读本节，它与下面的题目原文同等重要。\n\n1. **工作目录**：`' + str(ROOT / 'model/OpenAI/GPT-6.1-Sol/T05/r2') + '`。只在这个目录里创建和修改文件。\n2. **交付文件夹**：在工作目录下新建 `aether9-site/`，名称必须完全一致。\n3. **完成时必须存在**：\n   - `aether9-site/package.json`\n   - `aether9-site/dist/index.html`\n4. **结束方式**：保存为 `FINAL_MESSAGE.md`。\n5. **时间上限**：120 分钟。\n\n---\n\n'
 
 def api(path, q):
+    if path == '/api/jobs' and MOCK_JOBS: return MOCK_JOBS
     if path == '/api/session': return session
     if path == '/api/spec': return spec
     if path == '/api/store': return mstore
@@ -104,11 +105,27 @@ def api(path, q):
     return {}
 
 from urllib.parse import urlparse, parse_qs
+# 登记 / 自动评分进度场景：一个正在评分、一个排队登记、一个评分失败
+MOCK_JOBS, MOCK_LINES = [], []
+if ONLY and 'grading' in ONLY:
+    gw = [w for w in workspaces if w['model'] == 'GPT-6.1-Sol']
+    A = next(w for w in gw if w['grader_run_id']); C = [w for w in gw if w['grader_run_id']][3]
+    B = next(w for w in gw if not w['grader_run_id'] and w['ended_at'])
+    ms = now * 1000
+    MOCK_JOBS = [
+        {'id': 'jg', 'kind': 'grade', 'title': f"评分：{A['grader_run_id']}", 'status': 'running', 'started_at': ms - 42000, 'queued_at': ms - 45000, 'ended_at': None, 'code': None, 'lines': 4, 'subject': {'refs': [A['ref']], 'run_ids': [A['grader_run_id']]}},
+        {'id': 'jr', 'kind': 'register', 'title': f"登记：{B['ref']}", 'status': 'queued', 'started_at': ms - 9000, 'queued_at': ms - 9000, 'ended_at': None, 'code': None, 'lines': 0, 'subject': {'refs': [B['ref']]}},
+        {'id': 'jf', 'kind': 'grade', 'title': f"评分：{C['grader_run_id']}", 'status': 'failed', 'started_at': ms - 200000, 'queued_at': ms - 200000, 'ended_at': ms - 60000, 'code': 1, 'lines': 9, 'error': 'probe browser crashed: TimeoutError', 'subject': {'refs': [C['ref']], 'run_ids': [C['grader_run_id']]}},
+    ]
+    MOCK_LINES = [{'type': 'job-line', 'id': 'jg', 'line': l} for l in ['$ python bench.py grade …', f"[probe 1/5] files {A['grader_run_id']}", f"[probe 2/5] build {A['grader_run_id']}", f"[probe 3/5] browser {A['grader_run_id']}"]]
+    QA_REFS = (A['ref'], B['ref'], C['ref'])
+
 def handle(route):
     u = urlparse(route.request.url)
     if u.path.startswith('/api/'):
         if u.path == '/api/events':
-            return route.fulfill(status=200, headers={'content-type': 'text/event-stream'}, body='retry: 600000\ndata: {"type":"hello","at":0}\n\n')
+            body = 'retry: 600000\ndata: {"type":"hello","at":0}\n\n' + ''.join('data: ' + json.dumps(e, ensure_ascii=False) + '\n\n' for e in MOCK_LINES)
+            return route.fulfill(status=200, headers={'content-type': 'text/event-stream; charset=utf-8'}, body=body)
         if route.request.method == 'POST' and u.path.startswith('/api/runs/') and u.path.endswith('/manual'):
             # 模拟人工分保存：稍慢一点（400ms），检验界面是否乐观更新、不等回执
             rid = u.path.split('/')[3]
@@ -210,6 +227,12 @@ with sync_playwright() as pw:
             got = {k: v for k, v in sr['manual'].items()}
             errors.append(f'[{theme}] score-check manual={json.dumps(got, ensure_ascii=False)}')
             for r in runs: r['manual'] = {} if r is sr else r['manual']
+        if ONLY and 'grading' in ONLY:
+            page.goto('http://wb.local/#/runs', timeout=20000); page.wait_for_timeout(1200)
+            page.screenshot(path=str(OUT / f'{theme}-grading-board.png'))
+            for k, ref in zip(('running', 'queued', 'failed'), QA_REFS):
+                page.goto('http://wb.local/#/runs/' + ref, timeout=20000); page.wait_for_timeout(1000)
+                page.screenshot(path=str(OUT / f'{theme}-grading-{k}.png'), clip={'x': 270, 'y': 0, 'width': 1230, 'height': 560})
         if not ONLY or 'pet' in ONLY:
             page.goto('http://wb.local/pet.html', timeout=20000); page.wait_for_timeout(900)
             page.screenshot(path=str(OUT / f'{theme}-pet-orb.png'))

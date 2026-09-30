@@ -12,6 +12,7 @@ import { HarnessIcon, ModelAvatar } from '../ui/brand';
 import { toast } from '../ui/toast';
 import { Score, useNamer } from './common';
 import type { Row } from '../views/Runs';
+import { activityOf, isBusy } from './Activity';
 
 export const DRAG_MIME = 'application/x-wb-run';
 const idOf = (r: Row) => r.ws ? r.ws.ref : 'run:' + r.run!.run_id;
@@ -72,6 +73,7 @@ export function useRunActions() {
     const live = isLive(r);
     const delivered = !!w && !run && (!!w.ended_at || !!w.detect?.final);
     const ready = delivered && !!w?.detect && w.detect.done === w.detect.total;
+    const busy = isBusy(activityOf(wb.jobs, w?.ref, run?.run_id ?? w?.grader_run_id)); // 已在登记 / 评分队列里
     // 手动结束了、但模型其实还没交付（没写 FINAL_MESSAGE.md、没登记）：允许撤销结束
     const reopenable = !!w && !run && !!w.ended_at && !w.detect?.final && !w.grader_run_id;
     return tidy([
@@ -83,8 +85,8 @@ export function useRunActions() {
       { sep: true },
       live && { label: '结束计时', desc: '模型做完了但没写 FINAL_MESSAGE.md · 仍计入评测', icon: <Flag size={15} />, onClick: () => void endTimer(w!.ref) },
       reopenable && { label: '撤销结束，继续计时', desc: '点错了结束：清掉结束时间，开跑时间不变', icon: <Undo2 size={15} />, onClick: () => void reopen(w!.ref) },
-      ready && { label: '登记并评分', icon: <FileCheck2 size={15} />, onClick: () => void act(() => post('/api/ws/finish', { ref: w!.ref, at: w!.ended_at, register: true, grade: true }), '已提交登记，完成后自动评分') },
-      !!run && { label: '重新评分', icon: <RefreshCw size={15} />, onClick: () => void wb.runJob({ kind: 'grade', runs: [run.run_id] }, '重新评分') },
+      ready && !busy && { label: '登记并评分', icon: <FileCheck2 size={15} />, onClick: () => void act(() => post('/api/ws/finish', { ref: w!.ref, at: w!.ended_at, register: true, grade: true }), '已提交登记：卡片上会显示评分进度') },
+      !!run && !busy && { label: '重新评分', icon: <RefreshCw size={15} />, onClick: () => void wb.runJob({ kind: 'grade', runs: [run.run_id] }, '重新评分') },
       { sep: true },
       live && { label: '彻底停止', desc: '作废本次运行并移入回收站 · 不参与任何评估', icon: <OctagonX size={15} />, danger: true, onClick: () => void discard(r, true) },
       { label: '删除', desc: run?.graded ? '移到回收站 · 排行榜里不再计入，可恢复' : '移到回收站 · 可随时恢复', icon: <Trash2 size={15} />, kbd: 'Del', danger: true, onClick: () => void discard(r, false) },

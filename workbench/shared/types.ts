@@ -184,6 +184,10 @@ export type JobKind = 'grade' | 'review' | 'export' | 'doctor' | 'materials' | '
 export interface JobInfo {
   id: string; kind: JobKind; title: string; status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
   started_at: number; ended_at: number | null; code: number | null; lines: number; result?: unknown; error?: string;
+  /** 这个任务作用于哪些运行（工作区 ref / 评分 run_id）：界面据此在对应卡片上显示“登记中 / 自动评分中” */
+  subject?: { refs?: string[]; run_ids?: string[] };
+  /** 创建时刻（排队位置按它算；started_at 在开始运行时会被改写） */
+  queued_at?: number;
 }
 
 export interface SessionInfo {

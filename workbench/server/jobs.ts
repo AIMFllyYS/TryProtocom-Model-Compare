@@ -5,6 +5,7 @@ import { killTree, spawnStream } from './python';
 
 interface JobSpec {
   kind: JobKind; title: string; cmd: string; args: string[]; cwd: string; env?: NodeJS.ProcessEnv; shell?: boolean;
+  subject?: JobInfo['subject'];
   /** 进程结束后执行（如：评分后同步存储），返回值写入 result */
   after?: (code: number, lines: string[]) => Promise<unknown> | unknown;
 }
@@ -23,7 +24,7 @@ export class Jobs {
   }
   submit(spec: JobSpec): JobInfo {
     const j: Job = { id: `j${Date.now().toString(36)}${(this.seq++).toString(36)}`, kind: spec.kind, title: spec.title, status: 'queued',
-      started_at: Date.now(), ended_at: null, code: null, lines: 0, spec, out: [], waiters: [] };
+      started_at: Date.now(), queued_at: Date.now(), ended_at: null, code: null, lines: 0, subject: spec.subject, spec, out: [], waiters: [] };
     this.list.unshift(j);
     if (this.list.length > 60) this.list.splice(60).forEach((x) => x.child && killTree(x.child.pid));
     this.hub.emit({ type: 'job', job: this.info(j) });
@@ -70,6 +71,7 @@ export class Jobs {
       const code = await done;
       const cancelled = (j.status as string) === 'cancelled';
       if (j.spec.after && !cancelled) {
+        this.line(j, '[after] 写入结果…'); // 界面据此显示“写入结果”阶段
         try { j.result = await j.spec.after(code, j.out); } catch (e) { j.error = (e as Error).message; this.line(j, `[after] ${j.error}`); }
       }
       this.finish(j, cancelled ? 'cancelled' : code === 0 && !j.error ? 'done' : 'failed', code);

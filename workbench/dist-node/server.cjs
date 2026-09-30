@@ -1140,9 +1140,11 @@ var Jobs = class {
       title: spec.title,
       status: "queued",
       started_at: Date.now(),
+      queued_at: Date.now(),
       ended_at: null,
       code: null,
       lines: 0,
+      subject: spec.subject,
       spec,
       out: [],
       waiters: []
@@ -1208,6 +1210,7 @@ var Jobs = class {
       const code = await done;
       const cancelled = j.status === "cancelled";
       if (j.spec.after && !cancelled) {
+        this.line(j, "[after] \u5199\u5165\u7ED3\u679C\u2026");
         try {
           j.result = await j.spec.after(code, j.out);
         } catch (e) {
@@ -2544,13 +2547,15 @@ async function startServer(over = {}) {
     store.save();
     hub.emit({ type: "store", updated_at: store.data.updated_at });
   };
-  const graderJob = (kind, title, args, after) => jobs.submit({ kind, title, cmd: py(), args: [bench, "--data", cfg.benchData, ...args], cwd: cfg.graderDir, after });
+  const graderJob = (kind, title, args, after, subject) => jobs.submit({ kind, title, cmd: py(), args: [bench, "--data", cfg.benchData, ...args], cwd: cfg.graderDir, after, subject });
   function gradeRuns(runDirs, opts = {}) {
     const args = ["grade", ...runDirs === "all" ? ["--all"] : runDirs];
     if (opts.fast) args.push("--fast");
     if (opts.skip) args.push("--skip-graded");
     if (opts.task) args.push("--task", opts.task);
-    return graderJob("grade", runDirs === "all" ? `\u8BC4\u5206\uFF1A\u5168\u90E8\u8FD0\u884C${opts.task ? " \xB7 " + opts.task : ""}` : `\u8BC4\u5206\uFF1A${runDirs.map((d) => import_node_path8.default.basename(d)).join(", ")}`, args, async () => sync());
+    const ids = runDirs === "all" ? store.data.runs.filter((r) => !opts.task || r.task === opts.task).map((r) => r.run_id) : runDirs.map((d) => import_node_path8.default.basename(d));
+    const refs = [.../* @__PURE__ */ new Set([...opts.refs || [], ...store.data.workspaces.filter((w) => w.grader_run_id && ids.includes(w.grader_run_id)).map((w) => w.ref)])];
+    return graderJob("grade", runDirs === "all" ? `\u8BC4\u5206\uFF1A\u5168\u90E8\u8FD0\u884C${opts.task ? " \xB7 " + opts.task : ""}` : `\u8BC4\u5206\uFF1A${runDirs.map((d) => import_node_path8.default.basename(d)).join(", ")}`, args, async () => sync(), { run_ids: ids, refs });
   }
   function registerWs(ref, opts) {
     const pr = ws.parseRef(ref);
@@ -2583,10 +2588,10 @@ async function startServer(over = {}) {
         refreshWorkspaces();
         return { run_id: rid, discarded: true };
       }
-      if (opts.grade) gradeRuns([import_node_path8.default.join(cfg.benchData, "runs", rid)], { fast: opts.fast });
+      if (opts.grade) gradeRuns([import_node_path8.default.join(cfg.benchData, "runs", rid)], { fast: opts.fast, refs: [ref] });
       else await sync();
       return { run_id: rid };
-    });
+    }, { refs: [ref] });
   }
   const openFolder = (p) => {
     const cmd = process.platform === "win32" ? "explorer" : process.platform === "darwin" ? "open" : "xdg-open";
