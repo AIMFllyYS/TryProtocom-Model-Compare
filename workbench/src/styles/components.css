@@ -132,6 +132,12 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
 .pop-sep { height: 1px; margin: 5px 6px; background: var(--hair); }
 .pop-search { padding: 2px 2px 6px; }
 .pop-empty { padding: 14px; text-align: center; color: var(--text-3); font-size: 12.5px; }
+/* 右键菜单：与下拉同款玻璃，顶部一行说明作用对象 */
+.pop.ctx { min-width: 232px; max-width: 320px; }
+.pop.ctx .ctx-t { display: flex; padding: 6px 10px 6px; margin-bottom: 2px; font-size: 11.5px; font-weight: 650; color: var(--text-3); border-bottom: 1px solid var(--hair); }
+.pop.ctx .opt:focus-visible { outline: 0; background: var(--fill-2); }
+.pop.ctx .opt.danger:hover, .pop.ctx .opt.danger:focus-visible { background: var(--bad-soft); }
+.pop.ctx .opt.danger .opt-d { color: color-mix(in oklab, var(--bad) 70%, var(--text-3)); }
 
 .tip {
   position: fixed; z-index: 1100; pointer-events: none; max-width: 320px; padding: 6px 10px; border-radius: 10px;

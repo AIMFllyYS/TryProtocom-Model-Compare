@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, SpecData, StoreRun, WorkspaceRun } from '../shared/types';
+import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, SpecData, StoreRun, TrashEntry, WorkspaceRun } from '../shared/types';
 
 const HERE = __dirname; // workbench/dist-node
 const ROOT = findRoot();
@@ -23,7 +23,7 @@ function findRoot(): string {
 }
 
 // ---------- 参数 ----------
-const BOOL = new Set(['json', 'all', 'fast', 'skip-graded', 'wait', 'no-wait', 'errors', 'follow', 'mobile', 'full', 'show', 'register', 'no-grade', 'timed-out', 'open', 'no-inject', 'warnings', 'help', 'refresh']);
+const BOOL = new Set(['json', 'all', 'fast', 'skip-graded', 'wait', 'no-wait', 'errors', 'follow', 'mobile', 'full', 'show', 'register', 'no-grade', 'timed-out', 'open', 'no-inject', 'warnings', 'help', 'refresh', 'yes']);
 const flags: Record<string, string | boolean> = {};
 const pos: string[] = [];
 for (let i = 0; i < argv.length; i++) {
@@ -141,6 +141,9 @@ Skills    wb skills sync   把 skills/ 镜像到 .agents/skills/（不含 hidden
           wb run list [--model 供应商/模型] [--task T05]
           wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "…"] [--wall-min 30 --cost-usd 1.2 …] [--timed-out] [--register] [--no-grade]
           wb run register <ref> [--no-grade] [--fast]
+回收站    wb run stop <ref> [--reason …]   彻底停止并作废（关掉该目录的开发服务器 / 预览；外部 Agent 会话需在 harness 里手动停）
+          wb run discard <ref|run_id> [--reason …] | wb run restore <ref|run:run_id> | wb trash
+          wb trash purge <id>… --yes | wb trash purge --all --yes   永久删除（仅回收站内条目，无法恢复）
 评分      wb grade [run_id…|--all] [--task T05] [--fast] [--skip-graded] | wb review [--task T05]
           wb pending [--method agent|human] [--task T05] | wb score <run_id> <item_id> <0-3> --note "证据" [--by agent]
           wb show <run_id> | wb sync
@@ -423,6 +426,25 @@ async function main() {
       }
       die('用法：wb store export|import <文件>');
     }
+    case 'trash': {
+      const list = await get<TrashEntry[]>('/api/trash');
+      if (!sub || sub === 'list') {
+        return out(list, () => list.length
+          ? (table([['id', '阶段', '方式', '作废时间', '得分', '原因'], ...list.map((t) => [t.id, t.from, t.stopped ? '彻底停止' : '删除', t.at.slice(5, 16).replace('T', ' '), t.total == null ? '—' : fmt(t.total), t.reason || '—'])]),
+            console.log(`\n回收站里的运行不参与排行、对比、待评清单、导出和报告。恢复：wb run restore <id>；永久删除：wb trash purge <id>… --yes`))
+          : console.log('回收站是空的'));
+      }
+      if (sub === 'purge') {
+        const ids = flags.all ? list.map((t) => t.id) : rest;
+        if (!ids.length) die('用法：wb trash purge <id>… --yes   或   wb trash purge --all --yes');
+        const miss = ids.filter((id) => !list.some((t) => t.id === id));
+        if (miss.length) die(`回收站里没有：${miss.join(', ')}（只能永久删除回收站里的条目）`);
+        if (!flags.yes) die(`将永久删除 ${ids.length} 次运行的全部文件（工作目录、提示词留档、最后回复、评分目录），无法恢复。确认请加 --yes`);
+        const r = await post('/api/trash/purge', { ids, confirm: 'purge' });
+        return out(r, () => console.log(`✔ 已永久删除 ${r.purged.length} 次运行`));
+      }
+      die('用法：wb trash [list] | wb trash purge <id>… --yes | wb trash purge --all --yes');
+    }
     case 'ui': {
       const params = Object.fromEntries(rest.map((kv) => kv.split('=', 2)));
       const r = await post('/api/ui', { action: sub || 'open', params });
@@ -493,7 +515,25 @@ async function runCmd(sub: string | undefined, rest: string[]) {
       }
       return;
     }
-    default: die('用法：wb run new|list|start|finish|register …');
+    case 'stop':
+    case 'discard': {
+      const arg = rest[0] || '';
+      if (!arg) die(`用法：wb run ${sub} <ref|run_id> [--reason "原因"]`);
+      const body = isRef(arg) || /[\\/]/.test(arg) ? { ref: await resolveRef(arg) } : { run_id: arg };
+      const r = await post('/api/runs/discard', { ...body, stop: sub === 'stop', reason: str('reason') });
+      return out(r, () => {
+        console.log(r.already ? `· ${r.id} 已经在回收站里` : `✔ ${r.id} 已${sub === 'stop' ? '彻底停止并' : ''}移入回收站（不参与任何评估，可 wb run restore ${r.id} 恢复）`);
+        if (r.released?.procs || r.released?.previews) console.log(`  已关闭 ${r.released.procs} 个开发服务器、${r.released.previews} 个预览`);
+        if (sub === 'stop') console.log('  ⚠ 工作台关不掉外部 Agent 软件里的会话：请在 harness 里手动停止它，免得继续消耗额度');
+      });
+    }
+    case 'restore': {
+      const arg = rest[0] || '';
+      if (!arg) die('用法：wb run restore <ref|run:run_id>   （wb trash 查看回收站）');
+      const r = await post('/api/runs/restore', { id: isRef(arg) || arg.startsWith('run:') ? arg : /[\\/]/.test(arg) ? await resolveRef(arg) : 'run:' + arg });
+      return out(r, () => console.log(`✔ 已恢复 ${r.id}`));
+    }
+    default: die('用法：wb run new|list|start|finish|register|stop|discard|restore …');
   }
 }
 

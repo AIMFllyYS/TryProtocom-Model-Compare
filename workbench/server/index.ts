@@ -18,7 +18,7 @@ import { Previews } from './preview';
 import { Procs } from './procs';
 import { callBridge } from './python';
 import { listReports, modelReport, writeModelReport } from './report';
-import { StoreFile } from './store';
+import { StoreFile, stageLabel, trashEntryOf } from './store';
 import { Workspaces } from './workspaces';
 
 export interface StartedServer { cfg: Config; server: http.Server; url: string; close: () => Promise<void> }
@@ -104,6 +104,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   function registerWs(ref: string, opts: { grade?: boolean; fast?: boolean }) {
     const pr = ws.parseRef(ref);
     const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+    if (w.discarded) throw new HttpError(409, `${ref} 在回收站里，不参与评估；先恢复再登记`);
     if (w.grader_run_id && fs.existsSync(path.join(cfg.benchData, 'runs', w.grader_run_id))) throw new HttpError(409, `已登记为 ${w.grader_run_id}；如需重新登记请先在 run.json 清空 grader_run_id`);
     if (!w.harness) throw new HttpError(400, '请先填写 harness（例如 Claude Code / Codex CLI / Kiro）');
     const f = ws.files(ref);
@@ -125,6 +126,9 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       if (!rid) throw new Error('无法从输出中解析运行 id');
       ws.patchRun(ref, { grader_run_id: rid });
       store.log('register', `${ref} → ${rid}`);
+      // 登记期间被移进了回收站：刚生成的评分目录也一起放进回收站，不评分
+      const now = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      if (now.discarded) { moveGrader(rid, 'trash'); refreshWorkspaces(); return { run_id: rid, discarded: true }; }
       if (opts.grade) gradeRuns([path.join(cfg.benchData, 'runs', rid)], { fast: opts.fast });
       else await sync();
       return { run_id: rid };
@@ -152,7 +156,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
   /** 可以直接拿来用的运行：已创建、没开始、没交付、没登记 */
   const claimable = (vendor: string, model: string, tkey: string): WorkspaceRun | undefined => ws.listRuns().find((w) =>
-    w.vendor === vendor && w.model === model && w.tkey === tkey && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
+    w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
   async function promptFor(q: { vendor?: string | null; model?: string | null; task: string; variant?: string | null }) {
     const { s, t } = await findTask(q.task);
     const variant = q.variant || null;
@@ -284,6 +288,103 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   };
   const detectTimer = setInterval(detectTick, 3000);
   detectTimer.unref();
+
+  // ---------- 回收站：作废（彻底停止 / 删除）→ 不参与任何评估；可恢复；永久删除要单独确认 ----------
+  // 工作区运行：作废标记写进 rN.run.json（文件夹原地保留，便于恢复）；
+  // 已登记的 bench-grader 运行目录从 bench-data/runs/ 挪到 bench-data/trash/，Python 侧的汇总 / 导出 / 评分包也就看不到它。
+  const graderTrash = path.join(cfg.benchData, 'trash');
+  const RID = /^[\w.-]+$/;
+  function moveGrader(rid: string, to: 'trash' | 'runs') {
+    if (!RID.test(rid)) throw new HttpError(400, `运行 id 不合法：${rid}`);
+    const live = path.join(cfg.benchData, 'runs', rid), bin = path.join(graderTrash, rid);
+    const [src, dst] = to === 'trash' ? [live, bin] : [bin, live];
+    if (!fs.existsSync(src)) return false;
+    if (fs.existsSync(dst)) throw new HttpError(409, `目标已存在：${toRel(cfg.root, dst)}`);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    try { fs.renameSync(src, dst); } catch (e) { throw new HttpError(409, `评分目录被占用，暂时挪不动（${(e as NodeJS.ErrnoException).code || 'EBUSY'}）：关掉正在预览它的窗口后再试`); }
+    return true;
+  }
+  const busyJob = (keys: (string | null | undefined)[]) => jobs.list.find((j) => (j.status === 'running' || j.status === 'queued') && keys.some((k) => k && jobs.info(j).title.includes(k)));
+  /** 关掉工作目录里的开发服务器和预览窗口（它们会占着文件，也没必要再跑） */
+  function releaseFolder(dir: string): { procs: number; previews: number } {
+    const base = path.resolve(dir).toLowerCase();
+    const inside = (p?: string | null) => !!p && (path.resolve(p).toLowerCase() + path.sep).startsWith(base + path.sep);
+    let np = 0, nv = 0;
+    for (const p of procs.all()) if (p.status === 'running' && inside(p.cwd)) { try { procs.stop(p.id); np++; } catch { /* 已退出 */ } }
+    for (const s of previews.list()) if (s.kind === 'static' && inside(s.root)) { if (previews.close(s.id)) nv++; }
+    return { procs: np, previews: nv };
+  }
+
+  async function discardRun(b: { ref?: string; run_id?: string; stop?: boolean; reason?: string }) {
+    const at = new Date().toISOString();
+    const stop = !!b.stop;
+    let ref = b.ref || store.data.runs.find((r) => r.run_id === b.run_id)?.ws_ref || null;
+    if (ref && !fs.existsSync(ws.files(ref).run) && !fs.existsSync(ws.files(ref).ws)) ref = null; // 工作区不在本机
+    if (ref) {
+      const pr = ws.parseRef(ref);
+      const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      if (w.discarded) return { ok: true, id: ref, already: true, released: { procs: 0, previews: 0 } };
+      const j = busyJob([ref, w.grader_run_id]);
+      if (j) throw new HttpError(409, `“${jobs.info(j).title}”还在进行，等它结束再作废`);
+      const run = w.grader_run_id ? store.data.runs.find((r) => r.run_id === w.grader_run_id) : undefined;
+      const released = releaseFolder(ws.files(ref).ws);
+      if (w.grader_run_id) moveGrader(w.grader_run_id, 'trash');
+      const setEnded = stop && !!w.started_at && !w.ended_at;
+      ws.patchRun(ref, {
+        discarded: { at, reason: b.reason || (stop ? '手动彻底停止' : '移入回收站'), stopped: stop, from: stageLabel(w, run), set_ended: setEnded || undefined },
+        ...(setEnded ? { ended_at: at } : {}),
+      });
+      store.log(stop ? 'run-stop' : 'run-discard', `${ref}${b.reason ? ' · ' + b.reason : ''}`);
+      refreshWorkspaces();
+      return { ok: true, id: ref, released };
+    }
+    const run = store.data.runs.find((r) => r.run_id === b.run_id);
+    if (!run) throw new HttpError(404, `运行不存在：${b.run_id || b.ref}`);
+    const j = busyJob([run.run_id]);
+    if (j) throw new HttpError(409, `“${jobs.info(j).title}”还在进行，等它结束再作废`);
+    moveGrader(run.run_id, 'trash');
+    const w = run.ws_ref ? store.data.workspaces.find((x) => x.ref === run.ws_ref) : undefined;
+    const entry = trashEntryOf(w, run, { at, reason: b.reason || '移入回收站', stopped: false, from: stageLabel(w, run) });
+    if (!w) entry.id = 'run:' + run.run_id;
+    store.trashStoreOnly(entry);
+    store.log('run-discard', `run ${run.run_id}`);
+    store.save();
+    hub.emit({ type: 'store', updated_at: store.data.updated_at });
+    return { ok: true, id: entry.id, released: { procs: 0, previews: 0 } };
+  }
+
+  function restoreRun(id: string) {
+    const t = (store.data.trash || []).find((x) => x.id === id);
+    if (!t) throw new HttpError(404, `回收站里没有：${id}`);
+    if (t.run_id) moveGrader(t.run_id, 'runs');
+    if (t.ref && fs.existsSync(ws.files(t.ref).run)) {
+      const pr = ws.parseRef(t.ref);
+      const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      ws.patchRun(t.ref, { discarded: null, ...(w.discarded?.set_ended ? { ended_at: null } : {}) });
+    } else store.restoreStoreOnly(id);
+    store.log('run-restore', id);
+    refreshWorkspaces();
+    return { ok: true, id };
+  }
+
+  function purgeTrash(ids: string[]) {
+    const out: { id: string; removed: number }[] = [];
+    for (const id of ids) {
+      const t = (store.data.trash || []).find((x) => x.id === id);
+      if (!t) continue; // 只能永久删除回收站里的条目：进行中 / 已评分的运行不会被这个接口误删
+      let removed = 0;
+      if (t.ref) { releaseFolder(ws.files(t.ref).ws); removed += ws.purgeRun(t.ref).length; }
+      if (t.run_id && RID.test(t.run_id)) {
+        const bin = path.join(graderTrash, t.run_id);
+        if (fs.existsSync(bin)) { fs.rmSync(bin, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 }); removed++; }
+      }
+      store.dropTrash([id]);
+      store.log('run-purge', `${id}（${removed} 个文件/目录）`);
+      out.push({ id, removed });
+    }
+    refreshWorkspaces();
+    return { ok: true, purged: out };
+  }
 
   // ======================= 路由 =======================
   R.get('/api/session', (): SessionInfo => ({
@@ -470,14 +571,22 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     p.on('error', () => res.end());
     return undefined;
   });
+  const liveRun = (ref: string) => {
+    const pr = ws.parseRef(ref);
+    const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+    if (w.discarded) throw new HttpError(409, `${ref} 在回收站里；先在「运行 → 回收站」恢复它`);
+    return w;
+  };
   R.post('/api/ws/start', async (req) => {
     const b = await readJson(req);
+    liveRun(b.ref);
     const r = ws.patchRun(b.ref, { started_at: b.at || new Date().toISOString(), ended_at: null });
     refreshWorkspaces();
     return r;
   });
   R.post('/api/ws/finish', async (req) => {
     const b = await readJson(req);
+    liveRun(b.ref);
     if (typeof b.final_message === 'string' && b.final_message.trim()) ws.writeFinal(b.ref, b.final_message);
     if (b.transcript) ws.writeTranscript(b.ref, b.transcript);
     const patch: any = { ended_at: b.at || new Date().toISOString() };
@@ -491,11 +600,28 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     return { run: r, job };
   });
   R.post('/api/ws/patch', async (req) => {
-    const b = await readJson(req);
+    const { discarded: _d, ...b } = await readJson(req); // 作废 / 恢复只走回收站接口（要同时挪动评分目录）
     if (typeof b.final_message === 'string') ws.writeFinal(b.ref, b.final_message);
     const r = ws.patchRun(b.ref, b);
     refreshWorkspaces();
     return r;
+  });
+
+  // 回收站
+  R.get('/api/trash', () => store.data.trash || []);
+  R.post('/api/runs/discard', async (req) => {
+    const b = await readJson(req);
+    if (!b.ref && !b.run_id) throw new HttpError(400, '需要 ref（供应商/模型/题号/rN）或 run_id');
+    return discardRun({ ref: b.ref, run_id: b.run_id, stop: !!b.stop, reason: typeof b.reason === 'string' ? b.reason.slice(0, 200) : undefined });
+  });
+  R.post('/api/runs/restore', async (req) => { const b = await readJson(req); return restoreRun(String(b.id || b.ref || (b.run_id ? 'run:' + b.run_id : ''))); });
+  R.post('/api/trash/purge', async (req) => {
+    const b = await readJson(req);
+    // 永久删除必须显式确认：界面在二次确认后才发送 confirm: 'purge'
+    if (b.confirm !== 'purge') throw new HttpError(400, '永久删除需要 confirm: "purge"（删除后无法恢复）');
+    const ids: string[] = b.all ? (store.data.trash || []).map((t) => t.id) : Array.isArray(b.ids) ? b.ids.map(String) : [];
+    if (!ids.length) throw new HttpError(400, '没有要删除的条目');
+    return purgeTrash(ids);
   });
   R.get('/api/ws/final', (req) => {
     const f = ws.files(req.query.get('ref') || '');

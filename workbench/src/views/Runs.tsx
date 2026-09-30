@@ -1,6 +1,6 @@
 // 运行：看板（进行中 → 已交付待登记 → 待评分 → 已完成），详情含实时交付清单、登记评分、得分明细、预览打分与 AI 评审提示词。
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, CircleCheck, CirclePlay, Copy, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, MonitorPlay, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
+import { Bot, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
 import type { ItemScore, SpecItem, StoreRun, Usage, WorkspaceRun } from '../../shared/types';
 import { FINAL_FILE } from '../../shared/deliverables';
 import { get, post } from '../api';
@@ -8,7 +8,7 @@ import { useWb } from '../state';
 import { go, href, useLocal, useRoute } from '../lib/router';
 import { cls, copyText, fmt, METHOD_LABEL, TIER_LABEL, wsStatus } from '../lib/format';
 import { Markdown } from '../lib/markdown';
-import { Badge, Btn, Card, CheckBox, CopyBtn, Empty, Field, Kv, Meter, Seg, Select, Tabs } from '../ui/kit';
+import { Badge, Btn, Card, CheckBox, CopyBtn, Empty, Field, IconBtn, Kv, Meter, Seg, Select, Tabs } from '../ui/kit';
 import { HarnessIcon, ModelAvatar } from '../ui/brand';
 import { toast } from '../ui/toast';
 import { DimChip, Score, TaskLabel, WsBadge, useNamer } from '../components/common';
@@ -16,6 +16,7 @@ import { HarnessPicker, ModelPicker } from '../components/pickers';
 import { FileBrowser } from '../components/Files';
 import { ItemScorer } from '../components/ItemScorer';
 import { QuotaForm } from '../components/LaunchPad';
+import { TrashDock, TrashedNotice, isLive, runHandlers, useRunActions } from '../components/Trash';
 
 export interface Row { key: string; ws?: WorkspaceRun; run?: StoreRun }
 type Col = 'running' | 'delivered' | 'grading' | 'done';
@@ -53,13 +54,19 @@ export default function Runs() {
   const rows = useRows();
   const selKey = route.parts.length ? route.parts.join('/') : route.query.get('id') ? 'run:' + route.query.get('id') : '';
   const cur = rows.find((r) => r.key === selKey || (!!route.query.get('id') && r.run?.run_id === route.query.get('id')));
-  if (selKey) return cur ? <RunDetail row={cur} key={cur.key} /> : <div className="page"><Empty title="运行不存在" action={<Btn onClick={() => go('runs')}>返回运行列表</Btn>}>{selKey}</Empty></div>;
+  const trashHas = useTrashHas();
+  if (selKey) return cur ? <RunDetail row={cur} key={cur.key} /> : <div className="page"><Card>{trashHas(selKey) ? <TrashedNotice id={selKey} /> : <Empty title="运行不存在" action={<Btn onClick={() => go('runs')}>返回运行列表</Btn>}>{selKey}</Empty>}</Card></div>;
   return <RunBoard rows={rows} />;
+}
+function useTrashHas() {
+  const { store } = useWb();
+  return (k: string) => !!store?.trash?.some((t) => t.id === k || t.ref === k);
 }
 
 function RunBoard({ rows }: { rows: Row[] }) {
   const wb = useWb();
   const nm = useNamer();
+  const acts = useRunActions();
   const [view, setView] = useLocal<'board' | 'list'>('runs.view', 'board');
   const [fModel, setFModel] = useLocal('runs.model', '');
   const [fTask, setFTask] = useLocal('runs.task', '');
@@ -83,7 +90,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
       <div className="page-head">
         <div className="page-head-t">
           <h1 className="page-title">运行</h1>
-          <p className="page-sub">复制提示词即创建运行；工作台每 3 秒扫描工作目录，按交付清单点亮进度，模型写出 <code>{FINAL_FILE}</code> 即自动结束计时。</p>
+          <p className="page-sub">复制提示词即创建运行；工作台每 3 秒扫描工作目录，按交付清单点亮进度，模型写出 <code>{FINAL_FILE}</code> 即自动结束计时。点错了？右键卡片「彻底停止 / 删除」，或拖到右下角回收站。</p>
         </div>
         <div className="page-x">
           {toRegister.length > 0 && <Btn tone="tinted" icon={<FileCheck2 size={15} />} onClick={() => void registerAll()}>登记并评分 {toRegister.length} 次交付</Btn>}
@@ -109,7 +116,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
               <div key={c.id} className="kan-col">
                 <div className="kan-h"><c.icon size={15} /><b>{c.label}</b><span className="badge">{items.length}</span></div>
                 <div className="kan-hint muted xs">{c.hint}</div>
-                <div className="kan-list">{items.map((r) => <RunCard key={r.key} r={r} nm={nm} />)}{!items.length && <div className="kan-empty">空</div>}</div>
+                <div className="kan-list">{items.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}{!items.length && <div className="kan-empty">空</div>}</div>
               </div>
             );
           })}
@@ -117,11 +124,11 @@ function RunBoard({ rows }: { rows: Row[] }) {
       ) : (
         <Card pad={false}>
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>模型</th><th>题目</th><th>次</th><th>状态</th><th>交付</th><th>用时</th><th>harness</th><th className="num">得分</th></tr></thead>
+            <thead><tr><th>模型</th><th>题目</th><th>次</th><th>状态</th><th>交付</th><th>用时</th><th>harness</th><th className="num">得分</th><th aria-label="操作" /></tr></thead>
             <tbody>{list.map((r) => {
               const w = r.ws;
               return (
-                <tr key={r.key} className="clickable" onClick={() => go('runs', w ? [w.ref] : [], w ? undefined : { id: r.run!.run_id })}>
+                <tr key={r.key} className="clickable" tabIndex={0} onClick={() => go('runs', w ? [w.ref] : [], w ? undefined : { id: r.run!.run_id })} {...runHandlers(r, acts)}>
                   <td><span className="row gap-s"><ModelAvatar vendor={w?.vendor || r.run!.vendor} model={w?.model || r.run!.model} size="xs" blind={nm.blind} />{w ? nm.model(w.vendor, w.model) : nm.blind ? nm.run(r.run!) : r.run!.model}</span></td>
                   <td><TaskLabel task={w?.task || r.run!.task} variant={w?.variant || r.run?.variant} /></td>
                   <td className="mono">{w ? `r${w.index}` : r.run!.run_index ?? ''}</td>
@@ -130,25 +137,28 @@ function RunBoard({ rows }: { rows: Row[] }) {
                   <td className="mono small">{w?.started_at ? fmt.clock((w.ended_at ? Date.parse(w.ended_at) : Date.now()) - Date.parse(w.started_at)) : fmt.min(r.run?.usage.wall_min)}</td>
                   <td className="small">{w?.harness || r.run?.harness}</td>
                   <td className="num">{r.run?.score ? <Score v={r.run.score.total} /> : '—'}</td>
+                  <td className="num"><IconBtn label="更多操作" size="xs" onClick={(e) => { e.stopPropagation(); acts.open(e.currentTarget, r); }}><Ellipsis size={14} /></IconBtn></td>
                 </tr>
               );
             })}</tbody>
           </table></div>
         </Card>
       )}
+      <TrashDock rows={rows} />
     </div>
   );
 }
 
-function RunCard({ r, nm }: { r: Row; nm: ReturnType<typeof useNamer> }) {
+function RunCard({ r, nm, acts }: { r: Row; nm: ReturnType<typeof useNamer>; acts: ReturnType<typeof useRunActions> }) {
   const wb = useWb();
   const w = r.ws;
   const task = wb.spec?.tasks.find((t) => t.id === (w?.task || r.run?.task));
   const el = w?.started_at ? (w.ended_at ? Date.parse(w.ended_at) : Date.now()) - Date.parse(w.started_at) : 0;
   const lim = (task?.time_limit || 0) * 60000;
   return (
-    <a className="run-card glass sheen" href={w ? href('runs', [w.ref]) : href('runs', [], { id: r.run!.run_id })}>
+    <a className={cls('run-card glass sheen', isLive(r) && 'live')} href={w ? href('runs', [w.ref]) : href('runs', [], { id: r.run!.run_id })} {...runHandlers(r, acts)}>
       <span className="sheen-l" aria-hidden />
+      <button type="button" className="rc-more icon-btn xs" aria-label="更多操作（也可以右键）" onClick={(e) => { e.preventDefault(); e.stopPropagation(); acts.open(e.currentTarget, r); }}><Ellipsis size={14} /></button>
       <div className="row gap-s">
         <ModelAvatar vendor={w?.vendor || r.run?.vendor} model={w?.model || r.run!.model} size="sm" blind={nm.blind} />
         <div className="grow"><div className="b ellipsis">{w ? nm.model(w.vendor, w.model) : nm.blind ? nm.run(r.run!) : r.run!.model}</div><div className="muted xs ellipsis">{(w?.tkey || r.run!.tkey)} · {task?.name}{w ? ` · r${w.index}` : ''}</div></div>
@@ -176,6 +186,7 @@ type DTab = 'score' | 'deliver' | 'prompt' | 'final' | 'files' | 'usage' | 'raw'
 function RunDetail({ row }: { row: Row }) {
   const wb = useWb();
   const nm = useNamer();
+  const acts = useRunActions();
   const { ws, run } = row;
   const task = wb.spec?.tasks.find((t) => t.id === (ws?.task || run?.task));
   const col = colOf(row);
@@ -224,6 +235,7 @@ function RunDetail({ row }: { row: Row }) {
         {(run || ws) && <Btn icon={<Bot size={15} />} onClick={() => void aiPrompt()} tip="复制给评分 Agent 的提示词（skills 路径 + wb CLI 步骤）">AI 评审提示词</Btn>}
         <span className="grow" />
         {run && <Btn size="sm" tone="ghost" icon={<RefreshCw size={13} />} onClick={() => void wb.runJob({ kind: 'grade', runs: [run.run_id] }, '重新评分')}>重新评分</Btn>}
+        <IconBtn label="更多操作：彻底停止 / 删除…" onClick={(e) => acts.open(e.currentTarget, row, { detail: true })}><Ellipsis size={16} /></IconBtn>
       </div>
 
       {ws && stage === 1 && (
@@ -235,6 +247,7 @@ function RunDetail({ row }: { row: Row }) {
           <div className="timer"><div className="stack s"><span className="muted xs">开跑时间戳</span><span className={cls('clock', limitMs > 0 && elapsed > limitMs && 'bad')}>{ws.started_at ? new Date(ws.started_at).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</span><span className="muted xs">已过 {fmt.min(elapsed / 60000)} · 模型写出 FINAL_MESSAGE.md 时自动记结束</span></div>{limitMs > 0 && <div className="stack s"><Meter value={elapsed} max={limitMs} tone={elapsed > limitMs ? 'bad' : elapsed > limitMs * 0.8 ? 'warn' : 'accent'} w={200} /><span className="muted xs">上限 {task!.time_limit} 分钟</span></div>}</div>
           <div className="grow" />
           <Btn tone="ghost" icon={<TimerReset size={14} />} onClick={() => void act(() => post('/api/ws/patch', { ref: ws.ref, started_at: null }), '已重置计时')}>重置</Btn>
+          <Btn tone="danger" icon={<OctagonX size={14} />} tip="作废本次运行并移入回收站，不参与任何评估；可在回收站恢复" onClick={() => void acts.discard(row, true)}>彻底停止</Btn>
           <Btn icon={<Square size={14} />} onClick={() => void act(() => post('/api/ws/finish', { ref: ws.ref, timed_out: limitMs > 0 && elapsed > limitMs }), '已结束计时')}>手动结束</Btn>
         </div></Card>
       )}

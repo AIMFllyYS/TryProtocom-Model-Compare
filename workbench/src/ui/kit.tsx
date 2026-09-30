@@ -371,6 +371,70 @@ export function Popover({ trigger, children, place = 'bottom-end', width, classN
   );
 }
 
+// ============================================================ 右键菜单（全局宿主，挂在 main.tsx）
+// openContextMenu(e, items)：在指针位置弹出与 Menu 同款的玻璃菜单；键盘 ↑↓ / Enter / Esc；
+// 传入元素（例如“⋯”按钮）时贴着元素弹出，方便不用右键的人。
+interface CtxState { x: number; y: number; items: MenuItem[]; title?: ReactNode; back: HTMLElement | null }
+let ctxHost: ((s: CtxState | null) => void) | null = null;
+export function openContextMenu(at: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void } | HTMLElement, items: MenuItem[], title?: ReactNode) {
+  let x: number, y: number;
+  if (at instanceof HTMLElement) { const r = at.getBoundingClientRect(); x = r.right; y = r.bottom + 6; }
+  else { at.preventDefault?.(); at.stopPropagation?.(); x = at.clientX; y = at.clientY; }
+  ctxHost?.({ x, y, items, title, back: (document.activeElement as HTMLElement) || null });
+}
+export function ContextMenuHost() {
+  const [st, setSt] = useState<CtxState | null>(null);
+  const [pos, setPos] = useState<CSSProperties>({ visibility: 'hidden' });
+  const ref = useRef<HTMLDivElement>(null);
+  const stRef = useRef(st);
+  stRef.current = st;
+  useEffect(() => { ctxHost = setSt; return () => { ctxHost = null; }; }, []);
+  const close = useCallback((restore = true) => { const s = stRef.current; setSt(null); if (restore) s?.back?.focus?.({ preventScroll: true }); }, []);
+  useLayoutEffect(() => {
+    if (!st || !ref.current) { setPos({ visibility: 'hidden' }); return; }
+    const w = ref.current.offsetWidth, h = ref.current.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+    const flipX = st.x + w > vw - 8, flipY = st.y + h > vh - 8;
+    const left = Math.max(8, flipX ? st.x - w : st.x), top = Math.max(8, flipY ? Math.max(8, st.y - h) : st.y);
+    setPos({ left, top, ['--origin' as string]: `${flipY ? 'bottom' : 'top'} ${flipX ? 'right' : 'left'}` });
+    ref.current.querySelector<HTMLElement>('button.opt:not(:disabled)')?.focus({ preventScroll: true });
+  }, [st]);
+  useEffect(() => {
+    if (!st) return;
+    const down = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) close(false); };
+    const off = () => close(false);
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    window.addEventListener('keydown', esc, true);
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('resize', off);
+    window.addEventListener('blur', off);
+    window.addEventListener('scroll', off, true);
+    return () => { window.removeEventListener('keydown', esc, true); window.removeEventListener('pointerdown', down, true); window.removeEventListener('resize', off); window.removeEventListener('blur', off); window.removeEventListener('scroll', off, true); };
+  }, [st, close]);
+  if (!st) return null;
+  const key = (e: React.KeyboardEvent) => {
+    const btns = [...(ref.current?.querySelectorAll<HTMLButtonElement>('button.opt:not(:disabled)') || [])];
+    const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); btns[(i + 1) % btns.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); btns[(i - 1 + btns.length) % btns.length]?.focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); btns[0]?.focus(); }
+    else if (e.key === 'End') { e.preventDefault(); btns[btns.length - 1]?.focus(); }
+    else if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); close(); }
+  };
+  return (
+    <Portal>
+      <div ref={ref} role="menu" className="pop ctx glass-thick" style={pos} onKeyDown={key} onContextMenu={(e) => e.preventDefault()}>
+        {st.title && <div className="ctx-t">{st.title}</div>}
+        {st.items.map((it, i) => it.sep ? <div key={i} className="pop-sep" /> : it.group && !it.label ? <div key={i} className="pop-group">{it.group}</div> : (
+          <button key={i} type="button" role="menuitem" className={cls('opt', it.danger && 'danger')} disabled={it.disabled} onClick={() => { close(); it.onClick?.(); }}>
+            {it.icon}<span className="opt-t">{it.label}{it.desc && <span className="opt-d">{it.desc}</span>}</span>
+            {it.kbd && <span className="opt-k">{it.kbd}</span>}
+          </button>
+        ))}
+      </div>
+    </Portal>
+  );
+}
+
 // ============================================================ 对话框 / 抽屉
 function useEsc(on: boolean, fn: () => void) {
   useEffect(() => {

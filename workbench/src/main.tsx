@@ -4,7 +4,7 @@ import { RefreshCw, ServerCrash } from 'lucide-react';
 import { App } from './app';
 import { WbProvider } from './state';
 import { Toaster } from './ui/toast';
-import { ConfirmHost, Spinner } from './ui/kit';
+import { ConfirmHost, ContextMenuHost, Spinner } from './ui/kit';
 import './styles/tokens.css';
 import './styles/glass.css';
 import './styles/components.css';
@@ -79,6 +79,7 @@ createRoot(document.getElementById('root')!).render(
     <WbProvider fallback={(err, retry) => <Boot err={err} retry={retry} />}>
       <App />
       <ConfirmHost />
+      <ContextMenuHost />
     </WbProvider>
     <Toaster />
   </StrictMode>,

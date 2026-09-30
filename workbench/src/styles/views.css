@@ -372,3 +372,63 @@
 .ss-ok { position: absolute; right: 10px; top: 10px; }
 .ss-keys { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .ss-agent { display: flex; align-items: center; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--hair); color: var(--text-2); }
+
+
+/* ============================================================ 运行卡片：更多按钮 / 拖拽 / 回收站 */
+.run-card:focus-visible { outline: 0; box-shadow: 0 0 0 .5px var(--edge), 0 0 0 3px color-mix(in oklab, var(--accent) 38%, transparent), var(--sh-2); }
+.run-card .rc-more {
+  position: absolute; top: -7px; right: -7px; z-index: 3; opacity: 0; transform: scale(.7);
+  color: var(--text); background: var(--g-thick); -webkit-backdrop-filter: blur(18px) saturate(190%); backdrop-filter: blur(18px) saturate(190%);
+  box-shadow: 0 0 0 .5px var(--edge), inset 0 1px 0 var(--rim-hi), var(--sh-1);
+  transition: opacity var(--t-fast) var(--ease-out), transform var(--t) var(--spring), background var(--t-fast);
+}
+.run-card:hover .rc-more, .run-card:focus-within .rc-more, .run-card .rc-more:focus-visible { opacity: 1; transform: none; }
+.run-card .rc-more:hover { background: var(--g-solid); }
+@media (hover: none) { .run-card .rc-more { opacity: 1; transform: none; } }
+.run-card[draggable="true"] { cursor: grab; }
+.run-card[draggable="true"]:active { cursor: grabbing; }
+body.dragging-run .run-card { transition: opacity var(--t); }
+.tbl tr[draggable="true"]:focus-visible { outline: 2px solid color-mix(in oklab, var(--accent) 45%, transparent); outline-offset: -2px; }
+
+/* 右下角回收站：常驻玻璃胶囊；拖动运行卡片时浮起、变红，松手即移入 */
+.trash-dock {
+  position: fixed; right: 26px; bottom: 24px; z-index: 60;
+  display: inline-flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px 0 8px; border: 0; border-radius: var(--r-pill); cursor: pointer;
+  color: var(--text); text-align: left;
+  transition: transform var(--t) var(--spring), box-shadow var(--t) var(--ease-out), background var(--t) var(--ease-out), padding var(--t) var(--ease);
+}
+.trash-dock:hover { transform: translateY(-2px); }
+.trash-dock:active { transform: scale(.97); }
+.trash-dock:focus-visible { outline: 0; box-shadow: 0 0 0 .5px var(--edge), 0 0 0 4px color-mix(in oklab, var(--accent) 30%, transparent), var(--sh-3); }
+.trash-dock .td-ic { position: relative; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; flex: none; background: var(--fill-2); color: var(--text-2); box-shadow: inset 0 0 0 .5px var(--hair); transition: background var(--t), color var(--t), transform var(--t) var(--spring); }
+.trash-dock.has .td-ic { color: var(--text); }
+.trash-dock .td-t { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.trash-dock .td-t b { font-size: 13px; font-weight: 650; }
+.trash-dock .td-t span { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.trash-dock .td-n { display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--fill-3); color: var(--text); }
+body.dragging-run .trash-dock { transform: translateY(-6px) scale(1.04); padding-right: 22px; background: color-mix(in oklab, var(--bad) 10%, var(--g-thick)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--bad) 35%, transparent), inset 0 1px 0 var(--rim-hi), 0 18px 44px -12px color-mix(in oklab, var(--bad) 45%, transparent); }
+body.dragging-run .trash-dock .td-ic { background: var(--bad-soft); color: var(--bad); animation: td-wiggle 1.1s var(--ease) infinite; }
+.trash-dock.over { transform: translateY(-8px) scale(1.1) !important; background: color-mix(in oklab, var(--bad) 18%, var(--g-thick)) !important; }
+.trash-dock.over .td-ic { background: var(--bad); color: #fff; animation: none; transform: scale(1.12) rotate(-8deg); }
+.trash-dock.bump .td-ic { animation: td-bump .5s var(--spring); }
+@keyframes td-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-9deg); } 75% { transform: rotate(9deg); } }
+@keyframes td-bump { 0% { transform: scale(1); } 35% { transform: scale(1.28) rotate(-10deg); } 70% { transform: scale(.94) rotate(4deg); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { body.dragging-run .trash-dock .td-ic, .trash-dock.bump .td-ic { animation: none; } }
+.page:has(.trash-dock) { padding-bottom: 96px; }
+
+/* 回收站抽屉 */
+.trash-lead { margin: 0 0 12px; line-height: 1.6; }
+.trash-lead b { color: var(--text); }
+.trash-bar { position: sticky; top: -6px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin: 0 -4px 10px; border-radius: var(--r-l); background: color-mix(in oklab, var(--g-solid) 92%, transparent); box-shadow: inset 0 0 0 .5px var(--hair); }
+.trash-day { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.trash-day-h { padding: 0 4px; font-size: 11.5px; font-weight: 650; letter-spacing: .02em; color: var(--text-3); }
+.trash-row { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: var(--r-l); background: var(--fill-1); box-shadow: inset 0 0 0 .5px var(--hair); transition: background var(--t-fast), box-shadow var(--t-fast); animation: sheet-in var(--t) var(--ease) both; }
+.trash-row:hover { background: var(--fill-2); }
+.trash-row.on { background: color-mix(in oklab, var(--accent) 8%, var(--fill-1)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent); }
+.trash-row .tr-main { min-width: 0; }
+.trash-row .tr-meta { margin-top: 3px; }
+.purge-list { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; border-radius: var(--r-m); background: var(--fill-1); box-shadow: inset 0 0 0 .5px var(--hair); max-height: 220px; overflow: auto; }
+.purge-list li { display: flex; justify-content: space-between; gap: 12px; }
+.btn.danger.solid-danger:not(:disabled) { background: color-mix(in oklab, var(--bad) 16%, transparent); box-shadow: inset 0 0 0 .5px color-mix(in oklab, var(--bad) 40%, transparent); }
+.btn.danger.solid-danger:not(:disabled):hover { background: color-mix(in oklab, var(--bad) 24%, transparent); }
+.btn.danger.solid-danger:disabled { opacity: .45; }

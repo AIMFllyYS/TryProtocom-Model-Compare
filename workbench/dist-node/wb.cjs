@@ -43,7 +43,7 @@ function findRoot() {
   }
   return process.cwd();
 }
-var BOOL = /* @__PURE__ */ new Set(["json", "all", "fast", "skip-graded", "wait", "no-wait", "errors", "follow", "mobile", "full", "show", "register", "no-grade", "timed-out", "open", "no-inject", "warnings", "help", "refresh"]);
+var BOOL = /* @__PURE__ */ new Set(["json", "all", "fast", "skip-graded", "wait", "no-wait", "errors", "follow", "mobile", "full", "show", "register", "no-grade", "timed-out", "open", "no-inject", "warnings", "help", "refresh", "yes"]);
 var flags = {};
 var pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -180,6 +180,9 @@ Skills    wb skills sync   \u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF
           wb run list [--model \u4F9B\u5E94\u5546/\u6A21\u578B] [--task T05]
           wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "\u2026"] [--wall-min 30 --cost-usd 1.2 \u2026] [--timed-out] [--register] [--no-grade]
           wb run register <ref> [--no-grade] [--fast]
+\u56DE\u6536\u7AD9    wb run stop <ref> [--reason \u2026]   \u5F7B\u5E95\u505C\u6B62\u5E76\u4F5C\u5E9F\uFF08\u5173\u6389\u8BE5\u76EE\u5F55\u7684\u5F00\u53D1\u670D\u52A1\u5668 / \u9884\u89C8\uFF1B\u5916\u90E8 Agent \u4F1A\u8BDD\u9700\u5728 harness \u91CC\u624B\u52A8\u505C\uFF09
+          wb run discard <ref|run_id> [--reason \u2026] | wb run restore <ref|run:run_id> | wb trash
+          wb trash purge <id>\u2026 --yes | wb trash purge --all --yes   \u6C38\u4E45\u5220\u9664\uFF08\u4EC5\u56DE\u6536\u7AD9\u5185\u6761\u76EE\uFF0C\u65E0\u6CD5\u6062\u590D\uFF09
 \u8BC4\u5206      wb grade [run_id\u2026|--all] [--task T05] [--fast] [--skip-graded] | wb review [--task T05]
           wb pending [--method agent|human] [--task T05] | wb score <run_id> <item_id> <0-3> --note "\u8BC1\u636E" [--by agent]
           wb show <run_id> | wb sync
@@ -541,6 +544,23 @@ ${o.slice(-30).map((x) => x.line).join("\n")}`);
       }
       die("\u7528\u6CD5\uFF1Awb store export|import <\u6587\u4EF6>");
     }
+    case "trash": {
+      const list = await get("/api/trash");
+      if (!sub || sub === "list") {
+        return out(list, () => list.length ? (table([["id", "\u9636\u6BB5", "\u65B9\u5F0F", "\u4F5C\u5E9F\u65F6\u95F4", "\u5F97\u5206", "\u539F\u56E0"], ...list.map((t) => [t.id, t.from, t.stopped ? "\u5F7B\u5E95\u505C\u6B62" : "\u5220\u9664", t.at.slice(5, 16).replace("T", " "), t.total == null ? "\u2014" : fmt(t.total), t.reason || "\u2014"])]), console.log(`
+\u56DE\u6536\u7AD9\u91CC\u7684\u8FD0\u884C\u4E0D\u53C2\u4E0E\u6392\u884C\u3001\u5BF9\u6BD4\u3001\u5F85\u8BC4\u6E05\u5355\u3001\u5BFC\u51FA\u548C\u62A5\u544A\u3002\u6062\u590D\uFF1Awb run restore <id>\uFF1B\u6C38\u4E45\u5220\u9664\uFF1Awb trash purge <id>\u2026 --yes`)) : console.log("\u56DE\u6536\u7AD9\u662F\u7A7A\u7684"));
+      }
+      if (sub === "purge") {
+        const ids = flags.all ? list.map((t) => t.id) : rest;
+        if (!ids.length) die("\u7528\u6CD5\uFF1Awb trash purge <id>\u2026 --yes   \u6216   wb trash purge --all --yes");
+        const miss = ids.filter((id) => !list.some((t) => t.id === id));
+        if (miss.length) die(`\u56DE\u6536\u7AD9\u91CC\u6CA1\u6709\uFF1A${miss.join(", ")}\uFF08\u53EA\u80FD\u6C38\u4E45\u5220\u9664\u56DE\u6536\u7AD9\u91CC\u7684\u6761\u76EE\uFF09`);
+        if (!flags.yes) die(`\u5C06\u6C38\u4E45\u5220\u9664 ${ids.length} \u6B21\u8FD0\u884C\u7684\u5168\u90E8\u6587\u4EF6\uFF08\u5DE5\u4F5C\u76EE\u5F55\u3001\u63D0\u793A\u8BCD\u7559\u6863\u3001\u6700\u540E\u56DE\u590D\u3001\u8BC4\u5206\u76EE\u5F55\uFF09\uFF0C\u65E0\u6CD5\u6062\u590D\u3002\u786E\u8BA4\u8BF7\u52A0 --yes`);
+        const r = await post("/api/trash/purge", { ids, confirm: "purge" });
+        return out(r, () => console.log(`\u2714 \u5DF2\u6C38\u4E45\u5220\u9664 ${r.purged.length} \u6B21\u8FD0\u884C`));
+      }
+      die("\u7528\u6CD5\uFF1Awb trash [list] | wb trash purge <id>\u2026 --yes | wb trash purge --all --yes");
+    }
     case "ui": {
       const params = Object.fromEntries(rest.map((kv) => kv.split("=", 2)));
       const r = await post("/api/ui", { action: sub || "open", params });
@@ -616,8 +636,26 @@ async function runCmd(sub, rest) {
       }
       return;
     }
+    case "stop":
+    case "discard": {
+      const arg = rest[0] || "";
+      if (!arg) die(`\u7528\u6CD5\uFF1Awb run ${sub} <ref|run_id> [--reason "\u539F\u56E0"]`);
+      const body = isRef(arg) || /[\\/]/.test(arg) ? { ref: await resolveRef(arg) } : { run_id: arg };
+      const r = await post("/api/runs/discard", { ...body, stop: sub === "stop", reason: str("reason") });
+      return out(r, () => {
+        console.log(r.already ? `\xB7 ${r.id} \u5DF2\u7ECF\u5728\u56DE\u6536\u7AD9\u91CC` : `\u2714 ${r.id} \u5DF2${sub === "stop" ? "\u5F7B\u5E95\u505C\u6B62\u5E76" : ""}\u79FB\u5165\u56DE\u6536\u7AD9\uFF08\u4E0D\u53C2\u4E0E\u4EFB\u4F55\u8BC4\u4F30\uFF0C\u53EF wb run restore ${r.id} \u6062\u590D\uFF09`);
+        if (r.released?.procs || r.released?.previews) console.log(`  \u5DF2\u5173\u95ED ${r.released.procs} \u4E2A\u5F00\u53D1\u670D\u52A1\u5668\u3001${r.released.previews} \u4E2A\u9884\u89C8`);
+        if (sub === "stop") console.log("  \u26A0 \u5DE5\u4F5C\u53F0\u5173\u4E0D\u6389\u5916\u90E8 Agent \u8F6F\u4EF6\u91CC\u7684\u4F1A\u8BDD\uFF1A\u8BF7\u5728 harness \u91CC\u624B\u52A8\u505C\u6B62\u5B83\uFF0C\u514D\u5F97\u7EE7\u7EED\u6D88\u8017\u989D\u5EA6");
+      });
+    }
+    case "restore": {
+      const arg = rest[0] || "";
+      if (!arg) die("\u7528\u6CD5\uFF1Awb run restore <ref|run:run_id>   \uFF08wb trash \u67E5\u770B\u56DE\u6536\u7AD9\uFF09");
+      const r = await post("/api/runs/restore", { id: isRef(arg) || arg.startsWith("run:") ? arg : /[\\/]/.test(arg) ? await resolveRef(arg) : "run:" + arg });
+      return out(r, () => console.log(`\u2714 \u5DF2\u6062\u590D ${r.id}`));
+    }
     default:
-      die("\u7528\u6CD5\uFF1Awb run new|list|start|finish|register \u2026");
+      die("\u7528\u6CD5\uFF1Awb run new|list|start|finish|register|stop|discard|restore \u2026");
   }
 }
 main().catch((e) => die(e?.message || String(e)));

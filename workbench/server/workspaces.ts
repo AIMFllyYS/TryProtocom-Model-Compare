@@ -223,10 +223,29 @@ export class Workspaces {
   patchRun(ref: string, patch: Partial<WorkspaceRun>): WorkspaceRun {
     const p = this.parseRef(ref);
     const cur = this.readRun(p.vendor, p.model, p.tkey, p.index);
-    const allowed: (keyof WorkspaceRun)[] = ['harness', 'started_at', 'ended_at', 'timed_out', 'notes', 'usage', 'grader_run_id', 'deliverable_dir', 'quota'];
+    const allowed: (keyof WorkspaceRun)[] = ['harness', 'started_at', 'ended_at', 'timed_out', 'notes', 'usage', 'grader_run_id', 'deliverable_dir', 'quota', 'discarded'];
     for (const k of allowed) if (k in patch) (cur as any)[k] = (patch as any)[k];
+    if (cur.discarded == null) delete cur.discarded;
     this.saveRun(cur);
     return this.readRun(p.vendor, p.model, p.tkey, p.index);
+  }
+
+  /** 永久删除一次运行在模型工作区里的全部文件：rN/ 以及 rN.run.json / .prompt.md / .final.md / .transcript.json / .shots/。 */
+  purgeRun(ref: string): string[] {
+    const f = this.files(ref);
+    const root = path.resolve(this.modelDir) + path.sep;
+    const targets = [f.ws, f.run, f.prompt, f.final, f.transcript, `${f.ws}.shots`];
+    const removed: string[] = [];
+    for (const t of targets) {
+      const abs = path.resolve(t);
+      if (!abs.startsWith(root)) throw new HttpError(400, `拒绝删除工作区之外的路径：${abs}`);
+      if (!fs.existsSync(abs)) continue;
+      fs.rmSync(abs, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+      removed.push(abs);
+    }
+    // 题号目录空了就一并清掉（不动模型目录和 model.json）
+    try { if (!fs.readdirSync(f.taskDir).length) fs.rmdirSync(f.taskDir); } catch { /* 目录不在或非空 */ }
+    return removed;
   }
 
   writeFinal(ref: string, text: string) { fs.writeFileSync(this.files(ref).final, text, 'utf8'); }

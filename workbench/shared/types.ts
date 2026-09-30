@@ -94,6 +94,26 @@ export interface WorkspaceRun {
   detect?: DetectResult;               // 交付检测（服务端实时计算）
   auto_finished?: boolean;             // 由 FINAL_MESSAGE.md 自动结束计时
   quota?: RunQuota;                    // 订阅额度记录
+  discarded?: DiscardInfo | null;      // 已移入回收站（不参与任何评估；可恢复）
+}
+
+/** 作废标记：写在 rN.run.json 里（磁盘为准），恢复时清除。 */
+export interface DiscardInfo {
+  at: string;
+  reason?: string;
+  stopped?: boolean;                   // 由“彻底停止”作废（运行中被终止）
+  from?: string;                       // 作废前所处阶段：未开始 / 进行中 / 已交付 / 待评分 / 已完成
+  set_ended?: boolean;                 // 结束时间是停止时补记的：恢复时清掉，回到进行中
+}
+
+/** 回收站条目：已作废的运行。排行、对比、待评清单、导出、报告、宠物全部看不到它。 */
+export interface TrashEntry {
+  id: string;                          // 工作区 ref，或 run:<run_id>（只有存储记录、没有本机工作区）
+  ref: string | null; run_id: string | null;
+  vendor: string | null; model: string; task: string; variant: string | null; tkey: string; index: number | null; harness: string;
+  at: string; reason: string; stopped: boolean; from: string;
+  started_at: string | null; ended_at: string | null; total: number | null; graded: boolean;
+  ws?: WorkspaceRun; run?: StoreRun;   // 作废时的快照：恢复（或在另一台电脑上恢复）用
 }
 
 export interface WbSettings {
@@ -115,6 +135,7 @@ export interface BenchStore {
   settings: WbSettings;
   models: ModelProfile[]; runs: StoreRun[]; workspaces: WorkspaceRun[]; notes: StoreNote[];
   history: StoreHistory[]; spec?: SpecData | null;
+  trash?: TrashEntry[];
 }
 
 // ---------- 汇总 ----------

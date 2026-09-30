@@ -1930,7 +1930,39 @@ var import_node_fs7 = __toESM(require("node:fs"), 1);
 var import_node_path6 = __toESM(require("node:path"), 1);
 function emptyStore() {
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  return { schema: "bench-store/1", created_at: now, updated_at: now, machine: machineName(), benchmark: {}, settings: {}, models: [], runs: [], workspaces: [], notes: [], history: [], spec: null };
+  return { schema: "bench-store/1", created_at: now, updated_at: now, machine: machineName(), benchmark: {}, settings: {}, models: [], runs: [], workspaces: [], notes: [], history: [], spec: null, trash: [] };
+}
+function stageLabel(w, run) {
+  if (run) return run.graded ? run.score?.complete ? "\u5DF2\u5B8C\u6210" : "\u5F85\u8BC4\u5206" : "\u5F85\u8BC4\u5206";
+  if (!w) return "\u2014";
+  if (w.ended_at || w.detect?.final) return "\u5DF2\u4EA4\u4ED8";
+  if (w.started_at) return "\u8FDB\u884C\u4E2D";
+  return "\u672A\u5F00\u59CB";
+}
+function trashEntryOf(w, run, d) {
+  const ref = w?.ref || run?.ws_ref || null;
+  return {
+    id: w?.ref || "run:" + run.run_id,
+    ref,
+    run_id: run?.run_id || w?.grader_run_id || null,
+    vendor: w?.vendor || run?.vendor || null,
+    model: w?.model || run.model,
+    task: w?.task || run.task,
+    variant: w?.variant ?? run?.variant ?? null,
+    tkey: w?.tkey || run.tkey,
+    index: w?.index ?? run?.run_index ?? null,
+    harness: w?.harness || run?.harness || "",
+    at: d.at,
+    reason: d.reason || "",
+    stopped: !!d.stopped,
+    from: d.from || stageLabel(w, run),
+    started_at: w?.started_at ?? run?.started_at ?? null,
+    ended_at: w?.ended_at ?? run?.ended_at ?? null,
+    total: run?.score?.total ?? null,
+    graded: !!run?.graded,
+    ws: w ? { ...w, discarded: d } : void 0,
+    run
+  };
 }
 var StoreFile = class {
   constructor(file) {
@@ -2002,19 +2034,63 @@ var StoreFile = class {
       };
       byId.set(run.run_id, run);
     }
-    this.data.runs = [...byId.values()].sort((a, b) => a.tkey.localeCompare(b.tkey) || a.entrant.localeCompare(b.entrant) || (a.run_index ?? 0) - (b.run_index ?? 0));
     const mm = new Map(this.data.models.map((x) => [`${x.vendor}/${x.name}`, x]));
     for (const x of models) mm.set(`${x.vendor}/${x.name}`, x);
     this.data.models = [...mm.values()].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
     const wm = new Map(this.data.workspaces.map((x) => [x.ref, x]));
-    for (const w of wss) wm.set(w.ref, { ...w, status: this.wsStatus(w) });
+    for (const w of wss) wm.set(w.ref, w);
     const local = new Set(wss.map((w) => w.ref));
     const localModels = new Set(models.map((x) => `${x.vendor}/${x.name}`));
-    for (const ref of [...wm.keys()]) {
+    const isLocalModel = (ref) => {
       const [v, n] = ref.split("/");
-      if (localModels.has(`${v}/${n}`) && !local.has(ref)) wm.delete(ref);
+      return localModels.has(`${v}/${n}`);
+    };
+    for (const ref of [...wm.keys()]) if (isLocalModel(ref) && !local.has(ref)) wm.delete(ref);
+    const trash = new Map((this.data.trash || []).map((t) => [t.id, t]));
+    for (const [id, t] of trash) {
+      if (!t.ref) continue;
+      const w = wm.get(t.ref);
+      if (w && !w.discarded) {
+        trash.delete(id);
+        if (t.run && !byId.has(t.run.run_id)) byId.set(t.run.run_id, t.run);
+      } else if (!w && isLocalModel(t.ref) && !local.has(t.ref)) trash.delete(id);
     }
+    for (const w of [...wm.values()]) {
+      if (!w.discarded) continue;
+      wm.delete(w.ref);
+      const prev = trash.get(w.ref);
+      const rid = w.grader_run_id || prev?.run_id || null;
+      const run = (rid ? byId.get(rid) : void 0) || prev?.run || [...byId.values()].find((r) => r.ws_ref === w.ref);
+      trash.set(w.ref, trashEntryOf(w, run, w.discarded));
+    }
+    for (const t of trash.values()) if (t.run_id) byId.delete(t.run_id);
+    this.data.trash = [...trash.values()].sort((a, b) => b.at.localeCompare(a.at));
+    this.data.runs = [...byId.values()].sort((a, b) => a.tkey.localeCompare(b.tkey) || a.entrant.localeCompare(b.entrant) || (a.run_index ?? 0) - (b.run_index ?? 0));
+    for (const [k, w] of wm) wm.set(k, { ...w, status: this.wsStatus(w) });
     this.data.workspaces = [...wm.values()].sort((a, b) => a.ref.localeCompare(b.ref, void 0, { numeric: true }));
+  }
+  /** 只有存储记录的运行（没有本机工作区）直接移入回收站。 */
+  trashStoreOnly(entry) {
+    const trash = this.data.trash || [];
+    this.data.trash = [entry, ...trash.filter((t) => t.id !== entry.id)];
+    if (entry.run_id) this.data.runs = this.data.runs.filter((r) => r.run_id !== entry.run_id);
+    if (entry.ref) this.data.workspaces = this.data.workspaces.filter((w) => w.ref !== entry.ref);
+  }
+  /** 恢复只有存储记录的条目：快照放回 runs / workspaces。 */
+  restoreStoreOnly(id) {
+    const t = (this.data.trash || []).find((x) => x.id === id);
+    if (!t) return null;
+    this.data.trash = (this.data.trash || []).filter((x) => x.id !== id);
+    if (t.run && !this.data.runs.some((r) => r.run_id === t.run.run_id)) this.data.runs.push({ ...t.run, synced_at: (/* @__PURE__ */ new Date()).toISOString() });
+    if (t.ws && !this.data.workspaces.some((w) => w.ref === t.ws.ref)) {
+      const { discarded: _d, ...w } = t.ws;
+      this.data.workspaces.push(w);
+    }
+    return t;
+  }
+  dropTrash(ids) {
+    const s = new Set(ids);
+    this.data.trash = (this.data.trash || []).filter((t) => !s.has(t.id));
   }
   wsStatus(w) {
     if (w.grader_run_id) {
@@ -2036,8 +2112,16 @@ var StoreFile = class {
   importFrom(other) {
     if (other?.schema !== "bench-store/1") throw new Error("\u4E0D\u662F bench-store/1 \u683C\u5F0F\u7684\u5B58\u50A8\u6587\u4EF6");
     const stat = { runs: 0, models: 0, workspaces: 0, notes: 0 };
+    const trash = new Map((this.data.trash || []).map((t) => [t.id, t]));
+    const liveRefs = new Set(this.data.workspaces.map((w) => w.ref));
+    const liveIds = new Set(this.data.runs.map((r) => r.run_id));
+    for (const t of other.trash || []) if (!trash.has(t.id) && !(t.ref && liveRefs.has(t.ref)) && !(t.run_id && liveIds.has(t.run_id))) trash.set(t.id, t);
+    this.data.trash = [...trash.values()];
+    const trashedIds = new Set(this.data.trash.map((t) => t.run_id).filter(Boolean));
+    const trashedRefs = new Set(this.data.trash.map((t) => t.ref).filter(Boolean));
     const runs = new Map(this.data.runs.map((r) => [r.run_id, r]));
     for (const r of other.runs || []) {
+      if (trashedIds.has(r.run_id)) continue;
       const cur = runs.get(r.run_id);
       if (!cur || (r.synced_at || "") > (cur.synced_at || "")) {
         runs.set(r.run_id, r);
@@ -2052,7 +2136,7 @@ var StoreFile = class {
     }
     this.data.models = [...models.values()];
     const wss = new Map(this.data.workspaces.map((w) => [w.ref, w]));
-    for (const w of other.workspaces || []) if (!wss.has(w.ref)) {
+    for (const w of other.workspaces || []) if (!wss.has(w.ref) && !trashedRefs.has(w.ref)) {
       wss.set(w.ref, w);
       stat.workspaces++;
     }
@@ -2345,10 +2429,30 @@ var Workspaces = class {
   patchRun(ref, patch) {
     const p = this.parseRef(ref);
     const cur = this.readRun(p.vendor, p.model, p.tkey, p.index);
-    const allowed = ["harness", "started_at", "ended_at", "timed_out", "notes", "usage", "grader_run_id", "deliverable_dir", "quota"];
+    const allowed = ["harness", "started_at", "ended_at", "timed_out", "notes", "usage", "grader_run_id", "deliverable_dir", "quota", "discarded"];
     for (const k of allowed) if (k in patch) cur[k] = patch[k];
+    if (cur.discarded == null) delete cur.discarded;
     this.saveRun(cur);
     return this.readRun(p.vendor, p.model, p.tkey, p.index);
+  }
+  /** 永久删除一次运行在模型工作区里的全部文件：rN/ 以及 rN.run.json / .prompt.md / .final.md / .transcript.json / .shots/。 */
+  purgeRun(ref) {
+    const f2 = this.files(ref);
+    const root = import_node_path7.default.resolve(this.modelDir) + import_node_path7.default.sep;
+    const targets = [f2.ws, f2.run, f2.prompt, f2.final, f2.transcript, `${f2.ws}.shots`];
+    const removed = [];
+    for (const t of targets) {
+      const abs = import_node_path7.default.resolve(t);
+      if (!abs.startsWith(root)) throw new HttpError(400, `\u62D2\u7EDD\u5220\u9664\u5DE5\u4F5C\u533A\u4E4B\u5916\u7684\u8DEF\u5F84\uFF1A${abs}`);
+      if (!import_node_fs8.default.existsSync(abs)) continue;
+      import_node_fs8.default.rmSync(abs, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+      removed.push(abs);
+    }
+    try {
+      if (!import_node_fs8.default.readdirSync(f2.taskDir).length) import_node_fs8.default.rmdirSync(f2.taskDir);
+    } catch {
+    }
+    return removed;
   }
   writeFinal(ref, text) {
     import_node_fs8.default.writeFileSync(this.files(ref).final, text, "utf8");
@@ -2451,6 +2555,7 @@ async function startServer(over = {}) {
   function registerWs(ref, opts) {
     const pr = ws.parseRef(ref);
     const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+    if (w.discarded) throw new HttpError(409, `${ref} \u5728\u56DE\u6536\u7AD9\u91CC\uFF0C\u4E0D\u53C2\u4E0E\u8BC4\u4F30\uFF1B\u5148\u6062\u590D\u518D\u767B\u8BB0`);
     if (w.grader_run_id && import_node_fs9.default.existsSync(import_node_path8.default.join(cfg.benchData, "runs", w.grader_run_id))) throw new HttpError(409, `\u5DF2\u767B\u8BB0\u4E3A ${w.grader_run_id}\uFF1B\u5982\u9700\u91CD\u65B0\u767B\u8BB0\u8BF7\u5148\u5728 run.json \u6E05\u7A7A grader_run_id`);
     if (!w.harness) throw new HttpError(400, "\u8BF7\u5148\u586B\u5199 harness\uFF08\u4F8B\u5982 Claude Code / Codex CLI / Kiro\uFF09");
     const f2 = ws.files(ref);
@@ -2472,6 +2577,12 @@ async function startServer(over = {}) {
       if (!rid) throw new Error("\u65E0\u6CD5\u4ECE\u8F93\u51FA\u4E2D\u89E3\u6790\u8FD0\u884C id");
       ws.patchRun(ref, { grader_run_id: rid });
       store.log("register", `${ref} \u2192 ${rid}`);
+      const now = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      if (now.discarded) {
+        moveGrader(rid, "trash");
+        refreshWorkspaces();
+        return { run_id: rid, discarded: true };
+      }
       if (opts.grade) gradeRuns([import_node_path8.default.join(cfg.benchData, "runs", rid)], { fast: opts.fast });
       else await sync();
       return { run_id: rid };
@@ -2501,7 +2612,7 @@ async function startServer(over = {}) {
     materials: t.materials,
     condition: t.condition
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
-  const claimable = (vendor, model, tkey) => ws.listRuns().find((w) => w.vendor === vendor && w.model === model && w.tkey === tkey && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
+  const claimable = (vendor, model, tkey) => ws.listRuns().find((w) => w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
   async function promptFor(q) {
     const { s, t } = await findTask(q.task);
     const variant = q.variant || null;
@@ -2645,6 +2756,113 @@ async function startServer(over = {}) {
   };
   const detectTimer = setInterval(detectTick, 3e3);
   detectTimer.unref();
+  const graderTrash = import_node_path8.default.join(cfg.benchData, "trash");
+  const RID = /^[\w.-]+$/;
+  function moveGrader(rid, to) {
+    if (!RID.test(rid)) throw new HttpError(400, `\u8FD0\u884C id \u4E0D\u5408\u6CD5\uFF1A${rid}`);
+    const live = import_node_path8.default.join(cfg.benchData, "runs", rid), bin = import_node_path8.default.join(graderTrash, rid);
+    const [src, dst] = to === "trash" ? [live, bin] : [bin, live];
+    if (!import_node_fs9.default.existsSync(src)) return false;
+    if (import_node_fs9.default.existsSync(dst)) throw new HttpError(409, `\u76EE\u6807\u5DF2\u5B58\u5728\uFF1A${toRel(cfg.root, dst)}`);
+    import_node_fs9.default.mkdirSync(import_node_path8.default.dirname(dst), { recursive: true });
+    try {
+      import_node_fs9.default.renameSync(src, dst);
+    } catch (e) {
+      throw new HttpError(409, `\u8BC4\u5206\u76EE\u5F55\u88AB\u5360\u7528\uFF0C\u6682\u65F6\u632A\u4E0D\u52A8\uFF08${e.code || "EBUSY"}\uFF09\uFF1A\u5173\u6389\u6B63\u5728\u9884\u89C8\u5B83\u7684\u7A97\u53E3\u540E\u518D\u8BD5`);
+    }
+    return true;
+  }
+  const busyJob = (keys) => jobs.list.find((j) => (j.status === "running" || j.status === "queued") && keys.some((k) => k && jobs.info(j).title.includes(k)));
+  function releaseFolder(dir) {
+    const base = import_node_path8.default.resolve(dir).toLowerCase();
+    const inside = (p) => !!p && (import_node_path8.default.resolve(p).toLowerCase() + import_node_path8.default.sep).startsWith(base + import_node_path8.default.sep);
+    let np = 0, nv = 0;
+    for (const p of procs.all()) if (p.status === "running" && inside(p.cwd)) {
+      try {
+        procs.stop(p.id);
+        np++;
+      } catch {
+      }
+    }
+    for (const s of previews.list()) if (s.kind === "static" && inside(s.root)) {
+      if (previews.close(s.id)) nv++;
+    }
+    return { procs: np, previews: nv };
+  }
+  async function discardRun(b) {
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    const stop = !!b.stop;
+    let ref = b.ref || store.data.runs.find((r) => r.run_id === b.run_id)?.ws_ref || null;
+    if (ref && !import_node_fs9.default.existsSync(ws.files(ref).run) && !import_node_fs9.default.existsSync(ws.files(ref).ws)) ref = null;
+    if (ref) {
+      const pr = ws.parseRef(ref);
+      const w2 = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      if (w2.discarded) return { ok: true, id: ref, already: true, released: { procs: 0, previews: 0 } };
+      const j2 = busyJob([ref, w2.grader_run_id]);
+      if (j2) throw new HttpError(409, `\u201C${jobs.info(j2).title}\u201D\u8FD8\u5728\u8FDB\u884C\uFF0C\u7B49\u5B83\u7ED3\u675F\u518D\u4F5C\u5E9F`);
+      const run2 = w2.grader_run_id ? store.data.runs.find((r) => r.run_id === w2.grader_run_id) : void 0;
+      const released = releaseFolder(ws.files(ref).ws);
+      if (w2.grader_run_id) moveGrader(w2.grader_run_id, "trash");
+      const setEnded = stop && !!w2.started_at && !w2.ended_at;
+      ws.patchRun(ref, {
+        discarded: { at, reason: b.reason || (stop ? "\u624B\u52A8\u5F7B\u5E95\u505C\u6B62" : "\u79FB\u5165\u56DE\u6536\u7AD9"), stopped: stop, from: stageLabel(w2, run2), set_ended: setEnded || void 0 },
+        ...setEnded ? { ended_at: at } : {}
+      });
+      store.log(stop ? "run-stop" : "run-discard", `${ref}${b.reason ? " \xB7 " + b.reason : ""}`);
+      refreshWorkspaces();
+      return { ok: true, id: ref, released };
+    }
+    const run = store.data.runs.find((r) => r.run_id === b.run_id);
+    if (!run) throw new HttpError(404, `\u8FD0\u884C\u4E0D\u5B58\u5728\uFF1A${b.run_id || b.ref}`);
+    const j = busyJob([run.run_id]);
+    if (j) throw new HttpError(409, `\u201C${jobs.info(j).title}\u201D\u8FD8\u5728\u8FDB\u884C\uFF0C\u7B49\u5B83\u7ED3\u675F\u518D\u4F5C\u5E9F`);
+    moveGrader(run.run_id, "trash");
+    const w = run.ws_ref ? store.data.workspaces.find((x) => x.ref === run.ws_ref) : void 0;
+    const entry = trashEntryOf(w, run, { at, reason: b.reason || "\u79FB\u5165\u56DE\u6536\u7AD9", stopped: false, from: stageLabel(w, run) });
+    if (!w) entry.id = "run:" + run.run_id;
+    store.trashStoreOnly(entry);
+    store.log("run-discard", `run ${run.run_id}`);
+    store.save();
+    hub.emit({ type: "store", updated_at: store.data.updated_at });
+    return { ok: true, id: entry.id, released: { procs: 0, previews: 0 } };
+  }
+  function restoreRun(id) {
+    const t = (store.data.trash || []).find((x) => x.id === id);
+    if (!t) throw new HttpError(404, `\u56DE\u6536\u7AD9\u91CC\u6CA1\u6709\uFF1A${id}`);
+    if (t.run_id) moveGrader(t.run_id, "runs");
+    if (t.ref && import_node_fs9.default.existsSync(ws.files(t.ref).run)) {
+      const pr = ws.parseRef(t.ref);
+      const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      ws.patchRun(t.ref, { discarded: null, ...w.discarded?.set_ended ? { ended_at: null } : {} });
+    } else store.restoreStoreOnly(id);
+    store.log("run-restore", id);
+    refreshWorkspaces();
+    return { ok: true, id };
+  }
+  function purgeTrash(ids) {
+    const out = [];
+    for (const id of ids) {
+      const t = (store.data.trash || []).find((x) => x.id === id);
+      if (!t) continue;
+      let removed = 0;
+      if (t.ref) {
+        releaseFolder(ws.files(t.ref).ws);
+        removed += ws.purgeRun(t.ref).length;
+      }
+      if (t.run_id && RID.test(t.run_id)) {
+        const bin = import_node_path8.default.join(graderTrash, t.run_id);
+        if (import_node_fs9.default.existsSync(bin)) {
+          import_node_fs9.default.rmSync(bin, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+          removed++;
+        }
+      }
+      store.dropTrash([id]);
+      store.log("run-purge", `${id}\uFF08${removed} \u4E2A\u6587\u4EF6/\u76EE\u5F55\uFF09`);
+      out.push({ id, removed });
+    }
+    refreshWorkspaces();
+    return { ok: true, purged: out };
+  }
   R.get("/api/session", () => ({
     version: VERSION,
     token: cfg.token,
@@ -2849,14 +3067,22 @@ async function startServer(over = {}) {
     p.on("error", () => res.end());
     return void 0;
   });
+  const liveRun = (ref) => {
+    const pr = ws.parseRef(ref);
+    const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+    if (w.discarded) throw new HttpError(409, `${ref} \u5728\u56DE\u6536\u7AD9\u91CC\uFF1B\u5148\u5728\u300C\u8FD0\u884C \u2192 \u56DE\u6536\u7AD9\u300D\u6062\u590D\u5B83`);
+    return w;
+  };
   R.post("/api/ws/start", async (req) => {
     const b = await readJson(req);
+    liveRun(b.ref);
     const r = ws.patchRun(b.ref, { started_at: b.at || (/* @__PURE__ */ new Date()).toISOString(), ended_at: null });
     refreshWorkspaces();
     return r;
   });
   R.post("/api/ws/finish", async (req) => {
     const b = await readJson(req);
+    liveRun(b.ref);
     if (typeof b.final_message === "string" && b.final_message.trim()) ws.writeFinal(b.ref, b.final_message);
     if (b.transcript) ws.writeTranscript(b.ref, b.transcript);
     const patch = { ended_at: b.at || (/* @__PURE__ */ new Date()).toISOString() };
@@ -2870,11 +3096,28 @@ async function startServer(over = {}) {
     return { run: r, job };
   });
   R.post("/api/ws/patch", async (req) => {
-    const b = await readJson(req);
+    const { discarded: _d, ...b } = await readJson(req);
     if (typeof b.final_message === "string") ws.writeFinal(b.ref, b.final_message);
     const r = ws.patchRun(b.ref, b);
     refreshWorkspaces();
     return r;
+  });
+  R.get("/api/trash", () => store.data.trash || []);
+  R.post("/api/runs/discard", async (req) => {
+    const b = await readJson(req);
+    if (!b.ref && !b.run_id) throw new HttpError(400, "\u9700\u8981 ref\uFF08\u4F9B\u5E94\u5546/\u6A21\u578B/\u9898\u53F7/rN\uFF09\u6216 run_id");
+    return discardRun({ ref: b.ref, run_id: b.run_id, stop: !!b.stop, reason: typeof b.reason === "string" ? b.reason.slice(0, 200) : void 0 });
+  });
+  R.post("/api/runs/restore", async (req) => {
+    const b = await readJson(req);
+    return restoreRun(String(b.id || b.ref || (b.run_id ? "run:" + b.run_id : "")));
+  });
+  R.post("/api/trash/purge", async (req) => {
+    const b = await readJson(req);
+    if (b.confirm !== "purge") throw new HttpError(400, '\u6C38\u4E45\u5220\u9664\u9700\u8981 confirm: "purge"\uFF08\u5220\u9664\u540E\u65E0\u6CD5\u6062\u590D\uFF09');
+    const ids = b.all ? (store.data.trash || []).map((t) => t.id) : Array.isArray(b.ids) ? b.ids.map(String) : [];
+    if (!ids.length) throw new HttpError(400, "\u6CA1\u6709\u8981\u5220\u9664\u7684\u6761\u76EE");
+    return purgeTrash(ids);
   });
   R.get("/api/ws/final", (req) => {
     const f2 = ws.files(req.query.get("ref") || "");

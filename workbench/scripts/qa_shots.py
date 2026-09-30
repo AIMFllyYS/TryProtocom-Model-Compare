@@ -68,6 +68,11 @@ agg = {'board': board, 'tasks': agg_tasks, 'items': [{'task': 'T05', 'item_id': 
        'uplift': [], 'failures': [], 'entrants': [b['entrant'] for b in board], 'tkeys': TK, 'generated_at': iso(now), 'pending': {'human': 6, 'agent': 11, 'usage_missing': 2, 'ungraded': 0, 'low_confidence': 0}}
 history = [{'at': iso(now - 60 * k), 'action': a, 'detail': d} for k, (a, d) in enumerate([('ws-create', 'OpenAI/GPT-6.1-Sol/T07/r2'), ('register', 'OpenAI/GPT-6.1-Sol/T05/r3 → T05-2211-3'), ('model', '新增/更新模型 Moonshot/Kimi-K3'), ('sync', '同步 96 次运行')])]
 mstore = {**store, 'models': models, 'runs': runs, 'workspaces': workspaces, 'history': history, 'settings': {'current_model': 'OpenAI/GPT-6.1-Sol', 'default_harness': 'deepseek-harness'}}
+def _trash(v, n, tk, i, stopped, frm, mins, total=None, rid=None, reason=''):
+    return {'id': f'{v}/{n}/{tk}/r{i}', 'ref': f'{v}/{n}/{tk}/r{i}', 'run_id': rid, 'vendor': v, 'model': n, 'task': tk[:3], 'variant': tk[3:] or None, 'tkey': tk, 'index': i, 'harness': 'Codex 桌面版',
+            'at': iso(now - 60 * mins), 'reason': reason or ('手动彻底停止' if stopped else '移入回收站'), 'stopped': stopped, 'from': frm, 'started_at': iso(now - 60 * mins - 200), 'ended_at': iso(now - 60 * mins), 'total': total, 'graded': total is not None}
+mstore['trash'] = [_trash('OpenAI', 'GPT-6.1-Sol', 'T01', 4, True, '进行中', 3), _trash('OpenAI', 'GPT-6.1-Sol', 'T03A', 2, False, '已交付', 45, reason='A 组误发成了 C 组提示词'),
+                   _trash('Anthropic', 'claude-opus-5.5', 'T05', 4, False, '已完成', 60 * 26, total=71.4, rid='T05-9f2a1c3d')]
 session = {'version': '1.0.0', 'token': 't', 'port': 41873, 'preview_ports': [41901, 41999], 'root': str(ROOT), 'python': 'python', 'desktop': False, 'started_at': now * 1000, 'github': 'https://github.com/AIMFllyYS/TryProtocom-Model-Compare',
            'paths': {'model': str(ROOT / 'model'), 'bench_data': str(ROOT / 'bench-data'), 'store': str(ROOT / 'data' / 'bench-store.json'), 'reports': str(ROOT / 'reports'), 'grader': str(ROOT / 'skills' / 'bench-grader'), 'skill': str(ROOT / 'skills' / 'bench-workbench'), 'agents_skills': str(ROOT / '.agents' / 'skills')}}
 harness = [{'id': 'deepseek-harness', 'name': 'DeepSeek Harness', 'kind': 'app', 'icon': 'deepseek', 'path': 'C:/x/DeepSeek Harness.exe', 'installed': True}, {'id': 'claude-code', 'name': 'Claude Code', 'kind': 'cli', 'icon': 'claudecode', 'path': 'claude.cmd', 'installed': True},
@@ -150,6 +155,28 @@ with sync_playwright() as pw:
                 page.screenshot(path=str(OUT / f'{theme}-launch-drag.png'))
                 page.mouse.up(); page.wait_for_timeout(900)
                 page.screenshot(path=str(OUT / f'{theme}-launch-stamp.png'))
+        if not ONLY or 'trash' in ONLY:
+            page.goto('http://wb.local/#/runs', timeout=20000); page.wait_for_timeout(900)
+            card = page.locator('.run-card.live').first
+            card.hover(); page.wait_for_timeout(250)
+            bb = card.bounding_box()
+            page.mouse.click(bb['x'] + 60, bb['y'] + 30, button='right'); page.wait_for_timeout(450)
+            page.screenshot(path=str(OUT / f'{theme}-ctx.png'))
+            page.keyboard.press('Escape'); page.wait_for_timeout(200)
+            page.evaluate("document.body.classList.add('dragging-run')"); page.wait_for_timeout(400)
+            page.screenshot(path=str(OUT / f'{theme}-dock-drag.png'))
+            page.evaluate("document.querySelector('.trash-dock').classList.add('over')"); page.wait_for_timeout(350)
+            page.screenshot(path=str(OUT / f'{theme}-dock-over.png'), clip={'x': 900, 'y': 700, 'width': 600, 'height': 240})
+            page.evaluate("document.body.classList.remove('dragging-run'); document.querySelector('.trash-dock').classList.remove('over')")
+            page.locator('.trash-dock').click(); page.wait_for_timeout(700)
+            page.screenshot(path=str(OUT / f'{theme}-trash.png'))
+            page.get_by_role('button', name='清空').click(); page.wait_for_timeout(500)
+            page.screenshot(path=str(OUT / f'{theme}-purge.png'))
+            page.locator('.ack .check').click(); page.wait_for_timeout(250)
+            page.screenshot(path=str(OUT / f'{theme}-purge-ack.png'))
+            page.keyboard.press('Escape'); page.wait_for_timeout(200); page.keyboard.press('Escape'); page.wait_for_timeout(200)
+            page.goto('http://wb.local/#/runs/OpenAI/GPT-6.1-Sol/T01/r4', timeout=20000); page.wait_for_timeout(700)
+            page.screenshot(path=str(OUT / f'{theme}-trashed-detail.png'))
         if not ONLY or 'pet' in ONLY:
             page.goto('http://wb.local/pet.html', timeout=20000); page.wait_for_timeout(900)
             page.screenshot(path=str(OUT / f'{theme}-pet-orb.png'))
