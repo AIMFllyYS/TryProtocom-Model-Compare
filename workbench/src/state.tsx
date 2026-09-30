@@ -1,6 +1,6 @@
 // 全局数据层：会话、题库规范、存储文件、汇总、任务、预览会话与进程。SSE 事件驱动增量刷新。
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, ProcInfo, RequestEntry, SessionInfo, SpecData, WbEvent } from '../shared/types';
+import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, ProcInfo, RequestEntry, SessionInfo, SpecData, StoreRun, WbEvent } from '../shared/types';
 import type { HarnessInfo } from '../server/harness';
 import { boot, connectEvents, get, post, type Conn } from './api';
 import { go, normView } from './lib/router';
@@ -66,6 +66,8 @@ export interface Wb {
   procs: ProcInfo[];
   conn: Conn;
   refresh: (what?: ('spec' | 'store' | 'agg' | 'jobs' | 'previews' | 'procs' | 'harness')[]) => Promise<void>;
+  /** 用接口回执就地更新一次运行（不等全量刷新）；随后的 SSE 刷新会再校准一次 */
+  patchRun: (runId: string, patch: Partial<StoreRun>) => void;
   runJob: (body: Record<string, unknown>, label?: string) => Promise<JobInfo | null>;
   blind: boolean;
   setBlind: (b: boolean) => void;
@@ -114,6 +116,10 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     const rs = await Promise.allSettled(tasks);
     const bad = rs.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
     if (bad) toast.error('刷新失败：' + (bad.reason?.message || bad.reason));
+  }, []);
+
+  const patchRun = useCallback<Wb['patchRun']>((runId, patch) => {
+    setStore((s) => (s ? { ...s, runs: s.runs.map((r) => (r.run_id === runId ? { ...r, ...patch } : r)) } : s));
   }, []);
 
   const start = useCallback(() => {
@@ -178,8 +184,8 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     } catch (e: any) { toast.error(e.message); return null; }
   }, []);
 
-  const value = useMemo<Wb | null>(() => session && { session, spec, store, agg, jobs, previews, procs, conn, refresh, runJob, blind, setBlind, harness, current, setCurrent },
-    [session, spec, store, agg, jobs, previews, procs, conn, refresh, runJob, blind, harness, current, setCurrent]);
+  const value = useMemo<Wb | null>(() => session && { session, spec, store, agg, jobs, previews, procs, conn, refresh, patchRun, runJob, blind, setBlind, harness, current, setCurrent },
+    [session, spec, store, agg, jobs, previews, procs, conn, refresh, patchRun, runJob, blind, harness, current, setCurrent]);
   if (!value) return <>{fallback(err, start)}</>;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

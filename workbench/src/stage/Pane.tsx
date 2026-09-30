@@ -1,5 +1,5 @@
 // 预览窗格：地址栏 + 设备/缩放/旋转 + 视口（网页版 iframe，桌面版 Chromium webview）+ 可停靠的 F12 面板。
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Bug, Camera, ExternalLink, Maximize2, Minimize2, MonitorSmartphone, RotateCcw, RotateCw, ScanSearch, Smartphone, Terminal, X } from 'lucide-react';
 import type { LogEntry, PreviewSession } from '../../shared/types';
 import { desktop, post, rawUrl } from '../api';
@@ -19,7 +19,13 @@ interface WebviewEl extends HTMLElement {
   setZoomFactor(f: number): void; getURL(): string; getTitle(): string; openDevTools(): void; isDevToolsOpened(): boolean; closeDevTools(): void; executeJavaScript(code: string): Promise<unknown>;
 }
 
-export function Pane({ pane, session, focused, onFocus, onChange, onClose, dtHeight = 260 }: { pane: PaneState; session?: PreviewSession; focused: boolean; onFocus: () => void; onChange: (p: Partial<PaneState>) => void; onClose: () => void; dtHeight?: number }) {
+type PaneProps = { pane: PaneState; session?: PreviewSession; focused: boolean; onFocus: () => void; onChange: (p: Partial<PaneState>) => void; onClose: () => void; dtHeight?: number };
+
+/** 舞台每次收到存储 / 任务推送都会重渲染；窗格（iframe + F12 面板）只在自己的数据变化时才重渲染。
+ *  回调由 Stage 通过 ref 转发到最新实现，所以比较时可以忽略函数引用。 */
+export const Pane = memo(PaneImpl, (a, b) => a.pane === b.pane && a.session === b.session && a.focused === b.focused && a.dtHeight === b.dtHeight);
+
+function PaneImpl({ pane, session, focused, onFocus, onChange, onClose, dtHeight = 260 }: PaneProps) {
   const box = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);

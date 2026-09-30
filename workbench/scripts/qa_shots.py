@@ -109,6 +109,18 @@ def handle(route):
     if u.path.startswith('/api/'):
         if u.path == '/api/events':
             return route.fulfill(status=200, headers={'content-type': 'text/event-stream'}, body='retry: 600000\ndata: {"type":"hello","at":0}\n\n')
+        if route.request.method == 'POST' and u.path.startswith('/api/runs/') and u.path.endswith('/manual'):
+            # 模拟人工分保存：稍慢一点（400ms），检验界面是否乐观更新、不等回执
+            rid = u.path.split('/')[3]
+            b = json.loads(route.request.post_data or '{}')
+            run = next(r for r in runs if r['run_id'] == rid)
+            if b.get('score') in ('', None): run['manual'].pop(b['item'], None)
+            else: run['manual'][b['item']] = {'score': float(b['score']), 'note': b.get('note', ''), 'by': 'human'}
+            for it in run['score']['items']:
+                if it['id'] == b['item']:
+                    it['status'] = 'scored' if b['item'] in run['manual'] else 'pending'; it['s'] = (run['manual'][b['item']]['score'] / 3) if b['item'] in run['manual'] else None
+            time.sleep(0.4)
+            return route.fulfill(status=200, content_type='application/json', body=json.dumps({'ok': True, 'score': run['score'], 'manual': run['manual']}, ensure_ascii=False))
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         return route.fulfill(status=200, content_type='application/json', body=json.dumps(api(u.path, q), ensure_ascii=False))
     p = DIST / (u.path.lstrip('/') or 'index.html')
@@ -177,6 +189,27 @@ with sync_playwright() as pw:
             page.keyboard.press('Escape'); page.wait_for_timeout(200); page.keyboard.press('Escape'); page.wait_for_timeout(200)
             page.goto('http://wb.local/#/runs/OpenAI/GPT-6.1-Sol/T01/r4', timeout=20000); page.wait_for_timeout(700)
             page.screenshot(path=str(OUT / f'{theme}-trashed-detail.png'))
+        if not ONLY or 'score' in ONLY:
+            sr = next(r for r in runs if r['model'] == 'GPT-6.1-Sol' and sum(i['method'] == 'human' for i in r['score']['items']) >= 3)
+            for it in sr['score']['items']:
+                if it['method'] == 'human': it['status'] = 'pending'; it['s'] = None
+            sr['manual'] = {}
+            page.goto(f"http://wb.local/#/stage?score={sr['run_id']}", timeout=20000); page.wait_for_timeout(900)
+            page.screenshot(path=str(OUT / f'{theme}-score-0.png'))
+            page.keyboard.press('2'); page.wait_for_timeout(120)   # 回执要 400ms：此刻应已显示选中
+            page.screenshot(path=str(OUT / f'{theme}-score-picked.png'))
+            page.wait_for_timeout(700)                              # 已自动跳到下一题
+            page.locator('.ss-opt.s3').click(); page.wait_for_timeout(700)
+            page.keyboard.press('n'); page.wait_for_timeout(150)
+            page.keyboard.type('羽毛材质略糊'); page.wait_for_timeout(100)
+            page.screenshot(path=str(OUT / f'{theme}-score-note.png'))
+            page.keyboard.press('Enter'); page.wait_for_timeout(300)
+            page.locator('.ss-opt.s1').click(); page.wait_for_timeout(900)
+            page.locator('.ss-pill').nth(2).click(); page.wait_for_timeout(300)
+            page.screenshot(path=str(OUT / f'{theme}-score-back.png'))
+            got = {k: v for k, v in sr['manual'].items()}
+            errors.append(f'[{theme}] score-check manual={json.dumps(got, ensure_ascii=False)}')
+            for r in runs: r['manual'] = {} if r is sr else r['manual']
         if not ONLY or 'pet' in ONLY:
             page.goto('http://wb.local/pet.html', timeout=20000); page.wait_for_timeout(900)
             page.screenshot(path=str(OUT / f'{theme}-pet-orb.png'))

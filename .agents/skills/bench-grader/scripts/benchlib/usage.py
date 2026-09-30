@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .common import CONFIG_DIR, load_yaml
@@ -89,9 +90,21 @@ def parse_claude_file(path: Path, workspace=None, start=None, end=None) -> dict 
 
 
 # ---------------- Codex ----------------
+# Codex 每行形如 {"timestamp":"...","type":...,"payload":{...}}；大多数行是工具输出（可达数 MB），
+# 只需要时间戳。不含 cwd/model/token_count 的行用正则取时间戳，跳过 json.loads，结果与完整解析一致。
+_CODEX_TS = re.compile(r'^\{"timestamp":"([^"]+)"')
+_CODEX_KEYS = ('"cwd"', '"model"', '"token_count"')
+
+
 def parse_codex_file(path: Path, workspace=None, start=None, end=None) -> dict | None:
     cwd_hit, times, last, model = workspace is None, [], None, None
     for line in path.open(encoding="utf-8", errors="replace"):
+        m = _CODEX_TS.match(line)
+        if m and not any(k in line for k in _CODEX_KEYS):
+            t = _ts(m.group(1))
+            if t and (not (start or end) or _in_window(t, start, end)):
+                times.append(t)
+            continue
         try:
             d = json.loads(line)
         except json.JSONDecodeError:
@@ -198,7 +211,16 @@ def scan_logs(meta: dict, cfg: dict) -> dict | None:
         root = Path(roots.get(key) or {"claude_code": "~/.claude/projects", "codex": "~/.codex/sessions", "gemini_cli": "~/.gemini/tmp"}[key]).expanduser()
         if not root.exists():
             continue
+        # 日志只追加：最后修改早于运行开始（留 10 分钟时钟余量）的文件不可能含窗口内条目，直接跳过，
+        # 避免每次计分都把几 GB 的历史会话日志全部读一遍。
+        floor = (start - timedelta(minutes=10)).timestamp() if start else None
         for f in root.rglob(pattern):
+            if floor is not None:
+                try:
+                    if f.stat().st_mtime < floor:
+                        continue
+                except OSError:
+                    continue
             r = parser(f, ws, start, end)
             if r:
                 candidates.append(r)

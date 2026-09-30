@@ -350,28 +350,64 @@
 .palette-h { margin-left: auto; font-size: 11.5px; color: var(--text-3); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-go { color: var(--text-3); flex: none; }
 
-/* ---------- 预览同屏评分 ---------- */
-.score-sheet { position: absolute; right: 14px; top: 64px; z-index: 30; width: 360px; max-height: calc(100% - 80px); display: flex; flex-direction: column; border-radius: var(--r-2xl); overflow: hidden; animation: drawer-in var(--t-slow) var(--ease) both; }
+/* ---------- 预览同屏评分（选择题式作答） ----------
+   浮在正在播放 3D / 动画的 iframe 之上：大半径 backdrop blur 每帧都要重算整块区域，是舞台卡顿的来源之一。
+   这里用更实的底色 + 小半径模糊，观感接近，但合成开销小得多，也不会透出底下页面的按钮。 */
+.score-sheet { position: absolute; right: 14px; top: 64px; z-index: 30; width: 368px; max-height: calc(100% - 80px); display: flex; flex-direction: column; border-radius: var(--r-2xl); overflow: hidden; animation: drawer-in var(--t-slow) var(--ease) both; contain: layout paint; }
+.score-sheet.glass-thick { background: color-mix(in oklab, var(--g-solid) 94%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
 .score-sheet.min { max-height: none; }
 .ss-h { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px 16px; }
+.ss-saving { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; color: var(--text-3); }
 .ss-prog { height: 3px; margin: 0 16px; border-radius: 2px; background: var(--fill-2); overflow: hidden; }
-.ss-prog i { display: block; height: 100%; background: var(--ok); transition: width var(--t-slow) var(--ease); }
-.ss-b { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; overflow: auto; }
+.ss-prog i { display: block; width: 100%; height: 100%; background: var(--ok); transform-origin: left center; transition: transform var(--t-slow) var(--ease); }
+.ss-b { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 14px; overflow: auto; overscroll-behavior: contain; }
 .ss-nav { display: flex; align-items: center; gap: 6px; }
 .ss-pills { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
-.ss-pill { width: 20px; height: 20px; border: 0; border-radius: 6px; padding: 0; cursor: pointer; font-size: 10px; font-weight: 700; background: var(--fill-2); color: var(--text-3); }
+.ss-pill { width: 22px; height: 22px; border: 0; border-radius: 7px; padding: 0; cursor: pointer; font-size: 11px; font-weight: 700; background: var(--fill-2); color: var(--text-3); transition: box-shadow var(--t-fast), background var(--t-fast); }
+.ss-pill:hover { background: var(--fill-3, var(--fill-2)); }
 .ss-pill.done { background: var(--ok-soft); color: var(--ok); }
+.ss-pill.done.s0 { background: var(--bad-soft); color: var(--bad); }
+.ss-pill.done.s1 { background: var(--warn-soft); color: var(--warn); }
 .ss-pill.on { box-shadow: 0 0 0 2px var(--text); }
-.ss-desc { font-size: 14px; font-weight: 560; line-height: 1.5; }
-.ss-anchors { display: flex; flex-direction: column; gap: 6px; }
-.ss-a { position: relative; display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 0; border-radius: var(--r-m); cursor: pointer; text-align: left; font-size: 12.5px; color: var(--text-2); background: var(--fill-1); box-shadow: inset 0 0 0 .5px var(--hair); transition: transform var(--t-fast) var(--ease-out), background var(--t-fast); }
-.ss-a:hover { background: var(--fill-2); transform: translateX(2px); }
-.ss-a b { font-family: var(--font-display); font-size: 18px; color: var(--text); min-width: 14px; }
-.ss-a.on { background: var(--text); color: var(--bg); }
-.ss-a.on b { color: var(--bg); }
-.ss-ok { position: absolute; right: 10px; top: 10px; }
+.ss-q { display: flex; flex-direction: column; gap: 6px; }
+.ss-qn { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--text-2); }
+.ss-desc { font-size: 15px; font-weight: 620; line-height: 1.45; color: var(--text); }
+.ss-evi { font-size: 12px; color: var(--text-3); line-height: 1.5; }
+
+/* 选项：左侧单选圆点 + 锚点描述 + 右侧键位。按分数着色（0 红 / 1 橙 / 2 紫 / 3 绿），不用实心蓝 */
+.ss-opts { display: flex; flex-direction: column; gap: 6px; }
+.ss-opt {
+  --c: var(--text-2); --c-soft: var(--fill-2);
+  position: relative; display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px;
+  min-height: 42px; padding: 9px 10px 9px 12px; border: 0; border-radius: var(--r-m); cursor: pointer; text-align: left;
+  font: inherit; font-size: 13px; line-height: 1.4; color: var(--text); background: var(--fill-1);
+  box-shadow: inset 0 0 0 1px var(--hair); transition: background var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast) var(--ease-out);
+}
+.ss-opt.s0 { --c: var(--bad); --c-soft: var(--bad-soft); }
+.ss-opt.s1 { --c: var(--warn); --c-soft: var(--warn-soft); }
+.ss-opt.s2 { --c: var(--accent); --c-soft: color-mix(in oklab, var(--accent) 13%, transparent); }
+.ss-opt.s3 { --c: var(--ok); --c-soft: var(--ok-soft); }
+.ss-opt:hover { background: var(--c-soft); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c) 35%, transparent); }
+.ss-opt:active { transform: scale(.985); }
+.ss-opt:focus-visible { outline: 0; box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 3px color-mix(in oklab, var(--c) 25%, transparent); }
+.ss-radio { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: #fff; box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--c) 55%, var(--hair)); transition: background var(--t-fast), box-shadow var(--t-fast); }
+.ss-opt-t { color: var(--text-2); }
+.ss-opt-k { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; display: grid; place-items: center; font-family: var(--font-display); font-size: 12px; font-weight: 700; color: var(--text-3); background: var(--fill-2); }
+.ss-opt.on { background: var(--c-soft); box-shadow: inset 0 0 0 1.5px var(--c); }
+.ss-opt.on .ss-radio { background: var(--c); box-shadow: none; }
+.ss-opt.on .ss-opt-t { color: var(--text); font-weight: 560; }
+.ss-opt.on .ss-opt-k { color: var(--c); background: transparent; }
+.ss-opt.pop .ss-radio { animation: ss-pop 260ms var(--ease-out) both; }
+@keyframes ss-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+
+.ss-note { display: flex; flex-direction: column; gap: 4px; }
+.ss-note textarea { resize: vertical; min-height: 40px; font: inherit; font-size: 12.5px; }
+.ss-note-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 0; border-radius: var(--r-s, 8px); background: transparent; color: var(--text-3); font: inherit; font-size: 12px; cursor: pointer; }
+.ss-note-add:hover { background: var(--fill-1); color: var(--text-2); }
+.ss-done { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: var(--r-m); color: var(--ok); background: var(--ok-soft); }
 .ss-keys { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .ss-agent { display: flex; align-items: center; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--hair); color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) { .ss-opt.pop .ss-radio { animation: none; } .ss-opt:active { transform: none; } }
 
 
 /* ============================================================ 运行卡片：更多按钮 / 拖拽 / 回收站 */

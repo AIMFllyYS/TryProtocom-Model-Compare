@@ -89,6 +89,9 @@ export default function Stage() {
     return p;
   }));
   const close = (id: string) => setPanes((ps) => ps.filter((p) => p.id !== id));
+  // 窗格被 memo：回调经 ref 调到最新实现（update 依赖 sync 等最新状态）
+  const act = useRef({ update, close, setFocus });
+  act.current = { update, close, setFocus };
   // 清理引用了已关闭会话的窗格：保留，显示“已关闭”，由用户关闭
 
   const running = wb.procs.filter((p) => p.status === 'running');
@@ -140,7 +143,7 @@ export default function Stage() {
         <div className={cls('stage-grid', `lay-${layout}`, `n-${shown.length}`)}>
           {shown.map((p) => (
             <Pane key={p.id} pane={p} session={p.src.type === 'session' ? wb.previews.find((s) => s.id === (p.src as { sid: string }).sid) : undefined}
-              focused={(focus || panes[0]?.id) === p.id} onFocus={() => setFocus(p.id)} onChange={(patch) => update(p.id, patch)} onClose={() => close(p.id)} dtHeight={shown.length > 2 ? 200 : 280} />
+              focused={(focus || panes[0]?.id) === p.id} onFocus={() => act.current.setFocus(p.id)} onChange={(patch) => act.current.update(p.id, patch)} onClose={() => act.current.close(p.id)} dtHeight={shown.length > 2 ? 200 : 280} />
           ))}
         </div>
       )}
