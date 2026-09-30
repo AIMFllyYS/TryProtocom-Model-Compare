@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import type { Aggregate, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
 import { aggregate } from '../shared/aggregate';
 import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
+import { settleQuota } from '../shared/quota';
 import { parseModelInput, suggestHarness, harnessByName, harnessById, iconFor } from '../shared/vendors';
 import { detectHarnesses, openHarness } from './harness';
 import { loadConfig, PREVIEW_PORT_RANGE, VERSION, type Config } from './config';
@@ -163,7 +164,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const wsAbs = cur?.workspace || ws.wsPath(q.vendor, q.model, tkey, index);
     return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
   }
-  async function claimRun(b: { vendor: string; model: string; task: string; variant?: string | null; index?: number; start?: boolean; harness?: string; open?: boolean }) {
+  async function claimRun(b: { vendor: string; model: string; task: string; variant?: string | null; index?: number; start?: boolean; harness?: string; open?: boolean; quota_before?: number | null; quota_unit?: string }) {
     const { s, t } = await findTask(b.task);
     const variant = b.variant || null;
     const tkey = t.id + (variant || '');
@@ -175,6 +176,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       store.log('ws-create', run.ref);
     } else if (harness && !run.harness) run = ws.patchRun(run.ref, { harness });
     if (b.start !== false && !run.started_at) run = ws.patchRun(run.ref, { started_at: new Date().toISOString(), ended_at: null });
+    if (b.quota_before != null) run = applyQuota(run.ref, { before: Number(b.quota_before), unit: b.quota_unit });
     const text = fs.readFileSync(ws.files(run.ref).prompt, 'utf8');
     let opened: string | null = null;
     if (b.open) {
@@ -298,6 +300,83 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   });
   R.get('/api/ws/detect', () => { detectTick(); return store.data.workspaces.filter((w) => !w.grader_run_id).map((w) => ({ ref: w.ref, detect: w.detect, ended_at: w.ended_at, has_final: w.has_final, entry: w.entry })); });
 
+  // 额度记录：开跑前 / 结束后剩余额度；结束时按模型计费方式折算费用写入用量（未手填费用时）
+  const applyQuota = (ref: string, q: { before?: number | null; after?: number | null; unit?: string }) => {
+    const pr = ws.parseRef(ref);
+    const cur = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+    const now = new Date().toISOString();
+    const quota = { ...(cur.quota || {}) };
+    if (q.unit) quota.unit = q.unit;
+    if (q.before !== undefined) { quota.before = q.before; quota.at_before = now; }
+    if (q.after !== undefined) { quota.after = q.after; quota.at_after = now; }
+    const prof = store.data.models.find((m) => m.vendor === cur.vendor && m.name === cur.model);
+    const s = settleQuota(quota, prof?.billing);
+    quota.used = s.used; quota.cost_usd = s.cost_usd;
+    const patch: Partial<WorkspaceRun> = { quota };
+    if (s.cost_usd != null && cur.usage?.cost_usd == null) patch.usage = { ...(cur.usage || {}), cost_usd: s.cost_usd, cost_estimated: true, source: 'quota' };
+    return ws.patchRun(ref, patch);
+  };
+  R.post('/api/ws/quota', async (req) => { const b = await readJson(req); const r = applyQuota(b.ref, b); refreshWorkspaces(); return r; });
+
+  // 截图（桌面宠物 / 桌面版）：保存到运行旁的 rN.shots/，作为评审证据
+  R.post('/api/shots', async (req) => {
+    const b = await readJson(req);
+    const m = /^data:image\/png;base64,(.+)$/.exec(String(b.data || ''));
+    if (!m) throw new HttpError(400, '需要 PNG data URL');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dir = b.ref ? `${ws.files(b.ref).ws}.shots` : path.join(cfg.runtimeDir, 'shots');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${stamp}${b.label ? '-' + String(b.label).replace(/[^\w.-]+/g, '-').slice(0, 40) : ''}.png`);
+    fs.writeFileSync(file, Buffer.from(m[1], 'base64'));
+    store.log('shot', toRel(cfg.root, file));
+    return { path: toRel(cfg.root, file) };
+  });
+
+  // 桌面宠物：精简状态（避免宠物窗口拉取整个存储文件）+ 启动 / 退出
+  R.get('/api/pet/feed', async () => {
+    const agg = await getAgg();
+    const s = await loadSpec();
+    const cur = settings().current_model || '';
+    const [cv, ...cm] = cur.split('/');
+    const model = cm.join('/');
+    const mine = store.data.workspaces.filter((w) => w.vendor === cv && w.model === model);
+    const graded = new Set(store.data.runs.filter((r) => r.graded).map((r) => r.run_id));
+    const brief = (w: WorkspaceRun) => ({ ref: w.ref, tkey: w.tkey, index: w.index, name: s.tasks.find((t) => t.id === w.task)?.name || w.task, vendor: w.vendor, model: w.model, harness: w.harness, started_at: w.started_at, ended_at: w.ended_at, detect: w.detect ? { done: w.detect.done, total: w.detect.total, final: w.detect.final } : null, quota: w.quota || null });
+    const open = store.data.workspaces.filter((w) => !w.grader_run_id);
+    return {
+      at: Date.now(),
+      current: cur ? { key: cur, vendor: cv, model, harness: store.data.models.find((m) => m.vendor === cv && m.name === model)?.harness || '', tasks: s.tasks.length, runs_per_task: s.cfg.runs_per_task, delivered: new Set(mine.filter((w) => w.grader_run_id || w.detect?.final || w.ended_at).map((w) => w.tkey + '/' + w.index)).size, graded: mine.filter((w) => w.grader_run_id && graded.has(w.grader_run_id)).length } : null,
+      running: open.filter((w) => w.started_at && !w.ended_at && !w.detect?.final).map(brief),
+      delivered: open.filter((w) => w.ended_at || w.detect?.final).map(brief),
+      grading: store.data.runs.filter((r) => !r.graded).length,
+      pending: agg.pending,
+      jobs: jobs.list.filter((j) => j.status === 'running' || j.status === 'queued').map((j) => jobs.info(j).title),
+      top: agg.board.slice(0, 3).map((b) => ({ entrant: b.entrant, quality: b.quality, rank: b.rank })),
+    };
+  });
+  let petProc: ReturnType<typeof spawn> | null = null;
+  const electronExe = () => {
+    const p = path.join(cfg.root, 'workbench', 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
+    return fs.existsSync(p) ? p : null;
+  };
+  const petMain = path.join(cfg.root, 'workbench', 'desktop', 'app', 'pet.cjs');
+  R.get('/api/pet', () => ({ available: !!electronExe() && fs.existsSync(petMain), running: !!petProc && petProc.exitCode == null }));
+  R.post('/api/pet', async (req) => {
+    const b = await readJson(req);
+    if (b.action === 'quit') { petProc?.kill(); petProc = null; return { ok: true, running: false }; }
+    if (petProc && petProc.exitCode == null) return { ok: true, running: true, already: true };
+    const exe = electronExe();
+    if (!exe) throw new HttpError(404, '未安装 Electron：在 workbench/ 下运行 npm install 后再召唤桌面宠物');
+    if (!fs.existsSync(petMain)) throw new HttpError(404, '桌面宠物尚未构建：在 workbench/ 下运行 npm run build');
+    // 宠物是独立的轻量进程（透明置顶小窗），只连接 127.0.0.1 上的本服务
+    const env = { ...process.env, WB_URL: `http://127.0.0.1:${cfg.port}` } as NodeJS.ProcessEnv;
+    delete env.ELECTRON_RUN_AS_NODE;
+    petProc = spawn(exe, [petMain], { cwd: path.dirname(petMain), env, detached: true, stdio: 'ignore', windowsHide: false });
+    petProc.on('exit', () => { petProc = null; });
+    petProc.unref();
+    return { ok: true, running: true };
+  });
+
   // harness（Agent 软件）
   R.get('/api/harness', (req) => detectHarnesses(req.query.get('refresh') === '1'));
   R.post('/api/harness/open', async (req) => {
@@ -354,6 +433,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     if (b.usage) patch.usage = b.usage;
     if (b.timed_out != null) patch.timed_out = !!b.timed_out;
     const r = ws.patchRun(b.ref, patch);
+    if (b.quota_after != null) applyQuota(b.ref, { after: Number(b.quota_after), unit: b.quota_unit });
     refreshWorkspaces();
     let job = null;
     if (b.register) job = registerWs(b.ref, { grade: b.grade !== false, fast: !!b.fast });

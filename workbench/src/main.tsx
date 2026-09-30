@@ -11,6 +11,7 @@ import './styles/components.css';
 import './styles/layout.css';
 import './styles/views.css';
 import './styles/stage.css';
+import './styles/launch.css';
 
 // Chromium 支持 backdrop-filter 引用 SVG 滤镜：开启透镜折射（其他内核只用模糊玻璃）
 const ua = navigator.userAgent;

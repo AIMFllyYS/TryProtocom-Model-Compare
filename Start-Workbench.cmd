@@ -3,6 +3,7 @@ rem Bench Workbench 一键启动。仓库已附带构建产物，只需 Node.js 
 rem 用法：Start-Workbench.cmd            启动网页版 http://127.0.0.1:41873 并打开浏览器
 rem       Start-Workbench.cmd desktop    启动桌面版（Electron：原生 DevTools、移动端模拟；首次需安装依赖）
 rem       Start-Workbench.cmd rebuild    重新构建后启动
+rem       Start-Workbench.cmd pet        召唤桌面宠物（右下角状态精灵，需要已 npm install）
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
@@ -47,6 +48,12 @@ if /i "%~1"=="desktop" (
     start "" "workbench\node_modules\electron\dist\electron.exe" workbench
   )
   exit /b 0
+)
+
+if /i "%~1"=="pet" (
+  rem 桌面宠物：确保服务在运行，再通过服务召唤（宠物是独立的轻量 Electron 小窗）
+  node "workbench\dist-node\wb.cjs" pet
+  exit /b %errorlevel%
 )
 
 node -e "fetch('http://127.0.0.1:%WB_PORT%/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"

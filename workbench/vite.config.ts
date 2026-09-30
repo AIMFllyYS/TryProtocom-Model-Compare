@@ -8,7 +8,7 @@ const API = `http://127.0.0.1:${process.env.WB_PORT || 41873}`;
 export default defineConfig({
   plugins: [react()],
   base: '/',
-  build: { outDir: 'dist', emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 1500, sourcemap: false },
+  build: { outDir: 'dist', emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 1500, sourcemap: false, rollupOptions: { input: { main: 'index.html', pet: 'pet.html' } } },
   server: {
     host: '127.0.0.1',
     port: 41874,

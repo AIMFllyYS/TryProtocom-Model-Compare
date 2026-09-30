@@ -450,6 +450,19 @@ function reviewPrompt(p) {
   return L.join("\n") + "\n";
 }
 
+// shared/quota.ts
+function unitPrice(b) {
+  if (!b || b.mode !== "subscription" || !b.monthly_fee || !b.monthly_quota) return null;
+  return b.monthly_fee / b.monthly_quota;
+}
+function settleQuota(q, b) {
+  if (!q || q.before == null || q.after == null) return { used: null, cost_usd: null };
+  const used = Math.max(0, q.before - q.after);
+  if (q.unit === "\u7F8E\u5143") return { used, cost_usd: used };
+  const p = unitPrice(b);
+  return { used, cost_usd: p == null ? null : +(used * p).toFixed(4) };
+}
+
 // shared/vendors.ts
 var VENDORS = [
   { id: "OpenAI", name: "OpenAI", icon: "openai", color: "#10a37f", match: /^(gpt|o\d|chatgpt|codex|openai|davinci|sora)/i },
@@ -2208,7 +2221,7 @@ var Workspaces = class {
   patchRun(ref, patch) {
     const p = this.parseRef(ref);
     const cur = this.readRun(p.vendor, p.model, p.tkey, p.index);
-    const allowed = ["harness", "started_at", "ended_at", "timed_out", "notes", "usage", "grader_run_id", "deliverable_dir"];
+    const allowed = ["harness", "started_at", "ended_at", "timed_out", "notes", "usage", "grader_run_id", "deliverable_dir", "quota"];
     for (const k of allowed) if (k in patch) cur[k] = patch[k];
     this.saveRun(cur);
     return this.readRun(p.vendor, p.model, p.tkey, p.index);
@@ -2388,6 +2401,7 @@ async function startServer(over = {}) {
       store.log("ws-create", run.ref);
     } else if (harness && !run.harness) run = ws.patchRun(run.ref, { harness });
     if (b.start !== false && !run.started_at) run = ws.patchRun(run.ref, { started_at: (/* @__PURE__ */ new Date()).toISOString(), ended_at: null });
+    if (b.quota_before != null) run = applyQuota(run.ref, { before: Number(b.quota_before), unit: b.quota_unit });
     const text = import_node_fs9.default.readFileSync(ws.files(run.ref).prompt, "utf8");
     let opened = null;
     if (b.open) {
@@ -2535,6 +2549,94 @@ async function startServer(over = {}) {
     detectTick();
     return store.data.workspaces.filter((w) => !w.grader_run_id).map((w) => ({ ref: w.ref, detect: w.detect, ended_at: w.ended_at, has_final: w.has_final, entry: w.entry }));
   });
+  const applyQuota = (ref, q) => {
+    const pr = ws.parseRef(ref);
+    const cur = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const quota = { ...cur.quota || {} };
+    if (q.unit) quota.unit = q.unit;
+    if (q.before !== void 0) {
+      quota.before = q.before;
+      quota.at_before = now;
+    }
+    if (q.after !== void 0) {
+      quota.after = q.after;
+      quota.at_after = now;
+    }
+    const prof = store.data.models.find((m) => m.vendor === cur.vendor && m.name === cur.model);
+    const s = settleQuota(quota, prof?.billing);
+    quota.used = s.used;
+    quota.cost_usd = s.cost_usd;
+    const patch = { quota };
+    if (s.cost_usd != null && cur.usage?.cost_usd == null) patch.usage = { ...cur.usage || {}, cost_usd: s.cost_usd, cost_estimated: true, source: "quota" };
+    return ws.patchRun(ref, patch);
+  };
+  R.post("/api/ws/quota", async (req) => {
+    const b = await readJson(req);
+    const r = applyQuota(b.ref, b);
+    refreshWorkspaces();
+    return r;
+  });
+  R.post("/api/shots", async (req) => {
+    const b = await readJson(req);
+    const m = /^data:image\/png;base64,(.+)$/.exec(String(b.data || ""));
+    if (!m) throw new HttpError(400, "\u9700\u8981 PNG data URL");
+    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const dir = b.ref ? `${ws.files(b.ref).ws}.shots` : import_node_path8.default.join(cfg.runtimeDir, "shots");
+    import_node_fs9.default.mkdirSync(dir, { recursive: true });
+    const file = import_node_path8.default.join(dir, `${stamp}${b.label ? "-" + String(b.label).replace(/[^\w.-]+/g, "-").slice(0, 40) : ""}.png`);
+    import_node_fs9.default.writeFileSync(file, Buffer.from(m[1], "base64"));
+    store.log("shot", toRel(cfg.root, file));
+    return { path: toRel(cfg.root, file) };
+  });
+  R.get("/api/pet/feed", async () => {
+    const agg = await getAgg();
+    const s = await loadSpec();
+    const cur = settings().current_model || "";
+    const [cv, ...cm] = cur.split("/");
+    const model = cm.join("/");
+    const mine = store.data.workspaces.filter((w) => w.vendor === cv && w.model === model);
+    const graded = new Set(store.data.runs.filter((r) => r.graded).map((r) => r.run_id));
+    const brief = (w) => ({ ref: w.ref, tkey: w.tkey, index: w.index, name: s.tasks.find((t) => t.id === w.task)?.name || w.task, vendor: w.vendor, model: w.model, harness: w.harness, started_at: w.started_at, ended_at: w.ended_at, detect: w.detect ? { done: w.detect.done, total: w.detect.total, final: w.detect.final } : null, quota: w.quota || null });
+    const open = store.data.workspaces.filter((w) => !w.grader_run_id);
+    return {
+      at: Date.now(),
+      current: cur ? { key: cur, vendor: cv, model, harness: store.data.models.find((m) => m.vendor === cv && m.name === model)?.harness || "", tasks: s.tasks.length, runs_per_task: s.cfg.runs_per_task, delivered: new Set(mine.filter((w) => w.grader_run_id || w.detect?.final || w.ended_at).map((w) => w.tkey + "/" + w.index)).size, graded: mine.filter((w) => w.grader_run_id && graded.has(w.grader_run_id)).length } : null,
+      running: open.filter((w) => w.started_at && !w.ended_at && !w.detect?.final).map(brief),
+      delivered: open.filter((w) => w.ended_at || w.detect?.final).map(brief),
+      grading: store.data.runs.filter((r) => !r.graded).length,
+      pending: agg.pending,
+      jobs: jobs.list.filter((j) => j.status === "running" || j.status === "queued").map((j) => jobs.info(j).title),
+      top: agg.board.slice(0, 3).map((b) => ({ entrant: b.entrant, quality: b.quality, rank: b.rank }))
+    };
+  });
+  let petProc = null;
+  const electronExe = () => {
+    const p = import_node_path8.default.join(cfg.root, "workbench", "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
+    return import_node_fs9.default.existsSync(p) ? p : null;
+  };
+  const petMain = import_node_path8.default.join(cfg.root, "workbench", "desktop", "app", "pet.cjs");
+  R.get("/api/pet", () => ({ available: !!electronExe() && import_node_fs9.default.existsSync(petMain), running: !!petProc && petProc.exitCode == null }));
+  R.post("/api/pet", async (req) => {
+    const b = await readJson(req);
+    if (b.action === "quit") {
+      petProc?.kill();
+      petProc = null;
+      return { ok: true, running: false };
+    }
+    if (petProc && petProc.exitCode == null) return { ok: true, running: true, already: true };
+    const exe = electronExe();
+    if (!exe) throw new HttpError(404, "\u672A\u5B89\u88C5 Electron\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm install \u540E\u518D\u53EC\u5524\u684C\u9762\u5BA0\u7269");
+    if (!import_node_fs9.default.existsSync(petMain)) throw new HttpError(404, "\u684C\u9762\u5BA0\u7269\u5C1A\u672A\u6784\u5EFA\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm run build");
+    const env = { ...process.env, WB_URL: `http://127.0.0.1:${cfg.port}` };
+    delete env.ELECTRON_RUN_AS_NODE;
+    petProc = (0, import_node_child_process5.spawn)(exe, [petMain], { cwd: import_node_path8.default.dirname(petMain), env, detached: true, stdio: "ignore", windowsHide: false });
+    petProc.on("exit", () => {
+      petProc = null;
+    });
+    petProc.unref();
+    return { ok: true, running: true };
+  });
   R.get("/api/harness", (req) => detectHarnesses(req.query.get("refresh") === "1"));
   R.post("/api/harness/open", async (req) => {
     const b = await readJson(req);
@@ -2585,6 +2687,7 @@ async function startServer(over = {}) {
     if (b.usage) patch.usage = b.usage;
     if (b.timed_out != null) patch.timed_out = !!b.timed_out;
     const r = ws.patchRun(b.ref, patch);
+    if (b.quota_after != null) applyQuota(b.ref, { after: Number(b.quota_after), unit: b.quota_unit });
     refreshWorkspaces();
     let job = null;
     if (b.register) job = registerWs(b.ref, { grade: b.grade !== false, fast: !!b.fast });

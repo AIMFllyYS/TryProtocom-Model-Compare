@@ -15,6 +15,7 @@ import { DimChip, Score, TaskLabel, WsBadge, useNamer } from '../components/comm
 import { HarnessPicker, ModelPicker } from '../components/pickers';
 import { FileBrowser } from '../components/Files';
 import { ItemScorer } from '../components/ItemScorer';
+import { QuotaForm } from '../components/LaunchPad';
 
 export interface Row { key: string; ws?: WorkspaceRun; run?: StoreRun }
 type Col = 'running' | 'delivered' | 'grading' | 'done';
@@ -63,7 +64,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
   const [fModel, setFModel] = useLocal('runs.model', '');
   const [fTask, setFTask] = useLocal('runs.task', '');
   const [, tick] = useState(0);
-  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   const list = rows.filter((r) => {
     const m = r.ws ? `${r.ws.vendor}/${r.ws.model}` : `${r.run!.vendor || ''}/${r.run!.model}`;
     return (!fModel || m === fModel) && (!fTask || (r.ws?.task || r.run!.task) === fTask);
@@ -162,7 +163,7 @@ function RunCard({ r, nm }: { r: Row; nm: ReturnType<typeof useNamer> }) {
       <div className="row gap-s rc-foot">
         <HarnessIcon name={w?.harness || r.run?.harness} size="xs" />
         <span className="muted xs ellipsis grow">{w?.harness || r.run?.harness || '—'}</span>
-        {w?.started_at && !r.run && <span className={cls('mono xs', lim && el > lim ? 'tone-text-bad' : 'muted')}>{fmt.clock(el)}</span>}
+        {w?.started_at && !r.run && <span className={cls('xs nowrap', lim && el > lim ? 'tone-text-bad' : 'muted')}>{new Date(w.started_at).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })} 开跑 · {fmt.min((w.ended_at ? Date.parse(w.ended_at) : Date.now()) / 60000 - Date.parse(w.started_at) / 60000)}</span>}
         {r.run?.score && !r.run.score.complete && <Badge tone="warn">待评 {r.run.score.pending.length}</Badge>}
         {r.run && !r.run.graded && <Badge tone="info">待自动评分</Badge>}
       </div>
@@ -185,7 +186,7 @@ function RunDetail({ row }: { row: Row }) {
   useEffect(() => { if (ws) get<{ text: string; prompt: string }>('/api/ws/final', { ref: ws.ref }).then(setTexts, () => setTexts({ text: '', prompt: '' })); }, [ws?.ref, ws?.ended_at, ws?.has_final]); // eslint-disable-line
   useEffect(() => { if (run) get<{ metrics: any; final_message: string | null; local: boolean }>(`/api/runs/${encodeURIComponent(run.run_id)}`).then(setDetail, () => setDetail(null)); }, [run?.run_id, run?.synced_at]); // eslint-disable-line
   const running = ws && ws.started_at && !ws.ended_at;
-  useEffect(() => { if (!running) return; const t = setInterval(() => tick((x) => x + 1), 1000); return () => clearInterval(t); }, [running]);
+  useEffect(() => { if (!running) return; const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, [running]);
   const elapsed = ws?.started_at ? (ws.ended_at ? Date.parse(ws.ended_at) : Date.now()) - Date.parse(ws.started_at) : 0;
   const limitMs = (task?.time_limit || 0) * 60000;
   const stage = run?.graded ? (run.score?.complete ? 6 : 5) : run ? 4 : ws?.ended_at || ws?.detect?.final ? 3 : ws?.started_at ? 2 : 1;
@@ -231,7 +232,7 @@ function RunDetail({ row }: { row: Row }) {
       )}
       {ws && stage === 2 && (
         <Card className="mt"><div className="action-row">
-          <div className="timer"><span className={cls('clock', limitMs > 0 && elapsed > limitMs && 'bad')}>{fmt.clock(elapsed)}</span>{limitMs > 0 && <div className="stack s"><Meter value={elapsed} max={limitMs} tone={elapsed > limitMs ? 'bad' : elapsed > limitMs * 0.8 ? 'warn' : 'accent'} w={200} /><span className="muted xs">上限 {task!.time_limit} 分钟</span></div>}</div>
+          <div className="timer"><div className="stack s"><span className="muted xs">开跑时间戳</span><span className={cls('clock', limitMs > 0 && elapsed > limitMs && 'bad')}>{ws.started_at ? new Date(ws.started_at).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</span><span className="muted xs">已过 {fmt.min(elapsed / 60000)} · 模型写出 FINAL_MESSAGE.md 时自动记结束</span></div>{limitMs > 0 && <div className="stack s"><Meter value={elapsed} max={limitMs} tone={elapsed > limitMs ? 'bad' : elapsed > limitMs * 0.8 ? 'warn' : 'accent'} w={200} /><span className="muted xs">上限 {task!.time_limit} 分钟</span></div>}</div>
           <div className="grow" />
           <Btn tone="ghost" icon={<TimerReset size={14} />} onClick={() => void act(() => post('/api/ws/patch', { ref: ws.ref, started_at: null }), '已重置计时')}>重置</Btn>
           <Btn icon={<Square size={14} />} onClick={() => void act(() => post('/api/ws/finish', { ref: ws.ref, timed_out: limitMs > 0 && elapsed > limitMs }), '已结束计时')}>手动结束</Btn>
@@ -278,6 +279,8 @@ function DeliverPanel({ ws }: { ws: WorkspaceRun }) {
 }
 
 function FinishForm({ ws, finalText, onDone }: { ws: WorkspaceRun; finalText: string; onDone: () => void }) {
+  const wb = useWb();
+  const prof = wb.store?.models.find((m) => m.vendor === ws.vendor && m.name === ws.model);
   const [final, setFinal] = useState(finalText);
   const [u, setU] = useState<Partial<Usage>>(ws.usage || {});
   const [timedOut, setTimedOut] = useState(!!ws.timed_out);
@@ -312,6 +315,7 @@ function FinishForm({ ws, finalText, onDone }: { ws: WorkspaceRun; finalText: st
           <Field label="输出 token"><input type="number" value={u.output_tokens ?? ''} onChange={num('output_tokens')} /></Field>
         </div>
         <label className="row gap-s small"><CheckBox checked={timedOut} onChange={setTimedOut} label="超时" />超出时间上限（记为超时）</label>
+        {prof && <QuotaForm run={ws} model={prof} phase="after" />}
         {!ws.has_deliverable && <div className="alert warn"><TriangleAlert size={15} />交付目录 <code>{ws.deliverable_dir}/</code> 还不存在：登记会失败。</div>}
         <div className="row gap-s">
           <Btn tone="ghost" busy={busy} onClick={() => void submit(false)}>仅保存</Btn>

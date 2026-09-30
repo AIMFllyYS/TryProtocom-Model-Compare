@@ -175,6 +175,7 @@ Harness   wb harness [--refresh] | wb harness open <id> [--ref \u4F9B\u5E94\u554
 \u4EA4\u4ED8      wb detect   \u5404\u8FD0\u884C\u7684\u4EA4\u4ED8\u6E05\u5355\u8FDB\u5EA6\u3001FINAL_MESSAGE.md \u662F\u5426\u51FA\u73B0
 AI \u8BC4\u5BA1   wb ai-prompt [run_id|ref]   \u7ED9\u8BC4\u5206 Agent \u7684\u63D0\u793A\u8BCD\uFF08skills \u8DEF\u5F84 + \u6B65\u9AA4\uFF09\uFF1B\u4E0D\u5E26\u53C2\u6570 = \u5168\u90E8\u5F85\u8BC4 Agent \u9879
 Skills    wb skills sync   \u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF08\u4E0D\u542B hidden/\uFF09
+\u5BA0\u7269      wb pet | wb pet quit   \u684C\u9762\u5BA0\u7269\uFF08\u5C4F\u5E55\u53F3\u4E0B\u89D2\u7684\u72B6\u6001\u7CBE\u7075\uFF1A\u4EA4\u4ED8\u63D0\u9192\u3001\u767B\u8BB0\u8BC4\u5206\u3001\u622A\u5C4F\u5B58\u8BC1\uFF09
 \u8FD0\u884C      wb run new <\u4F9B\u5E94\u5546>/<\u6A21\u578B> <T05> [--variant A|C] [--harness X]
           wb run list [--model \u4F9B\u5E94\u5546/\u6A21\u578B] [--task T05]
           wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "\u2026"] [--wall-min 30 --cost-usd 1.2 \u2026] [--timed-out] [--register] [--no-grade]
@@ -275,6 +276,10 @@ Python ${s.python || "\u672A\u627E\u5230"}`);
       }
       const rows = await get(`/api/harness${flags.refresh ? "?refresh=1" : ""}`);
       return out(rows, () => table([["id", "\u540D\u79F0", "\u7C7B\u578B", "\u5DF2\u5B89\u88C5", "\u8DEF\u5F84"], ...rows.map((h) => [h.id, h.name, h.kind, h.installed ? "\u2714" : "", h.path || "\u2014"])]));
+    }
+    case "pet": {
+      const r = await post("/api/pet", { action: sub === "quit" ? "quit" : "start" });
+      return out(r, () => console.log(sub === "quit" ? "\u2714 \u684C\u9762\u5BA0\u7269\u5DF2\u9000\u51FA" : r.already ? "\u2714 \u684C\u9762\u5BA0\u7269\u5DF2\u5728\u8FD0\u884C" : "\u2714 \u5DF2\u53EC\u5524\u684C\u9762\u5BA0\u7269\uFF08\u5C4F\u5E55\u53F3\u4E0B\u89D2\uFF09"));
     }
     case "skills": {
       if (sub !== "sync") die("\u7528\u6CD5\uFF1Awb skills sync   \uFF08\u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF0C\u4E0D\u542B hidden/\uFF09");

@@ -10,6 +10,7 @@ import { HarnessIcon, ModelAvatar } from '../ui/brand';
 import { Legend, Radar } from '../ui/charts';
 import { Score, useNamer } from '../components/common';
 import { ModelPicker } from '../components/pickers';
+import { launch } from '../components/LaunchPad';
 import { colOf, useRows } from './Runs';
 
 export default function Overview() {
@@ -39,7 +40,7 @@ export default function Overview() {
   else if (delivered.length) cta = { icon: FileCheck2, title: `${delivered.length} 次运行已交付`, sub: '检测到 FINAL_MESSAGE.md，登记后自动评分', label: '去登记评分', run: () => go('runs') };
   else if (humanRun) cta = { icon: MonitorPlay, title: `还有 ${pend?.human || 0} 个人工项待评`, sub: '预览产物时同屏打分，键盘 0–3 即可', label: '预览并打分', run: () => go('stage', [], { open: humanRun.ws ? 'ws:' + humanRun.ws.ref : 'run:' + humanRun.run!.run_id, score: humanRun.run!.run_id }) };
   else if (running.length) cta = { icon: Hourglass, title: `${running.length} 个运行进行中`, sub: '模型完成后工作台会自动检测交付', label: '查看运行', run: () => go('runs') };
-  else if (nextTask) cta = { icon: ClipboardCopy, title: `下一题：${nextTask.t.id} ${nextTask.t.name}`, sub: `${nextTask.t.short}`, label: '复制提示词', run: () => go('tasks', [nextTask.t.id]) };
+  else if (nextTask) cta = { icon: ClipboardCopy, title: `下一题：${nextTask.t.id} ${nextTask.t.name}`, sub: `${nextTask.t.short}`, label: '打开发车台', run: () => launch(`${prof.vendor}/${prof.name}`, nextTask.t.id) };
   else cta = { icon: Trophy, title: '这个模型的全部题目都已完成', sub: '去排行榜查看名次，或对比其他模型', label: '查看排行榜', run: () => go('board') };
 
   const top = (wb.agg?.board || []).slice(0, 5);

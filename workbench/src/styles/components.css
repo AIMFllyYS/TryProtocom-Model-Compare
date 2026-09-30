@@ -260,10 +260,13 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; 
 .stat.tone-ok .stat-v, .stat.tone-warn .stat-v, .stat.tone-bad .stat-v, .stat.tone-accent .stat-v { color: var(--tone); }
 
 /* ---------- 对话框 / 抽屉 ---------- */
-.overlay { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 20px; background: rgb(12 14 22 / .22); animation: fade-in var(--t) var(--ease-out) both; }
+.overlay { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 20px; background: rgb(12 14 22 / .22); animation: ov-in var(--t) var(--ease-out) both; }
 [data-theme="dark"] .overlay { background: rgb(0 0 0 / .45); }
+/* 注意：不能对遮罩做 opacity 动画——祖先的 opacity 会让子元素的 backdrop-filter 取不到页面内容 */
+@keyframes ov-in { from { background: transparent; } }
 @keyframes fade-in { from { opacity: 0; } }
 .modal { display: flex; flex-direction: column; max-height: calc(100vh - 40px); border-radius: var(--r-2xl); animation: sheet-in var(--t-slow) var(--ease) both; }
+.modal.glass-thick, .drawer.glass-thick { background: color-mix(in oklab, var(--g-solid) 90%, transparent); -webkit-backdrop-filter: blur(54px) saturate(200%); backdrop-filter: blur(54px) saturate(200%); }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(18px) scale(.97); } }
 .modal-h { display: flex; align-items: center; gap: 10px; padding: 20px 22px 6px; }
 .modal-h h2 { font-size: 18px; flex: 1; min-width: 0; }

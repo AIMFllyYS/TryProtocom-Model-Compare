@@ -136,6 +136,7 @@ Harness   wb harness [--refresh] | wb harness open <id> [--ref 供应商/模型/
 交付      wb detect   各运行的交付清单进度、FINAL_MESSAGE.md 是否出现
 AI 评审   wb ai-prompt [run_id|ref]   给评分 Agent 的提示词（skills 路径 + 步骤）；不带参数 = 全部待评 Agent 项
 Skills    wb skills sync   把 skills/ 镜像到 .agents/skills/（不含 hidden/）
+宠物      wb pet | wb pet quit   桌面宠物（屏幕右下角的状态精灵：交付提醒、登记评分、截屏存证）
 运行      wb run new <供应商>/<模型> <T05> [--variant A|C] [--harness X]
           wb run list [--model 供应商/模型] [--task T05]
           wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "…"] [--wall-min 30 --cost-usd 1.2 …] [--timed-out] [--register] [--no-grade]
@@ -221,6 +222,10 @@ async function main() {
       }
       const rows = await get<any[]>(`/api/harness${flags.refresh ? '?refresh=1' : ''}`);
       return out(rows, () => table([['id', '名称', '类型', '已安装', '路径'], ...rows.map((h) => [h.id, h.name, h.kind, h.installed ? '✔' : '', h.path || '—'])]));
+    }
+    case 'pet': {
+      const r = await post('/api/pet', { action: sub === 'quit' ? 'quit' : 'start' });
+      return out(r, () => console.log(sub === 'quit' ? '✔ 桌面宠物已退出' : r.already ? '✔ 桌面宠物已在运行' : '✔ 已召唤桌面宠物（屏幕右下角）'));
     }
     case 'skills': {
       if (sub !== 'sync') die('用法：wb skills sync   （把 skills/ 镜像到 .agents/skills/，不含 hidden/）');

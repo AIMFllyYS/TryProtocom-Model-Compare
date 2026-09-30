@@ -87,6 +87,15 @@ def api(path, q):
     if path == '/api/models/infer': return {'vendor': 'OpenAI', 'name': q.get('name', ''), 'inferred': True, 'icon': 'openai', 'harness': {'id': 'deepseek-harness', 'name': 'DeepSeek Harness'}, 'exists': False, 'vendors': ['OpenAI', 'DeepSeek']}
     if path == '/api/ws/final': return {'text': '交付了 aether9-site/，含源码与 dist/index.html。', 'prompt': prompt_head}
     if path.startswith('/api/runs/'): return {'run': runs[0], 'metrics': {}, 'final_message': '完成。', 'local': False}
+    if path == '/api/ws/claim':
+        w = dict(workspaces[0]); w['started_at'] = iso(time.time()); w['index'] = 2; w['ref'] = 'OpenAI/GPT-6.1-Sol/T05/r2'
+        return {'run': w, 'text': prompt_head, 'opened': '已启动 DeepSeek Harness'}
+    if path == '/api/pet/feed':
+        live = [w for w in workspaces if not w['grader_run_id']]
+        brief = lambda w: {'ref': w['ref'], 'tkey': w['tkey'], 'index': w['index'], 'name': w['task'], 'vendor': w['vendor'], 'model': w['model'], 'harness': w['harness'], 'started_at': w['started_at'], 'ended_at': w['ended_at'], 'detect': {'done': w['detect']['done'], 'total': w['detect']['total'], 'final': w['detect']['final']}}
+        return {'at': now * 1000, 'current': {'key': 'OpenAI/GPT-6.1-Sol', 'vendor': 'OpenAI', 'model': 'GPT-6.1-Sol', 'harness': 'DeepSeek Harness', 'tasks': 8, 'runs_per_task': 3, 'delivered': 20, 'graded': 18},
+                'running': [brief(w) for w in live if w['ended_at'] is None], 'delivered': [brief(w) for w in live if w['ended_at']], 'grading': 1, 'pending': agg['pending'], 'jobs': ['评分：T05-2211-3'], 'top': [{'entrant': b['entrant'], 'quality': b['quality'], 'rank': b['rank']} for b in board[:3]]}
+    if path == '/api/session': return session
     return {}
 
 from urllib.parse import urlparse, parse_qs
@@ -129,6 +138,23 @@ with sync_playwright() as pw:
             page.goto('http://wb.local/#/tasks/T05', timeout=20000); page.wait_for_timeout(700)
             page.locator('.dispatch-for .select').nth(1).click(); page.wait_for_timeout(400)
             page.screenshot(path=str(OUT / f'{theme}-select.png'))
+        if not ONLY or 'launch' in ONLY:
+            page.goto('http://wb.local/#/models', timeout=20000); page.wait_for_timeout(700)
+            page.get_by_role('button', name='开始测评').first.click(); page.wait_for_timeout(900)
+            page.screenshot(path=str(OUT / f'{theme}-launch.png'))
+            cap = page.locator('.capsule').bounding_box(); dock = page.locator('.dock-t').first.bounding_box()
+            if cap and dock:
+                page.mouse.move(cap['x'] + cap['width'] / 2, cap['y'] + 40); page.mouse.down()
+                for k in range(1, 11):
+                    page.mouse.move(cap['x'] + cap['width'] / 2 + (dock['x'] + 60 - cap['x'] - cap['width'] / 2) * k / 10, cap['y'] + 40 + (dock['y'] + 20 - cap['y'] - 40) * k / 10); page.wait_for_timeout(30)
+                page.screenshot(path=str(OUT / f'{theme}-launch-drag.png'))
+                page.mouse.up(); page.wait_for_timeout(900)
+                page.screenshot(path=str(OUT / f'{theme}-launch-stamp.png'))
+        if not ONLY or 'pet' in ONLY:
+            page.goto('http://wb.local/pet.html', timeout=20000); page.wait_for_timeout(900)
+            page.screenshot(path=str(OUT / f'{theme}-pet-orb.png'))
+            page.locator('.orb').click(); page.wait_for_timeout(600)
+            page.screenshot(path=str(OUT / f'{theme}-pet-panel.png'))
         ctx.close()
     b.close()
 (OUT / 'errors.txt').write_text('\n'.join(errors) or 'no errors', 'utf-8')

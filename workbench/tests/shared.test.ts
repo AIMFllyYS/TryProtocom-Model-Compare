@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { inferVendor, parseModelInput, iconFor, suggestHarness } from '../shared/vendors';
 import { runHeader, buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { DELIVERABLES, evalDeliverable } from '../shared/deliverables';
+import { settleQuota, unitPrice } from '../shared/quota';
 
 test('供应商推断', () => {
   const cases: [string, string | null][] = [['GPT-6.1-Sol', 'OpenAI'], ['o4-mini', 'OpenAI'], ['claude-opus-5.5', 'Anthropic'], ['Gemini-3.5-Pro', 'Google'], ['DeepSeek-V4', 'DeepSeek'],
@@ -44,6 +45,15 @@ test('交付检测', () => {
   assert.equal(c[1].found, 'pnpm-lock.yaml');
   const v = evalDeliverable(DELIVERABLES.T03, () => false, () => ['a.MP4']);
   assert.equal(v[1].ok, true);
+});
+
+test('额度换算', () => {
+  const b = { mode: 'subscription' as const, unit: '%', monthly_fee: 200, monthly_quota: 100 };
+  assert.equal(unitPrice(b), 2);
+  assert.deepEqual(settleQuota({ unit: '%', before: 80, after: 65 }, b), { used: 15, cost_usd: 30 });
+  assert.deepEqual(settleQuota({ unit: '美元', before: 10, after: 7.5 }, null), { used: 2.5, cost_usd: 2.5 });
+  assert.deepEqual(settleQuota({ unit: '次', before: 50 }, b), { used: null, cost_usd: null });
+  assert.equal(unitPrice({ mode: 'token' }), null);
 });
 
 test('AI 评审提示词', () => {

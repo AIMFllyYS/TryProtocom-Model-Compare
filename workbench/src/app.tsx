@@ -1,6 +1,6 @@
 // 应用外壳：悬浮玻璃侧栏（分组导航 + 滑动指示）+ 顶部工具栏（面包屑、当前测评模型、搜索、任务托盘、盲评、主题）+ 视图区。
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronRight, CloudDownload, Command, EyeOff, Eye, Loader2, Moon, PanelLeftClose, PanelLeftOpen, Sun, Check, X, Clock3 } from 'lucide-react';
+import { ChevronRight, CloudDownload, Command, EyeOff, Eye, Loader2, Moon, PanelLeftClose, PanelLeftOpen, PawPrint, Sun, Check, X, Clock3 } from 'lucide-react';
 import { NAV_GROUPS, SETTINGS_NAV, navOf } from './nav';
 import { useWb } from './state';
 import { go, href, useLocal, useRoute, type Route } from './lib/router';
@@ -8,8 +8,10 @@ import { cls, fmt } from './lib/format';
 import { Palette } from './ui/palette';
 import { IconBtn, Popover, Spinner, Tip } from './ui/kit';
 import { ModelPicker } from './components/pickers';
+import { LaunchPadHost } from './components/LaunchPad';
+import { toast } from './ui/toast';
 import { GithubIcon } from './ui/brand';
-import { desktop } from './api';
+import { desktop, post } from './api';
 import Overview from './views/Overview';
 
 const Models = lazy(() => import('./views/Models'));
@@ -59,6 +61,7 @@ export function App() {
           <div className="tb-model"><span className="tb-model-l">测评中</span><ModelPicker value={wb.current} onChange={wb.setCurrent} size="sm" /></div>
           <button className="search-btn" onClick={() => setPalette(true)}><Command size={14} aria-hidden /><span>搜索或执行命令</span><kbd>Ctrl K</kbd></button>
           <JobsTray />
+          <IconBtn label="召唤桌面宠物（右下角状态精灵：交付提醒、登记评分、截屏存证）" tipPlace="bottom" onClick={() => void post<{ already?: boolean }>('/api/pet', { action: 'start' }).then((r) => toast.ok(r.already ? '桌面宠物已经在右下角了' : '已召唤桌面宠物，看看屏幕右下角'), (e) => toast.error(e.message))}><PawPrint size={16} /></IconBtn>
           <IconBtn label={wb.blind ? '盲评模式：已隐藏模型名（点击显示）' : '盲评模式：点击隐藏模型名'} active={wb.blind} onClick={() => wb.setBlind(!wb.blind)} tipPlace="bottom">{wb.blind ? <EyeOff size={16} /> : <Eye size={16} />}</IconBtn>
         </header>
         <main className={cls('content', full && 'full')} id="view">
@@ -68,6 +71,8 @@ export function App() {
         </main>
       </div>
       <Palette open={palette} onClose={() => setPalette(false)} />
+      <LaunchPadHost />
+      <DeliveryWatcher />
     </div>
   );
 }
@@ -174,6 +179,27 @@ function JobsTray() {
       )}
     </Popover>
   );
+}
+
+/** 交付提醒（桌面宠物之外的页内兜底）：新出现 FINAL_MESSAGE 或结束计时的运行弹出通知 */
+function DeliveryWatcher() {
+  const wb = useWb();
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const ws = wb.store?.workspaces;
+    if (!ws) return;
+    const done = ws.filter((w) => w.detect?.final || w.ended_at || w.grader_run_id).map((w) => w.ref);
+    if (!seen.current) { seen.current = new Set(done); return; }
+    for (const ref of done) {
+      if (seen.current.has(ref)) continue;
+      seen.current.add(ref);
+      const w = ws.find((x) => x.ref === ref)!;
+      if (w.grader_run_id) continue;
+      const t = wb.spec?.tasks.find((x) => x.id === w.task);
+      toast.ok(`${wb.blind ? '一个模型' : w.model} 交付了 ${w.tkey} r${w.index}${t ? ' · ' + t.name : ''}`, { action: { label: '去登记评分', run: () => go('runs', [ref]) }, ttl: 9000 });
+    }
+  }, [wb.store?.workspaces]); // eslint-disable-line
+  return null;
 }
 
 function ViewSwitch({ route }: { route: Route }) {

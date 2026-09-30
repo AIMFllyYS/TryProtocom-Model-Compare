@@ -8,4 +8,6 @@ await build({ ...common, entryPoints: ['cli/wb.ts'], outfile: 'dist-node/wb.cjs'
 if (fs.existsSync('desktop/main.ts')) {
   await build({ ...common, entryPoints: ['desktop/main.ts'], outfile: 'desktop/app/main.cjs', external: ['electron'] });
   await build({ ...common, entryPoints: ['desktop/preload.ts'], outfile: 'desktop/app/preload.cjs', external: ['electron'] });
+  await build({ ...common, entryPoints: ['desktop/pet.ts'], outfile: 'desktop/app/pet.cjs', external: ['electron'] });
+  await build({ ...common, entryPoints: ['desktop/pet-preload.ts'], outfile: 'desktop/app/pet-preload.cjs', external: ['electron'] });
 }

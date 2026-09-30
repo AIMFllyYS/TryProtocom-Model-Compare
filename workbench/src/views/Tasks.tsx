@@ -13,6 +13,8 @@ import { toast } from '../ui/toast';
 import { HarnessIcon } from '../ui/brand';
 import { DimChip, Score, WsBadge } from '../components/common';
 import { HarnessPicker, ModelPicker, findHarness } from '../components/pickers';
+import { launch, QuotaForm } from '../components/LaunchPad';
+import { Rocket } from 'lucide-react';
 
 interface PromptRes { text: string; warnings: string[]; ref: string | null; workspace: string | null; index: number | null; exists: boolean }
 
@@ -132,6 +134,7 @@ function TaskView({ t }: { t: SpecTask }) {
           <div className="dispatch-cta">
             <Btn tone="primary" size="xl" icon={busy ? undefined : <ClipboardCopy size={18} />} busy={busy} onClick={() => void dispatch(false)} disabled={!pr?.text} kbd="C">复制提示词</Btn>
             {hdef && hInstalled && <Btn size="xl" icon={<HarnessIcon name={harness} size="xs" />} onClick={() => void dispatch(true)} disabled={!pr?.text || !vendor}>复制并打开 {hdef.name}</Btn>}
+            {prof && <Btn size="xl" tone="ghost" icon={<Rocket size={17} />} onClick={() => launch(`${prof.vendor}/${prof.name}`, t.id)} tip="连续发题：拖动提示词胶囊到 harness 上即发车">发车台</Btn>}
           </div>
           <div className="dispatch-meta">
             {vendor ? (
@@ -149,6 +152,7 @@ function TaskView({ t }: { t: SpecTask }) {
               <Btn size="sm" tone="tinted" iconRight={<ArrowRight size={14} />} onClick={() => go('runs', [copied.ref])}>跟踪运行</Btn>
             </div>
           )}
+          {copied && prof && (() => { const w = wb.store?.workspaces.find((x) => x.ref === copied.ref); return w ? <div className="mt-s"><div className="muted xs mb-s">时间戳 {w.started_at ? new Date(w.started_at).toLocaleTimeString('zh-CN', { hour12: false }) : '—'} · 只记开始与结束时刻，不在后台持续计时</div><QuotaForm run={w} model={prof} phase="before" compact /></div> : null; })()}
         </section>
 
         <Card title={<span className="row gap-s">提示词<span className="badge">{pr ? `${pr.text.split('\n').length} 行` : '…'}</span></span>} extra={<>

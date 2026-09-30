@@ -71,7 +71,18 @@ export interface StoreRun {
 export interface ModelProfile {
   schema: 1; vendor: string; name: string; display?: string; harness?: string; family?: string;
   release?: string; notes?: string; tags?: string[]; created_at: string; color?: string;
+  billing?: Billing;
 }
+/** 计费方式：按 token（费用来自日志 / 单价）或订阅额度（用开跑前后的剩余额度差 × 单位价格换算） */
+export interface Billing {
+  mode: 'token' | 'subscription' | 'free';
+  plan?: string;            // 例如 ChatGPT Pro、Claude Max 20x、DeepSeek 包月
+  unit?: string;            // 额度单位：次、条消息、点、%、美元
+  monthly_fee?: number;     // 每个额度周期的费用（美元）
+  monthly_quota?: number;   // 每个额度周期的总额度（与 unit 同单位）
+}
+/** 单次运行的额度记录：复制提示词时记下开跑前剩余，结束时记下剩余 */
+export interface RunQuota { unit?: string; before?: number | null; after?: number | null; at_before?: string | null; at_after?: string | null; used?: number | null; cost_usd?: number | null }
 export type WsStatus = 'prepared' | 'running' | 'finished' | 'registered' | 'graded' | 'reviewed';
 export interface WorkspaceRun {
   schema: 1; ref: string;            // 例：OpenAI/GPT-6.1-Sol/T05/r1
@@ -82,6 +93,7 @@ export interface WorkspaceRun {
   entry?: string | null;               // 相对 workspace 的预览入口（dist/index.html、index.html、final.mp4…）
   detect?: DetectResult;               // 交付检测（服务端实时计算）
   auto_finished?: boolean;             // 由 FINAL_MESSAGE.md 自动结束计时
+  quota?: RunQuota;                    // 订阅额度记录
 }
 
 export interface WbSettings {

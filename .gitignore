@@ -4,7 +4,9 @@ skills/bench-grader/tasks/*/hidden/
 
 # ---- 工作台构建与运行时 ----
 workbench/node_modules/
-workbench/desktop/app/
+workbench/desktop/app/*
+!workbench/desktop/app/pet.cjs
+!workbench/desktop/app/pet-preload.cjs
 workbench/release/
 workbench/.runtime/
 workbench/*.tsbuildinfo

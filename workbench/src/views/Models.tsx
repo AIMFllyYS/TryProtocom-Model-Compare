@@ -1,6 +1,6 @@
 // 模型：按供应商分组的模型卡片；详情页含雷达、逐题得分、运行矩阵与单模型报告。
 import { useMemo, useState } from 'react';
-import { ArrowRight, Boxes, FileText, FolderOpen, Pencil, Plus, Star, Trophy } from 'lucide-react';
+import { ArrowRight, Boxes, FileText, FolderOpen, Pencil, Plus, Rocket, Star, Trophy } from 'lucide-react';
 import type { ModelProfile, WorkspaceRun } from '../../shared/types';
 import { vendorById } from '../../shared/vendors';
 import { post } from '../api';
@@ -14,6 +14,7 @@ import { Bars, ChartCard, Radar, seriesColor } from '../ui/charts';
 import { toast } from '../ui/toast';
 import { Score, useNamer } from '../components/common';
 import { AddModelDialog, modelKey } from '../components/pickers';
+import { launch } from '../components/LaunchPad';
 
 export default function Models() {
   const route = useRoute();
@@ -91,6 +92,7 @@ function ModelList() {
                         <div className="task-dots">{(wb.spec?.tasks || []).map((t) => <i key={t.id} className={cls(s.tasks.has(t.id) && 'on')} title={t.id} />)}</div>
                         <div className="muted xs">{s.tasks.size}/{nTasks} 题有交付 · {s.runs} 次运行{s.last ? ` · ${fmt.ago(s.last)}` : ''}</div>
                       </div>
+                      <Btn size="sm" tone="primary" icon={<Rocket size={14} />} onClick={(e) => { e.preventDefault(); e.stopPropagation(); launch(modelKey(m)); }}>开始测评</Btn>
                     </div>
                   </a>
                 );
@@ -100,7 +102,7 @@ function ModelList() {
           </section>
         );
       })}
-      {add && <AddModelDialog onClose={() => setAdd(false)} onSaved={(m) => go('models', [m.vendor, m.name])} />}
+      {add && <AddModelDialog onClose={() => setAdd(false)} onSaved={(m) => { go('models', [m.vendor, m.name]); setTimeout(() => launch(modelKey(m)), 60); }} />}
     </div>
   );
 }
@@ -140,9 +142,9 @@ function ModelDetail({ vendor, name }: { vendor: string; name: string }) {
           {m.notes && <p className="dim small mt">{m.notes}</p>}
         </div>
         <div className="stack s" style={{ alignItems: 'flex-end' }}>
-          {isCur ? <Badge tone="accent" size="lg" dot>当前测评模型</Badge> : <Btn tone="primary" icon={<Star size={15} />} onClick={() => wb.setCurrent(modelKey(m))}>设为当前测评模型</Btn>}
+          <div className="row gap-s">{isCur ? <Badge tone="accent" size="lg" dot>当前测评模型</Badge> : <Btn icon={<Star size={15} />} onClick={() => wb.setCurrent(modelKey(m))}>设为当前</Btn>}<Btn tone="primary" size="lg" icon={<Rocket size={16} />} onClick={() => launch(modelKey(m))}>开始测评</Btn></div>
           <div className="row gap-s">
-            <Btn size="sm" icon={<ArrowRight size={14} />} onClick={() => { wb.setCurrent(modelKey(m)); go('tasks'); }}>去选题</Btn>
+            <Btn size="sm" icon={<ArrowRight size={14} />} onClick={() => { wb.setCurrent(modelKey(m)); go('tasks'); }}>题目页</Btn>
             <Btn size="sm" icon={<Pencil size={13} />} onClick={() => setEdit(true)}>编辑</Btn>
             <Btn size="sm" icon={<FolderOpen size={13} />} onClick={() => void post('/api/open-folder', { path: `model/${vendor}/${name}` }).catch((e) => toast.error(e.message))}>目录</Btn>
             <Btn size="sm" icon={<FileText size={13} />} busy={busy} onClick={() => void gen()}>生成报告</Btn>

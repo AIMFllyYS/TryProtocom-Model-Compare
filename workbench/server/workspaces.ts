@@ -223,7 +223,7 @@ export class Workspaces {
   patchRun(ref: string, patch: Partial<WorkspaceRun>): WorkspaceRun {
     const p = this.parseRef(ref);
     const cur = this.readRun(p.vendor, p.model, p.tkey, p.index);
-    const allowed: (keyof WorkspaceRun)[] = ['harness', 'started_at', 'ended_at', 'timed_out', 'notes', 'usage', 'grader_run_id', 'deliverable_dir'];
+    const allowed: (keyof WorkspaceRun)[] = ['harness', 'started_at', 'ended_at', 'timed_out', 'notes', 'usage', 'grader_run_id', 'deliverable_dir', 'quota'];
     for (const k of allowed) if (k in patch) (cur as any)[k] = (patch as any)[k];
     this.saveRun(cur);
     return this.readRun(p.vendor, p.model, p.tkey, p.index);
