@@ -104,4 +104,4 @@ npm run desktop      # 用 Electron 打开
 npm run dist:win     # 打包便携版 exe → workbench/release/
 ```
 
-设计与需求见 `docs/PRD.md`。`workbench/dist` 与 `workbench/dist-node` 已提交，只装 Node.js 也能直接运行网页版与 CLI。
+设计与需求见 `docs/PRD.md`，分支与发布流程见 `docs/BRANCHING.md`（日常在 `dev` 开发，稳定后同步到 `main`）。`workbench/dist` 与 `workbench/dist-node` 已提交，只装 Node.js 也能直接运行网页版与 CLI。
