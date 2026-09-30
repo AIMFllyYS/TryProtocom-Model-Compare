@@ -1,47 +1,18 @@
 // 全局数据层：会话、题库规范、存储文件、汇总、任务、预览会话与进程。SSE 事件驱动增量刷新。
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, ProcInfo, RequestEntry, SessionInfo, SpecData, StoreRun, WbEvent } from '../shared/types';
 import type { HarnessInfo } from '../server/harness';
 import { boot, connectEvents, get, post, type Conn } from './api';
+import { bus, jobKey, useBus } from './lib/bus';
+import { forgetJobSeeds } from './components/jobview';
 import { go, normView } from './lib/router';
 import { toast } from './ui/toast';
 export type { HarnessInfo };
 
-// ---------- 高频流数据（日志、任务输出）的外部存储，避免整棵树重渲染 ----------
-type Listener = () => void;
-class Bus {
-  private data = new Map<string, unknown[]>();
-  private subs = new Map<string, Set<Listener>>();
-  private static EMPTY: unknown[] = [];
-  get<T>(k: string): T[] { return (this.data.get(k) as T[]) || (Bus.EMPTY as T[]); }
-  set(k: string, v: unknown[]) { this.data.set(k, v); this.subs.get(k)?.forEach((f) => f()); }
-  append(k: string, items: unknown[], max = 4000, key?: (x: any) => unknown) {
-    let cur = this.get<unknown>(k).slice();
-    if (key) {
-      // 折叠的重复日志以同一 seq 回推：原位替换
-      const idx = new Map(cur.map((x, i) => [key(x), i]));
-      for (const it of items) {
-        const i = idx.get(key(it));
-        if (i != null) cur[i] = it; else { idx.set(key(it), cur.length); cur.push(it); }
-      }
-    } else cur = cur.concat(items);
-    if (cur.length > max) cur = cur.slice(cur.length - max);
-    this.set(k, cur);
-  }
-  sub(k: string, f: Listener) {
-    let s = this.subs.get(k);
-    if (!s) this.subs.set(k, (s = new Set()));
-    s.add(f);
-    return () => { s!.delete(f); };
-  }
-}
-export const bus = new Bus();
-export function useBus<T>(k: string): T[] {
-  return useSyncExternalStore(useCallback((f) => bus.sub(k, f), [k]), () => bus.get<T>(k));
-}
+// ---------- 高频流数据（日志、任务输出）：外部存储见 lib/bus（与桌面宠物共用） ----------
+export { bus, jobKey, useBus };
 export const logKey = (sid: string) => 'log:' + sid;
 export const reqKey = (sid: string) => 'req:' + sid;
-export const jobKey = (id: string) => 'job:' + id;
 export const procKey = (id: string) => 'proc:' + id;
 export const navKey = (sid: string) => 'nav:' + sid;
 export const perfKey = (sid: string) => 'perf:' + sid;
@@ -175,7 +146,7 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     };
     return connectEvents(onEvent, (c) => {
       setConn((prev) => {
-        if (prev === 'down' && c === 'open') void refresh();
+        if (prev === 'down' && c === 'open') { forgetJobSeeds(); void refresh(); }
         return c;
       });
     });

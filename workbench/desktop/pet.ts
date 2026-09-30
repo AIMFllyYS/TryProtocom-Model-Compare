@@ -32,7 +32,9 @@ async function create() {
   win.webContents.on('will-navigate', (e, u) => { if (new URL(u).origin !== own) e.preventDefault(); });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.once('ready-to-show', () => win?.showInactive());
-  await win.loadURL(`${BASE}/pet.html`).catch(() => win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<body style="margin:0;background:transparent;font:13px system-ui;color:#999;display:grid;place-items:end;height:100vh">工作台未运行</body>')}`));
+  // 由后台任务自动召唤时（WB_PET_OPEN=jobs）直接展开任务面板
+  const hash = process.env.WB_PET_OPEN === 'jobs' ? '#jobs' : '';
+  await win.loadURL(`${BASE}/pet.html${hash}`).catch(() => win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<body style="margin:0;background:transparent;font:13px system-ui;color:#999;display:grid;place-items:end;height:100vh">工作台未运行</body>')}`));
 }
 
 ipcMain.on('pet:size', (_e, w: number, h: number) => {

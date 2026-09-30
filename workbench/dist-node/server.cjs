@@ -294,6 +294,16 @@ function aggregate(allRuns, spec, opts = {}) {
   return { board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: (/* @__PURE__ */ new Date()).toISOString(), pending };
 }
 
+// shared/activity.ts
+var ACTIVE = (j) => j.status === "running" || j.status === "queued";
+var FAIL_WINDOW = 30 * 6e4;
+var queuedAt = (j) => j.queued_at ?? j.started_at;
+function petJobs(jobs, now = Date.now(), windowMs = 15 * 6e4, max = 6) {
+  const act = jobs.filter(ACTIVE).sort((a, b) => a.status === b.status ? queuedAt(a) - queuedAt(b) : a.status === "running" ? -1 : 1);
+  const recent = jobs.filter((j) => !ACTIVE(j) && (j.kind === "register" || j.kind === "grade") && now - (j.ended_at || 0) < windowMs).sort((a, b) => (b.ended_at || 0) - (a.ended_at || 0));
+  return [...act, ...recent].slice(0, max);
+}
+
 // shared/deliverables.ts
 var FINAL_FILE = "FINAL_MESSAGE.md";
 var LOCKS = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock", "requirements.txt", "uv.lock", "poetry.lock"];
@@ -1151,9 +1161,23 @@ var Jobs = class {
     };
     this.list.unshift(j);
     if (this.list.length > 60) this.list.splice(60).forEach((x) => x.child && killTree(x.child.pid));
-    this.hub.emit({ type: "job", job: this.info(j) });
+    this.emitJob(j);
     void this.pump();
     return this.info(j);
+  }
+  /** 任务状态变化的服务端钩子（例如：登记 / 评分开始时自动召唤桌面宠物） */
+  onChange = null;
+  emitJob(j) {
+    const info = this.info(j);
+    this.hub.emit({ type: "job", job: info });
+    try {
+      this.onChange?.(info);
+    } catch {
+    }
+  }
+  /** 是否还有进行中（运行 / 排队）的任务；kinds 限定种类 */
+  busy(kinds) {
+    return this.list.some((j) => (j.status === "running" || j.status === "queued") && (!kinds || kinds.includes(j.kind)));
   }
   get(id) {
     return this.list.find((j) => j.id === id);
@@ -1192,7 +1216,7 @@ var Jobs = class {
     j.status = status;
     j.code = code;
     j.ended_at = Date.now();
-    this.hub.emit({ type: "job", job: this.info(j) });
+    this.emitJob(j);
     j.waiters.splice(0).forEach((w) => w(this.info(j)));
   }
   async pump() {
@@ -1202,7 +1226,7 @@ var Jobs = class {
     this.running = true;
     j.status = "running";
     j.started_at = Date.now();
-    this.hub.emit({ type: "job", job: this.info(j) });
+    this.emitJob(j);
     this.line(j, `$ ${j.spec.cmd} ${j.spec.args.map((a) => /\s/.test(a) ? JSON.stringify(a) : a).join(" ")}`);
     try {
       const { child, done } = spawnStream(j.spec.cmd, j.spec.args, { cwd: j.spec.cwd, env: j.spec.env, shell: j.spec.shell, onLine: (l) => this.line(j, l) });
@@ -3001,16 +3025,56 @@ async function startServer(over = {}) {
       grading: store.data.runs.filter((r) => !r.graded).length,
       pending: agg.pending,
       jobs: jobs.list.filter((j) => j.status === "running" || j.status === "queued").map((j) => jobs.info(j).title),
+      tasks: petJobs(jobs.list.map((j) => jobs.info(j))).map((j) => ({ job: j, ...petJobMeta(j) })),
       top: agg.board.slice(0, 3).map((b) => ({ entrant: b.entrant, quality: b.quality, rank: b.rank }))
     };
   });
+  const petJobMeta = (j) => {
+    const ref = j.subject?.refs?.[0];
+    const rid = j.subject?.run_ids?.[0];
+    const w = ref ? store.data.workspaces.find((x) => x.ref === ref) : rid ? store.data.workspaces.find((x) => x.grader_run_id === rid) : void 0;
+    const r = rid ? store.data.runs.find((x) => x.run_id === rid) : w?.grader_run_id ? store.data.runs.find((x) => x.run_id === w.grader_run_id) : void 0;
+    const n = (j.subject?.refs?.length || 0) + (j.subject?.run_ids?.length || 0);
+    const label = w ? `${w.tkey} \xB7 ${w.model} r${w.index}` : r ? `${r.tkey} \xB7 ${r.model}${r.run_index != null ? ` r${r.run_index}` : ""}` : null;
+    const score = j.kind === "grade" && j.status === "done" && r?.score ? { total: r.score.total, gate_pass: r.score.gate_pass, human: r.score.items.filter((i) => i.method === "human" && i.status === "pending").length } : null;
+    return { label: label && n > 1 ? `${label} \u7B49 ${n} \u6B21\u8FD0\u884C` : label, ref: w?.ref || r?.ws_ref || null, run_id: r?.run_id || rid || null, score };
+  };
   let petProc = null;
+  const petRunning = () => !!petProc && petProc.exitCode == null;
   const electronExe = () => {
     const p = import_node_path8.default.join(cfg.root, "workbench", "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
     return import_node_fs9.default.existsSync(p) ? p : null;
   };
   const petMain = import_node_path8.default.join(cfg.root, "workbench", "desktop", "app", "pet.cjs");
-  R.get("/api/pet", () => ({ available: !!electronExe() && import_node_fs9.default.existsSync(petMain), running: !!petProc && petProc.exitCode == null }));
+  const PET_KINDS = ["register", "grade"];
+  let petDismissed = false;
+  const launchPet = (open) => {
+    if (petRunning()) return { ok: true, running: true, already: true };
+    const exe = electronExe();
+    if (!exe) throw new HttpError(404, "\u672A\u5B89\u88C5 Electron\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm install \u540E\u518D\u53EC\u5524\u684C\u9762\u5BA0\u7269");
+    if (!import_node_fs9.default.existsSync(petMain)) throw new HttpError(404, "\u684C\u9762\u5BA0\u7269\u5C1A\u672A\u6784\u5EFA\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm run build");
+    const env = { ...process.env, WB_URL: `http://127.0.0.1:${cfg.port}`, WB_PET_OPEN: open || "" };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const p = (0, import_node_child_process5.spawn)(exe, [petMain], { cwd: import_node_path8.default.dirname(petMain), env, detached: true, stdio: "ignore", windowsHide: false });
+    petProc = p;
+    p.on("exit", () => {
+      if (petProc === p) petProc = null;
+      if (jobs.busy(PET_KINDS)) petDismissed = true;
+    });
+    p.unref();
+    return { ok: true, running: true };
+  };
+  jobs.onChange = (j) => {
+    if (!PET_KINDS.includes(j.kind)) return;
+    if (j.status === "queued" || j.status === "running") {
+      if (settings().pet_auto === false || petDismissed || petRunning()) return;
+      try {
+        launchPet("jobs");
+      } catch {
+      }
+    } else if (!jobs.busy(PET_KINDS)) petDismissed = false;
+  };
+  R.get("/api/pet", () => ({ available: !!electronExe() && import_node_fs9.default.existsSync(petMain), running: petRunning(), auto: settings().pet_auto !== false }));
   R.post("/api/pet", async (req) => {
     const b = await readJson(req);
     if (b.action === "quit") {
@@ -3018,18 +3082,7 @@ async function startServer(over = {}) {
       petProc = null;
       return { ok: true, running: false };
     }
-    if (petProc && petProc.exitCode == null) return { ok: true, running: true, already: true };
-    const exe = electronExe();
-    if (!exe) throw new HttpError(404, "\u672A\u5B89\u88C5 Electron\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm install \u540E\u518D\u53EC\u5524\u684C\u9762\u5BA0\u7269");
-    if (!import_node_fs9.default.existsSync(petMain)) throw new HttpError(404, "\u684C\u9762\u5BA0\u7269\u5C1A\u672A\u6784\u5EFA\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm run build");
-    const env = { ...process.env, WB_URL: `http://127.0.0.1:${cfg.port}` };
-    delete env.ELECTRON_RUN_AS_NODE;
-    petProc = (0, import_node_child_process5.spawn)(exe, [petMain], { cwd: import_node_path8.default.dirname(petMain), env, detached: true, stdio: "ignore", windowsHide: false });
-    petProc.on("exit", () => {
-      petProc = null;
-    });
-    petProc.unref();
-    return { ok: true, running: true };
+    return launchPet(b.open === "jobs" ? "jobs" : void 0);
   });
   R.get("/api/harness", async (req) => {
     const force = req.query.get("refresh") === "1";

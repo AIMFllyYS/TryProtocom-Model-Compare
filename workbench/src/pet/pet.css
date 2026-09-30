@@ -1,7 +1,12 @@
 /* Bench 小精灵：透明窗口里的玻璃球精灵 + 气泡 + 面板。窗口右下角锚定，内容从下往上排。 */
-:root { color-scheme: light dark; --t: #14161e; --t2: rgb(20 22 30 / .62); --t3: rgb(20 22 30 / .42); --g: rgb(250 250 254 / .95); --hair: rgb(20 22 30 / .08); --fill: rgb(20 22 30 / .05); --ok: #17a05d; --acc: #6a5cff; --bad: #e0453c;
+:root { color-scheme: light dark; --t: #14161e; --t2: rgb(20 22 30 / .62); --t3: rgb(20 22 30 / .42); --g: rgb(250 250 254 / .95); --hair: rgb(20 22 30 / .08); --fill: rgb(20 22 30 / .05); --ok: #17a05d; --acc: #6a5cff; --bad: #e0453c; --acc-ink: #5446d6; --fill-3: rgb(20 22 30 / .14);
   --font: "SF Pro Text", -apple-system, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif; }
-@media (prefers-color-scheme: dark) { :root { --t: #f1f3f9; --t2: rgb(236 239 247 / .66); --t3: rgb(236 239 247 / .42); --g: rgb(28 31 41 / .95); --hair: rgb(255 255 255 / .08); --fill: rgb(255 255 255 / .06); } }
+@media (prefers-color-scheme: dark) { :root { --t: #f1f3f9; --t2: rgb(236 239 247 / .66); --t3: rgb(236 239 247 / .42); --g: rgb(28 31 41 / .95); --hair: rgb(255 255 255 / .08); --fill: rgb(255 255 255 / .06); --acc-ink: #b9b1ff; --fill-3: rgb(255 255 255 / .16); } }
+/* styles/activity.css（与工作台共用的进度条 / 分步 / 日志终端）用到的变量，映射到宠物自己的色板 */
+:root {
+  --accent: var(--acc); --accent-ink: var(--acc-ink); --accent-soft: color-mix(in oklab, var(--acc) 14%, transparent); --bad-soft: color-mix(in oklab, var(--bad) 12%, transparent);
+  --text: var(--t); --text-2: var(--t2); --text-3: var(--t3); --fill-1: var(--fill); --edge: var(--hair); --sh-2: 0 8px 20px -10px rgb(20 24 60 / .35);
+  --r-m: 10px; --r-l: 12px; --r-xl: 16px; --r-pill: 999px; --mono: ui-monospace, "Cascadia Code", Consolas, monospace; --t-slow: .5s; --ease: cubic-bezier(.32, .72, 0, 1); }
 * { box-sizing: border-box; }
 html, body, #pet { margin: 0; height: 100%; background: transparent !important; overflow: hidden; }
 body { font: 12.5px/1.45 var(--font); color: var(--t); -webkit-font-smoothing: antialiased; user-select: none; }
@@ -105,4 +110,50 @@ button { font: inherit; color: inherit; }
 .pp-btn:disabled { opacity: .5; cursor: default; }
 .pp-btn.primary { color: #fff; background: linear-gradient(180deg, #34363f, #15161b); box-shadow: inset 0 1px 0 rgb(255 255 255 / .25), 0 4px 12px -4px rgb(0 0 0 / .4); }
 .pp-btn.ghost { background: transparent; box-shadow: none; color: var(--t3); }
-@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+.muted { color: var(--t3); }
+.stack0 { display: flex; flex-direction: column; gap: 3px; }
+
+/* ---------- 气泡语气 ---------- */
+.pet-bubble.busy .pb-ic { background: var(--acc); }
+.pet-bubble.bad .pb-ic { background: var(--bad); }
+
+/* ---------- 后台任务（面板列表） ---------- */
+.pp-g.live { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 30%, transparent); }
+.pp-job { width: 100%; border: 0; background: transparent; text-align: left; cursor: pointer; align-items: flex-start; }
+.pp-job .grow b { font-size: 12.5px; }
+.pp-job em { font-style: normal; font-weight: 500; color: var(--t2); }
+.pp-job .act-bar { margin-top: 3px; }
+.pp-ji { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9px; color: var(--accent-ink); background: var(--accent-soft); }
+.pp-job.done .pp-ji { color: var(--ok); background: color-mix(in oklab, var(--ok) 14%, transparent); }
+.pp-job.bad .pp-ji { color: var(--bad); background: var(--bad-soft); }
+.pp-job.bad .grow span { color: var(--bad); }
+.pp-jl { flex: none; margin-top: 6px; color: var(--t3); opacity: 0; transition: opacity .2s; }
+.pp-job:hover .pp-jl, .pp-job:focus-visible .pp-jl { opacity: 1; }
+
+/* ---------- 任务详情：分步进度 + 完整日志 ---------- */
+.pet-log .pp-h .pp-x:first-child { flex: none; }
+.pl-state { display: flex; flex-direction: column; gap: 8px; margin: 0 12px 10px; padding: 10px 12px; border-radius: 14px; background: var(--fill); }
+.pl-state.bad { background: var(--bad-soft); }
+.pl-sub { font-size: 11.5px; color: var(--t2); }
+.pl-state.bad .pl-sub { color: var(--bad); }
+.pet-log .pl-term { flex: 1; min-height: 0; max-height: none; margin: 0 12px 10px; border-radius: 12px; padding: 10px 12px; font-size: 11px; line-height: 1.55; user-select: text; }
+
+/* ---------- 收起时的“正在工作”：进度弧 + 呼吸光点 ---------- */
+@property --p { syntax: "<number>"; inherits: false; initial-value: 0; }
+.orb.working .orb-ring { opacity: 0; }
+.orb-prog { position: absolute; inset: 4px; border-radius: 50%; pointer-events: none; transition: --p .8s cubic-bezier(.32, .72, 0, 1);
+  background: conic-gradient(var(--acc) calc(var(--p) * 1turn), color-mix(in oklab, var(--acc) 16%, transparent) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--acc) 60%, transparent)); }
+.orb-prog.indet { background: conic-gradient(from 0deg, transparent 0 55%, color-mix(in oklab, var(--acc) 50%, transparent) 80%, var(--acc)); animation: spin 1.3s linear infinite; }
+.orb-dot { position: absolute; right: 12px; bottom: 14px; width: 16px; height: 16px; display: grid; place-items: center; z-index: 2; }
+.orb-dot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--acc); opacity: .5; animation: ping 1.6s cubic-bezier(0, 0, .2, 1) infinite; }
+.orb-dot i { position: relative; width: 9px; height: 9px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #a99dff 45%, var(--acc)); box-shadow: 0 0 0 2px rgb(255 255 255 / .9), 0 0 10px 2px color-mix(in oklab, var(--acc) 70%, transparent); animation: breathe 1.6s ease-in-out infinite; }
+@keyframes ping { 0% { transform: scale(.6); opacity: .55; } 80%, 100% { transform: scale(2.1); opacity: 0; } }
+@keyframes breathe { 50% { transform: scale(.82); filter: brightness(1.25); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  /* 进度反馈例外：关掉会让后台任务看起来“卡死了”。转圈放慢，光点只做原地明暗 */
+  .spin, .orb-prog.indet, .orb-dot i, .act-bar.indet i, .act-steps li.cur i { animation-duration: 1.8s !important; animation-iteration-count: infinite !important; }
+  .orb-dot::before { display: none; }
+}

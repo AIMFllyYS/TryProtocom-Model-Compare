@@ -4,7 +4,8 @@ import { Ban, Bot, Database, FileCode2, FolderOpen, Gauge, Info, Keyboard, Messa
 import type { JobInfo, WbSettings } from '../../shared/types';
 import { HARNESSES, harnessById, harnessHint } from '../../shared/vendors';
 import { get, post, desktop } from '../api';
-import { bus, jobKey, useBus, useWb } from '../state';
+import { useWb } from '../state';
+import { JobTerm, useJobLines } from '../components/jobview';
 import { go, href, useRoute } from '../lib/router';
 import { cls, copyText, fmt } from '../lib/format';
 import { Badge, Btn, Card, CopyBtn, Empty, Field, Kv, Select, ToggleRow } from '../ui/kit';
@@ -61,6 +62,9 @@ function PromptSettings() {
         <ToggleRow title="附带统一运行约定" desc="在题目原文前加入工作目录绝对路径、交付文件夹名、必须存在的文件与 FINAL_MESSAGE.md 约定。关闭后只发送 prompt.md 原文。" checked={s.prompt_header !== false} onChange={(v) => void save({ prompt_header: v })} />
         <ToggleRow title="复制即开始计时" desc="复制提示词时记录开始时间；模型写出 FINAL_MESSAGE.md 时自动结束。" checked={s.auto_start !== false} onChange={(v) => void save({ auto_start: v })} />
         <ToggleRow title="复制后自动打开 harness" desc="题目页的「复制提示词」同时启动模型绑定的 harness（也可以随时用旁边的「复制并打开」按钮）。" checked={!!s.open_harness} onChange={(v) => void save({ open_harness: v })} />
+      </Card>
+      <Card title="后台任务时">
+        <ToggleRow title="自动召唤桌面宠物" desc="登记或自动评分开始时，在屏幕右下角召唤桌面宠物并展开任务面板，可以看进度和完整评分日志；收起后宠物上的光点表示还在工作。在本轮任务进行中手动退出宠物，就不再自动召唤，直到任务全部结束。需要已安装 Electron。" checked={s.pet_auto !== false} onChange={(v) => void save({ pet_auto: v })} />
       </Card>
       <Card title="TTS 命令" sub="替换 T04 提示词中的 {TTS_COMMAND}" extra={<Btn size="sm" tone="primary" icon={<Save size={14} />} onClick={() => void save({ tts_command: tts })}>保存</Btn>}>
         <Field label="评测机上所有模型统一使用的 TTS 命令" hint="例如 edge-tts --voice zh-CN-XiaoxiaoNeural --text"><input className="mono" value={tts} onChange={(e) => setTts(e.target.value)} placeholder="edge-tts --voice zh-CN-XiaoxiaoNeural --text" /></Field>
@@ -170,10 +174,7 @@ function Jobs() {
   );
 }
 function JobDetail({ j }: { j: JobInfo }) {
-  const lines = useBus<string>(jobKey(j.id));
-  const box = useRef<HTMLPreElement>(null);
-  useEffect(() => { get<{ output: string[] }>(`/api/jobs/${j.id}`).then((r) => bus.set(jobKey(j.id), r.output || [])).catch(() => {}); }, [j.id]);
-  useEffect(() => { const el = box.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight; }, [lines.length]);
+  const lines = useJobLines(j.id, true);
   return (
     <div className="stack">
       <div className="row gap-s">
@@ -181,7 +182,7 @@ function JobDetail({ j }: { j: JobInfo }) {
         {(j.status === 'running' || j.status === 'queued') && <Btn size="sm" tone="danger" icon={<Ban size={14} />} onClick={() => void post(`/api/jobs/${j.id}/cancel`)}>取消</Btn>}
       </div>
       {j.result != null && <pre className="prompt">{JSON.stringify(j.result, null, 2)}</pre>}
-      <pre ref={box} className="term">{lines.map((l, i) => <span key={i} className={/error|错误|失败|Traceback/i.test(l) ? 'err' : /warn|警告/i.test(l) ? 'warn' : undefined}>{l}{'\n'}</span>)}{!lines.length && <span className="muted">（暂无输出）</span>}</pre>
+      <JobTerm lines={lines} />
     </div>
   );
 }

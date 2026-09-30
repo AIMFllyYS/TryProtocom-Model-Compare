@@ -5,7 +5,7 @@ import { inferVendor, parseModelInput, iconFor, suggestHarness } from '../shared
 import { runHeader, buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { DELIVERABLES, evalDeliverable } from '../shared/deliverables';
 import { settleQuota, unitPrice } from '../shared/quota';
-import { activityOf, isBusy, FAIL_WINDOW } from '../shared/activity';
+import { activityOf, activityOfJob, isBusy, FAIL_WINDOW, parseProgress, petJobs } from '../shared/activity';
 import type { JobInfo } from '../shared/types';
 
 test('供应商推断', () => {
@@ -150,4 +150,34 @@ test('运行 ↔ 后台任务关联（登记 / 评分进度）', () => {
   assert.equal(activityOf(jobs, undefined, 'T01-a', now), null);
   // 无关任务（导出等）不挂到运行上
   assert.equal(activityOf([J('e', 'export', 'running', now, { refs: [ref] })], ref, null, now), null);
+});
+
+test('桌面宠物的任务列表与进度里程碑', () => {
+  const now = 5_000_000;
+  const J = (id: string, kind: JobInfo['kind'], status: JobInfo['status'], qa: number, ended: number | null = null): JobInfo =>
+    ({ id, kind, title: id, status, started_at: qa, queued_at: qa, ended_at: ended, code: null, lines: 0 });
+  const jobs = [
+    J('old', 'grade', 'done', now - 40 * 60000, now - 30 * 60000),   // 超过 15 分钟：不显示
+    J('exp', 'export', 'done', now - 60000, now - 30000),              // 已结束的非评测任务：不显示
+    J('q2', 'grade', 'queued', now - 2000),
+    J('run', 'register', 'running', now - 9000),
+    J('q1', 'grade', 'queued', now - 3000),
+    J('ok', 'grade', 'done', now - 9 * 60000, now - 5 * 60000),
+    J('bad', 'register', 'failed', now - 3 * 60000, now - 2 * 60000),
+  ];
+  // 进行中在前（运行中 > 排队，排队按先后），然后是最近结束的（新的在前）
+  assert.deepEqual(petJobs(jobs, now).map((j) => j.id), ['run', 'q1', 'q2', 'bad', 'ok']);
+  assert.equal(petJobs(jobs, now, 15 * 60000, 2).length, 2);
+  const by = (id: string) => activityOfJob(jobs.find((j) => j.id === id)!, jobs);
+  assert.equal(by('q2').phase, 'queued'); assert.equal(by('q2').ahead, 2);
+  assert.equal(by('run').phase, 'register');
+  assert.equal(by('ok').phase, 'done'); assert.ok(!isBusy(by('ok')));
+  assert.equal(by('bad').phase, 'failed');
+  assert.equal(activityOfJob(J('x', 'export', 'running', now), []).phase, 'work');
+  assert.ok(isBusy(activityOfJob(J('x', 'export', 'running', now), [])));
+  // 评分器输出：最后一个探针、是否进入写入结果、最后一行有效输出
+  const p = parseProgress(['$ python grade.py', '[probe 1/5] files', 'ok', '[probe 3/5] browser', 'fps 60']);
+  assert.deepEqual(p.probe, { i: 3, n: 5, type: 'browser' }); assert.equal(p.syncing, false); assert.equal(p.last, 'fps 60');
+  assert.equal(parseProgress(['[probe 5/5] claims', '[after] 写入结果…']).syncing, true);
+  assert.equal(parseProgress(['$ python grade.py']).probe, null);
 });

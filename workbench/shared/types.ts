@@ -123,6 +123,7 @@ export interface WbSettings {
   open_harness?: boolean;              // 复制提示词后自动打开 harness（默认 false）
   auto_start?: boolean;                // 复制提示词即开始计时（默认 true）
   current_model?: string;              // 当前测评模型 供应商/模型
+  pet_auto?: boolean;                  // 登记 / 自动评分开始时自动召唤桌面宠物（默认 true）
   github?: string;                     // 开源仓库地址
 }
 

@@ -10,6 +10,7 @@ import './styles/glass.css';
 import './styles/components.css';
 import './styles/layout.css';
 import './styles/views.css';
+import './styles/activity.css';
 import './styles/stage.css';
 import './styles/launch.css';
 

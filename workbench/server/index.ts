@@ -4,8 +4,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { execFile, spawn, spawnSync } from 'node:child_process';
-import type { Aggregate, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
+import type { Aggregate, JobInfo, JobKind, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
 import { aggregate } from '../shared/aggregate';
+import { petJobs } from '../shared/activity';
 import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { settleQuota } from '../shared/quota';
 import { parseModelInput, suggestHarness, harnessByName, harnessById, iconFor } from '../shared/vendors';
@@ -505,30 +506,61 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       grading: store.data.runs.filter((r) => !r.graded).length,
       pending: agg.pending,
       jobs: jobs.list.filter((j) => j.status === 'running' || j.status === 'queued').map((j) => jobs.info(j).title),
+      tasks: petJobs(jobs.list.map((j) => jobs.info(j))).map((j) => ({ job: j, ...petJobMeta(j) })),
       top: agg.board.slice(0, 3).map((b) => ({ entrant: b.entrant, quality: b.quality, rank: b.rank })),
     };
   });
+  /** 任务作用于哪次运行（给宠物显示“T01 · GPT-6.1-Sol r1”）；评分完成时附上分数与剩余人工项 */
+  const petJobMeta = (j: JobInfo) => {
+    const ref = j.subject?.refs?.[0];
+    const rid = j.subject?.run_ids?.[0];
+    const w = ref ? store.data.workspaces.find((x) => x.ref === ref) : rid ? store.data.workspaces.find((x) => x.grader_run_id === rid) : undefined;
+    const r = rid ? store.data.runs.find((x) => x.run_id === rid) : w?.grader_run_id ? store.data.runs.find((x) => x.run_id === w.grader_run_id) : undefined;
+    const n = (j.subject?.refs?.length || 0) + (j.subject?.run_ids?.length || 0);
+    const label = w ? `${w.tkey} · ${w.model} r${w.index}` : r ? `${r.tkey} · ${r.model}${r.run_index != null ? ` r${r.run_index}` : ''}` : null;
+    const score = j.kind === 'grade' && j.status === 'done' && r?.score ? { total: r.score.total, gate_pass: r.score.gate_pass, human: r.score.items.filter((i) => i.method === 'human' && i.status === 'pending').length } : null;
+    return { label: label && n > 1 ? `${label} 等 ${n} 次运行` : label, ref: w?.ref || r?.ws_ref || null, run_id: r?.run_id || rid || null, score };
+  };
+
   let petProc: ReturnType<typeof spawn> | null = null;
+  const petRunning = () => !!petProc && petProc.exitCode == null;
   const electronExe = () => {
     const p = path.join(cfg.root, 'workbench', 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
     return fs.existsSync(p) ? p : null;
   };
   const petMain = path.join(cfg.root, 'workbench', 'desktop', 'app', 'pet.cjs');
-  R.get('/api/pet', () => ({ available: !!electronExe() && fs.existsSync(petMain), running: !!petProc && petProc.exitCode == null }));
-  R.post('/api/pet', async (req) => {
-    const b = await readJson(req);
-    if (b.action === 'quit') { petProc?.kill(); petProc = null; return { ok: true, running: false }; }
-    if (petProc && petProc.exitCode == null) return { ok: true, running: true, already: true };
+  const PET_KINDS: JobKind[] = ['register', 'grade'];
+  // 本轮后台任务进行中用户手动退出了宠物 → 不再自动召唤，直到登记 / 评分全部结束
+  let petDismissed = false;
+  const launchPet = (open?: 'jobs') => {
+    if (petRunning()) return { ok: true, running: true, already: true };
     const exe = electronExe();
     if (!exe) throw new HttpError(404, '未安装 Electron：在 workbench/ 下运行 npm install 后再召唤桌面宠物');
     if (!fs.existsSync(petMain)) throw new HttpError(404, '桌面宠物尚未构建：在 workbench/ 下运行 npm run build');
     // 宠物是独立的轻量进程（透明置顶小窗），只连接 127.0.0.1 上的本服务
-    const env = { ...process.env, WB_URL: `http://127.0.0.1:${cfg.port}` } as NodeJS.ProcessEnv;
+    const env = { ...process.env, WB_URL: `http://127.0.0.1:${cfg.port}`, WB_PET_OPEN: open || '' } as NodeJS.ProcessEnv;
     delete env.ELECTRON_RUN_AS_NODE;
-    petProc = spawn(exe, [petMain], { cwd: path.dirname(petMain), env, detached: true, stdio: 'ignore', windowsHide: false });
-    petProc.on('exit', () => { petProc = null; });
-    petProc.unref();
+    const p = spawn(exe, [petMain], { cwd: path.dirname(petMain), env, detached: true, stdio: 'ignore', windowsHide: false });
+    petProc = p;
+    p.on('exit', () => {
+      if (petProc === p) petProc = null;
+      if (jobs.busy(PET_KINDS)) petDismissed = true;
+    });
+    p.unref();
     return { ok: true, running: true };
+  };
+  jobs.onChange = (j) => {
+    if (!PET_KINDS.includes(j.kind)) return;
+    if (j.status === 'queued' || j.status === 'running') {
+      if (settings().pet_auto === false || petDismissed || petRunning()) return;
+      try { launchPet('jobs'); } catch { /* 没装 Electron / 未构建：工作台页面里仍有进度显示 */ }
+    } else if (!jobs.busy(PET_KINDS)) petDismissed = false;
+  };
+  R.get('/api/pet', () => ({ available: !!electronExe() && fs.existsSync(petMain), running: petRunning(), auto: settings().pet_auto !== false }));
+  R.post('/api/pet', async (req) => {
+    const b = await readJson(req);
+    if (b.action === 'quit') { petProc?.kill(); petProc = null; return { ok: true, running: false }; }
+    return launchPet(b.open === 'jobs' ? 'jobs' : undefined);
   });
 
   // harness（Agent 软件）

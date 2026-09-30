@@ -65,7 +65,8 @@ async function create() {
   });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.once("ready-to-show", () => win?.showInactive());
-  await win.loadURL(`${BASE}/pet.html`).catch(() => win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<body style="margin:0;background:transparent;font:13px system-ui;color:#999;display:grid;place-items:end;height:100vh">\u5DE5\u4F5C\u53F0\u672A\u8FD0\u884C</body>')}`));
+  const hash = process.env.WB_PET_OPEN === "jobs" ? "#jobs" : "";
+  await win.loadURL(`${BASE}/pet.html${hash}`).catch(() => win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<body style="margin:0;background:transparent;font:13px system-ui;color:#999;display:grid;place-items:end;height:100vh">\u5DE5\u4F5C\u53F0\u672A\u8FD0\u884C</body>')}`));
 }
 import_electron.ipcMain.on("pet:size", (_e, w, h) => {
   if (!win) return;

@@ -27,10 +27,19 @@ export class Jobs {
       started_at: Date.now(), queued_at: Date.now(), ended_at: null, code: null, lines: 0, subject: spec.subject, spec, out: [], waiters: [] };
     this.list.unshift(j);
     if (this.list.length > 60) this.list.splice(60).forEach((x) => x.child && killTree(x.child.pid));
-    this.hub.emit({ type: 'job', job: this.info(j) });
+    this.emitJob(j);
     void this.pump();
     return this.info(j);
   }
+  /** 任务状态变化的服务端钩子（例如：登记 / 评分开始时自动召唤桌面宠物） */
+  onChange: ((j: JobInfo) => void) | null = null;
+  private emitJob(j: Job) {
+    const info = this.info(j);
+    this.hub.emit({ type: 'job', job: info });
+    try { this.onChange?.(info); } catch { /* 钩子失败不影响任务 */ }
+  }
+  /** 是否还有进行中（运行 / 排队）的任务；kinds 限定种类 */
+  busy(kinds?: JobKind[]) { return this.list.some((j) => (j.status === 'running' || j.status === 'queued') && (!kinds || kinds.includes(j.kind))); }
   get(id: string) { return this.list.find((j) => j.id === id); }
   output(id: string, from = 0) { const j = this.get(id); return j ? j.out.slice(from) : null; }
   wait(id: string): Promise<JobInfo> {
@@ -54,7 +63,7 @@ export class Jobs {
   }
   private finish(j: Job, status: JobInfo['status'], code: number | null) {
     j.status = status; j.code = code; j.ended_at = Date.now();
-    this.hub.emit({ type: 'job', job: this.info(j) });
+    this.emitJob(j);
     j.waiters.splice(0).forEach((w) => w(this.info(j)));
   }
   private async pump() {
@@ -63,7 +72,7 @@ export class Jobs {
     if (!j) return;
     this.running = true;
     j.status = 'running'; j.started_at = Date.now();
-    this.hub.emit({ type: 'job', job: this.info(j) });
+    this.emitJob(j);
     this.line(j, `$ ${j.spec.cmd} ${j.spec.args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')}`);
     try {
       const { child, done } = spawnStream(j.spec.cmd, j.spec.args, { cwd: j.spec.cwd, env: j.spec.env, shell: j.spec.shell, onLine: (l) => this.line(j, l) });

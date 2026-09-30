@@ -100,7 +100,14 @@ def api(path, q):
         live = [w for w in workspaces if not w['grader_run_id']]
         brief = lambda w: {'ref': w['ref'], 'tkey': w['tkey'], 'index': w['index'], 'name': w['task'], 'vendor': w['vendor'], 'model': w['model'], 'harness': w['harness'], 'started_at': w['started_at'], 'ended_at': w['ended_at'], 'detect': {'done': w['detect']['done'], 'total': w['detect']['total'], 'final': w['detect']['final']}}
         return {'at': now * 1000, 'current': {'key': 'OpenAI/GPT-6.1-Sol', 'vendor': 'OpenAI', 'model': 'GPT-6.1-Sol', 'harness': 'DeepSeek Harness', 'tasks': 8, 'runs_per_task': 3, 'delivered': 20, 'graded': 18},
-                'running': [brief(w) for w in live if w['ended_at'] is None], 'delivered': [brief(w) for w in live if w['ended_at']], 'grading': 1, 'pending': agg['pending'], 'jobs': ['评分：T05-2211-3'], 'top': [{'entrant': b['entrant'], 'quality': b['quality'], 'rank': b['rank']} for b in board[:3]]}
+                'running': [brief(w) for w in live if w['ended_at'] is None], 'delivered': [brief(w) for w in live if w['ended_at']], 'grading': 1, 'pending': agg['pending'], 'jobs': ['评分：T05-2211-3'], 'tasks': PET_TASKS, 'top': [{'entrant': b['entrant'], 'quality': b['quality'], 'rank': b['rank']} for b in board[:3]]}
+    if path.startswith('/api/jobs/') and PET_TASKS:
+        jid = path.split('/')[3]
+        t = next((x['job'] for x in PET_TASKS if x['job']['id'] == jid), None)
+        return {**(t or {}), 'output': PET_OUT.get(jid, [])}
+    if path.startswith('/api/jobs/') and MOCK_JOBS:
+        jid = path.split('/')[3]
+        return {**next((j for j in MOCK_JOBS if j['id'] == jid), {}), 'output': [e['line'] for e in MOCK_LINES if e['id'] == jid]}
     if path == '/api/session': return session
     return {}
 
@@ -120,11 +127,29 @@ if ONLY and 'grading' in ONLY:
     MOCK_LINES = [{'type': 'job-line', 'id': 'jg', 'line': l} for l in ['$ python bench.py grade …', f"[probe 1/5] files {A['grader_run_id']}", f"[probe 2/5] build {A['grader_run_id']}", f"[probe 3/5] browser {A['grader_run_id']}"]]
     QA_REFS = (A['ref'], B['ref'], C['ref'])
 
+# 桌面宠物的后台任务场景：评分中（探针 3/5）、排队登记、评分完成（带分数）、登记失败
+PET_TASKS, PET_OUT = [], {}
+if ONLY and 'petjobs' in ONLY:
+    ms = now * 1000
+    def _pj(id, kind, status, label, qa, ended=None, **kw):
+        j = {'id': id, 'kind': kind, 'title': f"{'评分' if kind == 'grade' else '登记'}：{label}", 'status': status, 'started_at': ms - qa, 'queued_at': ms - qa - 2000, 'ended_at': ended and ms - ended, 'code': 0 if status == 'done' else 1 if status == 'failed' else None, 'lines': 0, **kw}
+        return {'job': j, 'label': label, 'ref': 'OpenAI/GPT-6.1-Sol/' + label.split(' · ')[0] + '/r1', 'run_id': 'T01-2330-1', 'score': None}
+    PET_TASKS = [_pj('jg', 'grade', 'running', 'T01 · GPT-6.1-Sol r1', 58000), _pj('jr', 'register', 'queued', 'T05 · GPT-6.1-Sol r2', 9000),
+                 _pj('jd', 'grade', 'done', 'T03A · GPT-6.1-Sol r1', 300000, 180000), _pj('jx', 'register', 'failed', 'T02 · GPT-6.1-Sol r1', 600000, 560000, error='交付目录缺少 FINAL_MESSAGE.md')]
+    PET_TASKS[2]['score'] = {'total': 90.38, 'gate_pass': True, 'human': 8}
+    PET_OUT = {'jg': ['$ python skills/bench-grader/scripts/bench.py grade bench-data/runs/T01-2330-1 --gl gpu', '渲染器：gpu (ANGLE D3D11, NVIDIA GeForce RTX 5060)', '[probe 1/5] files T01-2330-1', '  ✔ pelican-bike/index.html 存在', '[probe 2/5] claims T01-2330-1', '  ✔ FINAL_MESSAGE.md 与交付一致', '[probe 3/5] browser T01-2330-1', '  桌面 1440×900：首帧 312 ms，控制台 0 错误', '  3D 场景在 0.29 s 出现', '  WARN 2.5D 模式 fps 57（阈值 55）'],
+               'jd': ['$ python bench.py grade …', '[probe 1/4] files', '[probe 4/4] video', '[after] 写入结果…', '总分 90.38（自动项），还有 8 个人工项'],
+               'jx': ['$ python bench.py register …', 'Traceback (most recent call last):', 'ERROR 交付目录缺少 FINAL_MESSAGE.md']}
+    MOCK_LINES = [{'type': 'job-line', 'id': 'jg', 'line': '  桌面 1440×900：交互 12 项全部通过'}]
+
+SSE_SEEN = set()
 def handle(route):
     u = urlparse(route.request.url)
     if u.path.startswith('/api/'):
         if u.path == '/api/events':
-            body = 'retry: 600000\ndata: {"type":"hello","at":0}\n\n' + ''.join('data: ' + json.dumps(e, ensure_ascii=False) + '\n\n' for e in MOCK_LINES)
+            # 模拟流会结束，EventSource 会重连：模拟的输出行只在每个页面的第一次连接里发，避免重复
+            first = route.request.frame.page not in SSE_SEEN; SSE_SEEN.add(route.request.frame.page)
+            body = 'retry: 600000\ndata: {"type":"hello","at":0}\n\n' + (''.join('data: ' + json.dumps(e, ensure_ascii=False) + '\n\n' for e in MOCK_LINES) if first else '')
             return route.fulfill(status=200, headers={'content-type': 'text/event-stream; charset=utf-8'}, body=body)
         if route.request.method == 'POST' and u.path.startswith('/api/runs/') and u.path.endswith('/manual'):
             # 模拟人工分保存：稍慢一点（400ms），检验界面是否乐观更新、不等回执
@@ -238,6 +263,22 @@ with sync_playwright() as pw:
             page.screenshot(path=str(OUT / f'{theme}-pet-orb.png'))
             page.locator('.orb').click(); page.wait_for_timeout(600)
             page.screenshot(path=str(OUT / f'{theme}-pet-panel.png'))
+        if ONLY and 'petjobs' in ONLY:
+            # 宠物窗口的真实尺寸与系统配色（宠物跟随 prefers-color-scheme）
+            pc = b.new_context(viewport={'width': 460, 'height': 660}, device_scale_factor=2, color_scheme=theme)
+            pc.route('http://wb.local/**', handle)
+            pp = pc.new_page()
+            pp.on('console', lambda m: errors.append(f'[{theme}/pet] console.{m.type}: {m.text}') if m.type in ('error', 'warning') else None)
+            pp.on('pageerror', lambda e: errors.append(f'[{theme}/pet] pageerror: {e}'))
+            pp.goto('http://wb.local/pet.html#jobs', timeout=20000); pp.wait_for_timeout(1200)
+            pp.screenshot(path=str(OUT / f'{theme}-petjobs-panel.png'))
+            pp.locator('.pp-job').first.click(); pp.wait_for_timeout(900)
+            pp.screenshot(path=str(OUT / f'{theme}-petjobs-log.png'))
+            errors.append(f"[{theme}] pet-log lines={pp.locator('.pl-term span').count()} steps={pp.locator('.act-steps li').count()} cur={pp.locator('.act-steps li.cur').inner_text() if pp.locator('.act-steps li.cur').count() else '-'}")
+            pp.locator('.pp-h .pp-x').last.click(); pp.wait_for_timeout(700)
+            pp.screenshot(path=str(OUT / f'{theme}-petjobs-orb.png'), clip={'x': 300, 'y': 500, 'width': 160, 'height': 160})
+            errors.append(f"[{theme}] pet-orb working={pp.locator('.orb.working').count()} dot={pp.locator('.orb-dot').count()} prog={pp.locator('.orb-prog').get_attribute('style')}")
+            pc.close()
         ctx.close()
     b.close()
 (OUT / 'errors.txt').write_text('\n'.join(errors) or 'no errors', 'utf-8')
