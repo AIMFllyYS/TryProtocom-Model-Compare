@@ -34,3 +34,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.log
+
+
+# ---- T03/T04 音频素材：由 build_materials.py 确定性生成，发车时缺了会自动生成，不进仓库 ----
+skills/bench-grader/tasks/*/materials/**/*.wav
+.agents/skills/*/tasks/*/materials/**/*.wav

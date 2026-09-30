@@ -4,7 +4,7 @@ short: 严格按 minecraft-stop-motion-director skill 制作 60 秒方块风格�
 deliverable_dir: mc-sol-luna
 dims: {agent: 1.0, 3d: 1.0, anim: 1.0, eng: 0.5}
 condition: 无人值守；工作目录中预置 skills/minecraft-stop-motion-director/（用户提供的 skill 包）
-materials: ["skills/minecraft-stop-motion-director/（用户提供的 skill 包，解压后放入工作目录）"]
+materials: ["materials/skills/minecraft-stop-motion-director/（用户提供的 skill 包，随每次运行复制到工作目录 skills/ 下）"]
 time_limit_min: 120
 probes:
   - type: files

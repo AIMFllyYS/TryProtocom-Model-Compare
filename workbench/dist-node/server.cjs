@@ -532,25 +532,80 @@ function iconFor(vendor, model) {
   }
   return vendorById(vendor)?.icon || (vendor ? inferVendor(vendor)?.icon || null : null);
 }
+var MANUAL_DIR = "\u542F\u52A8\u540E\u8BF7\u5728\u5E94\u7528\u91CC\u6253\u5F00\u5DE5\u4F5C\u76EE\u5F55\uFF08\u8DEF\u5F84\u5DF2\u5199\u5728\u63D0\u793A\u8BCD\u5F00\u5934\uFF09";
 var HARNESSES = [
-  { id: "deepseek-harness", name: "DeepSeek Harness", kind: "app", icon: "deepseek", win: { dirs: ["DeepSeek Harness"], exe: /^DeepSeek Harness\.exe$/i } },
+  { id: "deepseek-harness", name: "DeepSeek Harness", kind: "app", icon: "deepseek", vendor: "DeepSeek", win: { dirs: ["DeepSeek Harness"], exe: /^DeepSeek Harness\.exe$/i }, appId: /^com\.deepseek\.dsh$/i, note: MANUAL_DIR },
+  // ---- OpenAI ----
+  {
+    id: "codex-desktop",
+    name: "Codex \u684C\u9762\u7248",
+    kind: "app",
+    icon: "codex",
+    vendor: "OpenAI",
+    appId: /^OpenAI\.Codex_/i,
+    logs: "codex",
+    deepLink: (dir) => `codex://threads/new?path=${encodeURIComponent(dir)}`
+  },
   { id: "codex", name: "Codex CLI", kind: "cli", icon: "codex", vendor: "OpenAI", cmd: "codex", logs: "codex" },
+  // ---- Anthropic ----
   { id: "claude-code", name: "Claude Code", kind: "cli", icon: "claudecode", vendor: "Anthropic", cmd: "claude", logs: "claude_code" },
+  { id: "claude-desktop", name: "Claude \u684C\u9762\u7248", kind: "app", icon: "claude", vendor: "Anthropic", appId: /^Claude_/i, logs: "claude_code", note: MANUAL_DIR },
+  // ---- Google ----
+  { id: "antigravity", name: "Antigravity", kind: "ide", icon: "antigravity", vendor: "Google", win: { dirs: ["Antigravity", "Antigravity IDE"], exe: /^Antigravity( IDE)?\.exe$/i }, appId: /^Google\.Antigravity(IDE)?$/i, lnk: /^Antigravity( IDE)?$/i, folderArg: true },
+  { id: "antigravity-cli", name: "Antigravity CLI", kind: "cli", icon: "antigravity", vendor: "Google", cmd: "agy" },
   { id: "gemini-cli", name: "Gemini CLI", kind: "cli", icon: "gemini", vendor: "Google", cmd: "gemini", logs: "gemini_cli" },
+  // ---- Moonshot ----
+  { id: "kimi-code", name: "Kimi Code", kind: "app", icon: "kimi", vendor: "Moonshot", appId: /^com\.kimi\.code\.desktop$/i, note: MANUAL_DIR },
   { id: "kimi-cli", name: "Kimi CLI", kind: "cli", icon: "kimi", vendor: "Moonshot", cmd: "kimi" },
-  { id: "opencode", name: "OpenCode", kind: "cli", icon: "opencode", cmd: "opencode" },
-  { id: "opencode-desktop", name: "OpenCode Desktop", kind: "app", icon: "opencode", win: { dirs: ["@opencode-aidesktop"], exe: /^OpenCode\.exe$/i } },
-  { id: "cline", name: "Cline CLI", kind: "cli", icon: "cline", cmd: "cline" },
-  { id: "kiro-cli", name: "Kiro CLI", kind: "cli", icon: "kiro", cmd: "kiro-cli" },
-  { id: "cursor", name: "Cursor", kind: "ide", icon: "cursor", win: { dirs: ["cursor"], exe: /^Cursor\.exe$/i }, folderArg: true },
-  { id: "antigravity", name: "Antigravity", kind: "ide", icon: "antigravity", vendor: "Google", win: { dirs: ["Antigravity", "Antigravity IDE"], exe: /^Antigravity( IDE)?\.exe$/i }, folderArg: true },
-  { id: "qoder", name: "Qoder", kind: "ide", icon: "qoder", win: { dirs: ["Qoder", "Qoder IDE"], exe: /^Qoder( IDE)?\.exe$/i }, folderArg: true },
-  { id: "trae", name: "TRAE", kind: "ide", icon: "trae", vendor: "ByteDance", win: { dirs: ["Trae", "Trae CN"], exe: /^Trae( CN)?\.exe$/i }, folderArg: true },
+  // ---- Zhipu ----
+  { id: "zcode", name: "ZCode", kind: "app", icon: "zai", vendor: "Zhipu", appId: /^electron\.app\.ZCode$/i, lnk: /^ZCode$/i, note: MANUAL_DIR },
+  // ---- Alibaba ----
+  { id: "qwen-code", name: "Qwen Code", kind: "cli", icon: "qwen", vendor: "Alibaba", cmd: "qwen" },
+  { id: "qoder", name: "Qoder", kind: "ide", icon: "qoder", win: { dirs: ["Qoder", "Qoder IDE"], exe: /^Qoder( IDE)?\.exe$/i }, appId: /^AlibabaCloud\.Qoder(CN)?$/i, lnk: /^Qoder( IDE| CN)?$/i, folderArg: true },
+  { id: "qoder-cli", name: "Qoder CLI", kind: "cli", icon: "qoder", cmd: "qodercli" },
+  { id: "qoderwork", name: "QoderWork", kind: "app", icon: "qoder", appId: /^com\.qoder\.work/i, note: MANUAL_DIR },
+  // ---- ByteDance ----
+  { id: "trae-solo", name: "TRAE SOLO", kind: "app", icon: "trae", vendor: "ByteDance", appId: /^ByteDance\.TraeSolo/i, note: MANUAL_DIR },
+  { id: "trae", name: "TRAE", kind: "ide", icon: "trae", vendor: "ByteDance", win: { dirs: ["Trae", "Trae CN"], exe: /^Trae( CN)?\.exe$/i }, appId: /^ByteDance\.Trae(CN)?$/i, lnk: /^Trae(Code)?( CN)?$/i, folderArg: true },
+  // ---- xAI ----
+  { id: "grok-build", name: "Grok Build", kind: "cli", icon: "grok", vendor: "xAI", cmd: "grok" },
+  // ---- Tencent ----
+  { id: "workbuddy", name: "WorkBuddy", kind: "app", icon: "tencent", vendor: "Tencent", appId: /^WorkBuddy\./i, note: MANUAL_DIR },
+  { id: "codebuddy", name: "CodeBuddy Code", kind: "cli", icon: "tencent", vendor: "Tencent", cmd: "codebuddy" },
+  // ---- 通用 IDE / 桌面 Agent ----
+  { id: "cursor", name: "Cursor", kind: "ide", icon: "cursor", win: { dirs: ["cursor"], exe: /^Cursor\.exe$/i }, appId: /^Anysphere\.Cursor$/i, lnk: /^Cursor$/i, folderArg: true },
+  { id: "cursor-cli", name: "Cursor CLI", kind: "cli", icon: "cursor", cmd: "cursor-agent" },
+  { id: "kiro-ide", name: "Kiro", kind: "ide", icon: "kiro", vendor: "Amazon", win: { dirs: ["Kiro"], exe: /^Kiro\.exe$/i }, appId: /^Kiro$/, lnk: /^Kiro$/i, folderArg: true },
+  { id: "kiro-cli", name: "Kiro CLI", kind: "cli", icon: "kiro", vendor: "Amazon", cmd: "kiro-cli" },
+  {
+    id: "vscode",
+    name: "VS Code",
+    kind: "ide",
+    icon: "microsoft",
+    win: { dirs: ["Microsoft VS Code"], exe: /^Code\.exe$/i },
+    appId: /^Microsoft\.VisualStudioCode$/i,
+    lnk: /^Visual Studio Code$/i,
+    folderArg: true,
+    note: "\u7528 Copilot / Codex / Cline \u7B49\u63D2\u4EF6\u505A\u9898"
+  },
+  { id: "copilot-cli", name: "GitHub Copilot CLI", kind: "cli", icon: "githubcopilot", cmd: "copilot" },
   { id: "windsurf", name: "Windsurf", kind: "ide", icon: "windsurf", win: { dirs: ["Windsurf"], exe: /^Windsurf\.exe$/i }, folderArg: true },
-  { id: "devin", name: "Devin", kind: "app", icon: "devin", win: { dirs: ["Devin"], exe: /^Devin\.exe$/i } },
-  { id: "hermes", name: "Hermes Agent", kind: "app", icon: "hermesagent", win: { dirs: ["hermes-desktop"], exe: /^hermes-agent\.exe$/i } },
-  { id: "multica", name: "Multica", kind: "app", icon: null, win: { dirs: ["@multicadesktop"], exe: /^Multica\.exe$/i } },
-  { id: "catpaw", name: "CatPaw", kind: "app", icon: null, win: { dirs: ["CatPawAI"], exe: /^CatPawAI\.exe$/i } }
+  { id: "devin", name: "Devin", kind: "app", icon: "devin", win: { dirs: ["Devin"], exe: /^Devin\.exe$/i }, appId: /^Exafunction\.Windsurf$/i, lnk: /^Devin$/i, folderArg: true },
+  { id: "opencode-desktop", name: "OpenCode Desktop", kind: "app", icon: "opencode", win: { dirs: ["@opencode-aidesktop"], exe: /^OpenCode\.exe$/i }, appId: /^ai\.opencode\.desktop$/i, note: MANUAL_DIR },
+  { id: "opencode", name: "OpenCode", kind: "cli", icon: "opencode", cmd: "opencode" },
+  { id: "cline-desktop", name: "Cline \u684C\u9762\u7248", kind: "app", icon: "cline", appId: /^bot\.cline\.app$/i, note: MANUAL_DIR },
+  { id: "cline", name: "Cline CLI", kind: "cli", icon: "cline", cmd: "cline" },
+  { id: "kilo", name: "Kilo CLI", kind: "cli", icon: null, cmd: "kilo" },
+  { id: "droid", name: "Factory Droid", kind: "cli", icon: null, cmd: "droid" },
+  { id: "amp", name: "Amp", kind: "cli", icon: null, cmd: "amp" },
+  { id: "pi", name: "Pi", kind: "cli", icon: null, cmd: "pi" },
+  { id: "aider", name: "Aider", kind: "cli", icon: null, cmd: "aider" },
+  { id: "goose", name: "Goose", kind: "cli", icon: null, cmd: "goose" },
+  { id: "crush", name: "Crush", kind: "cli", icon: null, cmd: "crush" },
+  { id: "iflow", name: "iFlow CLI", kind: "cli", icon: null, cmd: "iflow" },
+  { id: "hermes", name: "Hermes Agent", kind: "app", icon: "hermesagent", vendor: "NousResearch", win: { dirs: ["hermes-desktop"], exe: /^hermes-agent\.exe$/i }, appId: /^com\.nousresearch\.hermes$/i, note: MANUAL_DIR },
+  { id: "multica", name: "Multica", kind: "app", icon: null, win: { dirs: ["@multicadesktop"], exe: /^Multica\.exe$/i }, appId: /^ai\.multica\.desktop$/i, note: MANUAL_DIR },
+  { id: "catpaw", name: "CatPaw", kind: "app", icon: null, win: { dirs: ["CatPawAI"], exe: /^CatPawAI\.exe$/i }, appId: /^CatPawAI$/i, note: MANUAL_DIR }
 ];
 var harnessById = (id) => HARNESSES.find((h) => h.id === id);
 var harnessByName = (name) => {
@@ -713,21 +768,60 @@ var mimeOf = (p) => MIME[(p.match(/\.[^./\\]+$/)?.[0] || "").toLowerCase()] || "
 
 // server/harness.ts
 var cache = null;
+var scan = null;
+var scanning = null;
+var SCAN_TTL = 10 * 6e4;
+var PS_SCAN = [
+  "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
+  "$ws=New-Object -ComObject WScript.Shell;",
+  "$d=@([Environment]::GetFolderPath('Programs'),[Environment]::GetFolderPath('CommonPrograms'));",
+  '$l=foreach($x in $d){Get-ChildItem -LiteralPath $x -Recurse -Filter *.lnk -ErrorAction SilentlyContinue|ForEach-Object{$t=$ws.CreateShortcut($_.FullName).TargetPath;if($t -like "*.exe"){[pscustomobject]@{n=$_.BaseName;t=$t}}}};',
+  "$a=Get-StartApps|ForEach-Object{[pscustomobject]@{n=$_.Name;id=$_.AppID}};",
+  "@{apps=@($a);lnks=@($l)}|ConvertTo-Json -Compress -Depth 3"
+].join("");
+function scanShell(force = false) {
+  const empty = { apps: [], lnks: [] };
+  if (process.platform !== "win32") return Promise.resolve(empty);
+  if (scan && !force && Date.now() - scan.at < SCAN_TTL) return Promise.resolve(scan.data);
+  if (scanning) return scanning;
+  scanning = new Promise((resolve) => {
+    (0, import_node_child_process.execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", PS_SCAN], { encoding: "utf8", timeout: 2e4, windowsHide: true, maxBuffer: 8 << 20 }, (_err, stdout) => {
+      let data = scan?.data || empty;
+      try {
+        const j = JSON.parse(String(stdout || "").trim() || "{}");
+        const arr = (v) => Array.isArray(v) ? v : v ? [v] : [];
+        data = { apps: arr(j.apps).filter((x) => x && x.id), lnks: arr(j.lnks).filter((x) => x && x.t) };
+        scan = { at: Date.now(), data };
+        cache = null;
+      } catch {
+      }
+      scanning = null;
+      resolve(data);
+    });
+  });
+  return scanning;
+}
 function winRoots() {
   const e = process.env;
   return [e.LOCALAPPDATA && import_node_path.default.join(e.LOCALAPPDATA, "Programs"), e.ProgramFiles, e["ProgramFiles(x86)"], e.LOCALAPPDATA].filter(Boolean);
 }
-function findExe(h) {
-  if (!h.win || process.platform !== "win32") return null;
-  for (const root of winRoots()) {
-    for (const d of h.win.dirs) {
-      const dir = import_node_path.default.join(root, d);
-      try {
-        const hit = import_node_fs.default.readdirSync(dir).find((f2) => h.win.exe.test(f2));
-        if (hit) return import_node_path.default.join(dir, hit);
-      } catch {
+function findExe(h, sc) {
+  if (process.platform !== "win32") return null;
+  if (h.win) {
+    for (const root of winRoots()) {
+      for (const d of h.win.dirs) {
+        const dir = import_node_path.default.join(root, d);
+        try {
+          const hit = import_node_fs.default.readdirSync(dir).find((f2) => h.win.exe.test(f2));
+          if (hit) return import_node_path.default.join(dir, hit);
+        } catch {
+        }
       }
     }
+  }
+  if (h.lnk && sc) {
+    const hit = sc.lnks.find((l) => h.lnk.test(l.n) && !/unins|uninstall|update/i.test(l.t) && import_node_fs.default.existsSync(l.t));
+    if (hit) return hit.t;
   }
   return null;
 }
@@ -738,13 +832,35 @@ function findCmd(cmd) {
   return first.find((p) => /\.(exe|cmd|bat)$/i.test(p)) || first[0] || null;
 }
 function detectHarnesses(force = false) {
-  if (cache && !force && Date.now() - cache.at < 6e4) return cache.list;
+  if (force) cache = null;
+  if (!scan || Date.now() - scan.at > SCAN_TTL) void scanShell();
+  if (cache && Date.now() - cache.at < 6e4) return cache.list;
+  const sc = scan?.data || null;
   const list = HARNESSES.map((h) => {
-    const p = h.kind === "cli" ? h.cmd ? findCmd(h.cmd) : null : findExe(h);
-    return { id: h.id, name: h.name, kind: h.kind, icon: h.icon, path: p, installed: !!p };
+    const base = { id: h.id, name: h.name, kind: h.kind, icon: h.icon, note: h.note };
+    if (h.kind === "cli") {
+      const p = h.cmd ? findCmd(h.cmd) : null;
+      return { ...base, path: p, installed: !!p, via: p ? "cmd" : void 0, opens_dir: !!p };
+    }
+    const exe = findExe(h, sc);
+    const app = h.appId && sc ? sc.apps.find((a) => h.appId.test(a.id)) : void 0;
+    if (!exe && !app) return { ...base, path: null, installed: false };
+    const opensDir = !!h.deepLink || !!exe && !!h.folderArg;
+    return {
+      ...base,
+      installed: true,
+      path: exe || `shell:AppsFolder\\${app.id}`,
+      via: exe ? "exe" : "appx",
+      opens_dir: opensDir,
+      note: opensDir ? void 0 : h.note
+    };
   });
   cache = { at: Date.now(), list };
   return list;
+}
+function openUrl(url) {
+  if (process.platform === "win32") (0, import_node_child_process.spawn)("rundll32.exe", ["url.dll,FileProtocolHandler", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  else (0, import_node_child_process.spawn)(process.platform === "darwin" ? "open" : "xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
 }
 function openHarness(id, cwd) {
   const def = HARNESSES.find((h) => h.id === id);
@@ -757,9 +873,17 @@ function openHarness(id, cwd) {
     (0, import_node_child_process.spawn)("cmd.exe", ["/c", "start", def.name, "/D", dir || process.cwd(), "cmd.exe", "/k", info.path], { detached: true, stdio: "ignore", windowsHide: false }).unref();
     return { ok: true, how: `\u5DF2\u5728\u65B0\u7EC8\u7AEF\u4E2D\u542F\u52A8 ${def.name}` };
   }
-  const args = def.folderArg && dir ? [dir] : [];
-  (0, import_node_child_process.spawn)(info.path, args, { detached: true, stdio: "ignore", cwd: dir, windowsHide: false }).unref();
-  return { ok: true, how: def.folderArg && dir ? `\u5DF2\u7528 ${def.name} \u6253\u5F00\u5DE5\u4F5C\u76EE\u5F55` : `\u5DF2\u542F\u52A8 ${def.name}` };
+  if (def.deepLink && dir) {
+    openUrl(def.deepLink(dir));
+    return { ok: true, how: `\u5DF2\u7528 ${def.name} \u5728\u5DE5\u4F5C\u76EE\u5F55\u4E2D\u65B0\u5EFA\u4F1A\u8BDD` };
+  }
+  if (info.via === "exe") {
+    const args = def.folderArg && dir ? [dir] : [];
+    (0, import_node_child_process.spawn)(info.path, args, { detached: true, stdio: "ignore", cwd: dir, windowsHide: false }).unref();
+    return { ok: true, how: def.folderArg && dir ? `\u5DF2\u7528 ${def.name} \u6253\u5F00\u5DE5\u4F5C\u76EE\u5F55` : `\u5DF2\u542F\u52A8 ${def.name}${dir ? "\uFF0C\u8BF7\u5728\u5E94\u7528\u91CC\u6253\u5F00\u5DE5\u4F5C\u76EE\u5F55" : ""}` };
+  }
+  (0, import_node_child_process.spawn)("explorer.exe", [info.path], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+  return { ok: true, how: `\u5DF2\u542F\u52A8 ${def.name}${dir ? "\uFF0C\u8BF7\u5728\u5E94\u7528\u91CC\u6253\u5F00\u5DE5\u4F5C\u76EE\u5F55" : ""}` };
 }
 
 // server/config.ts
@@ -2389,6 +2513,50 @@ async function startServer(over = {}) {
     const wsAbs = cur?.workspace || ws.wsPath(q.vendor, q.model, tkey, index);
     return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
   }
+  const buildScript = import_node_path8.default.join(cfg.graderDir, "scripts", "build_materials.py");
+  const GENERATED_TASKS = /* @__PURE__ */ new Set(["T03", "T04"]);
+  function missingMaterials(t) {
+    const dir = taskDirOf(t);
+    const out = [];
+    for (const raw of t.materials || []) {
+      if (!raw.startsWith("materials/")) continue;
+      const m = raw.split("\uFF08")[0].split("(")[0].trim();
+      if (m.includes("*")) {
+        const cut = m.lastIndexOf("/");
+        const re = new RegExp("^" + m.slice(cut + 1).replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$", "i");
+        let ok = false;
+        try {
+          ok = import_node_fs9.default.readdirSync(import_node_path8.default.join(dir, m.slice(0, cut))).some((f2) => re.test(f2));
+        } catch {
+        }
+        if (!ok) out.push(m);
+      } else if (!import_node_fs9.default.existsSync(import_node_path8.default.join(dir, m))) out.push(m);
+    }
+    return out;
+  }
+  let building = null;
+  async function ensureMaterials(t) {
+    let miss = missingMaterials(t);
+    if (!miss.length) return;
+    let genErr = "";
+    if (GENERATED_TASKS.has(t.id) && import_node_fs9.default.existsSync(buildScript) && cfg.python) {
+      building ||= new Promise((resolve) => {
+        (0, import_node_child_process5.execFile)(cfg.python, [buildScript], { cwd: cfg.graderDir, timeout: 18e4, windowsHide: true, encoding: "utf8" }, (err, _o, stderr) => {
+          if (err) genErr = String(stderr || err.message).trim().split(/\r?\n/).slice(-2).join(" ");
+          building = null;
+          resolve();
+        });
+      });
+      await building;
+      miss = missingMaterials(t);
+      store.log("materials", miss.length ? `\u751F\u6210\u7D20\u6750\u540E\u4ECD\u7F3A\uFF1A${miss.join("\u3001")}` : `\u5DF2\u81EA\u52A8\u751F\u6210 ${t.id} \u7D20\u6750`);
+      void loadSpec(true);
+    }
+    if (!miss.length) return;
+    const where = import_node_path8.default.join(taskDirOf(t), "materials");
+    const hint = GENERATED_TASKS.has(t.id) ? `\u81EA\u52A8\u751F\u6210\u6CA1\u6709\u6210\u529F${genErr ? `\uFF08${genErr}\uFF09` : ""}\uFF1A\u8BF7\u786E\u8BA4 Python \u88C5\u4E86 numpy\uFF0C\u518D\u5230\u300C\u8BBE\u7F6E \u2192 \u8BC4\u6D4B\u673A\u300D\u70B9\u201C\u751F\u6210\u7D20\u6750\u201D\u3002` : `\u8BF7\u628A\u7D20\u6750\u653E\u8FDB ${where} \u5BF9\u5E94\u4F4D\u7F6E\u540E\u518D\u53D1\u8F66\u3002`;
+    throw new HttpError(409, `${t.id} \u7684\u9884\u7F6E\u7D20\u6750\u4E0D\u9F50\uFF0C\u5DF2\u505C\u6B62\u53D1\u8F66\uFF08\u7F3A\u7D20\u6750\u7684\u8FD0\u884C\u4F1A\u4F5C\u5E9F\uFF09\uFF1A${miss.join("\u3001")}\u3002${hint}`);
+  }
   async function claimRun(b) {
     const { s, t } = await findTask(b.task);
     const variant = b.variant || null;
@@ -2397,6 +2565,7 @@ async function startServer(over = {}) {
     const harness = b.harness || prof?.harness || harnessById(settings().default_harness)?.name || "";
     let run = claimable(b.vendor, b.model, tkey);
     if (!run || b.index && run.index !== b.index) {
+      await ensureMaterials(t);
       run = ws.createRun({ vendor: b.vendor, model: b.model, task: t, variant, harness, taskDir: taskDirOf(t), index: b.index, prompt: (wsAbs, n) => renderPrompt(s, t, variant, wsAbs, n).text });
       store.log("ws-create", run.ref);
     } else if (harness && !run.harness) run = ws.patchRun(run.ref, { harness });
@@ -2405,6 +2574,7 @@ async function startServer(over = {}) {
     const text = import_node_fs9.default.readFileSync(ws.files(run.ref).prompt, "utf8");
     let opened = null;
     if (b.open) {
+      await scanShell();
       const h = harnessByName(harness) || harnessById(settings().default_harness);
       if (h) {
         try {
@@ -2506,6 +2676,7 @@ async function startServer(over = {}) {
     }
     if (!b.vendor) throw new HttpError(400, `\u65E0\u6CD5\u4ECE\u201C${b.name}\u201D\u63A8\u65AD\u4F9B\u5E94\u5546\uFF0C\u8BF7\u624B\u52A8\u9009\u62E9\u6216\u8F93\u5165\u201C\u4F9B\u5E94\u5546/\u6A21\u578B\u201D`);
     if (!b.harness && !store.data.models.some((m2) => m2.vendor === b.vendor && m2.name === b.name)) {
+      await scanShell();
       const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
       b.harness = suggestHarness(b.vendor, installed, settings().default_harness)?.name || "";
     }
@@ -2536,10 +2707,10 @@ async function startServer(over = {}) {
     const b = await readJson(req);
     const { s, t: task } = await findTask(b.task);
     const variant = b.variant || null;
+    await ensureMaterials(task);
     const run = ws.createRun({ vendor: b.vendor, model: b.model, task, variant, harness: b.harness || "", taskDir: taskDirOf(task), prompt: (wsAbs, n) => renderPrompt(s, task, variant, wsAbs, n).text });
     const pr = { text: import_node_fs9.default.readFileSync(ws.files(run.ref).prompt, "utf8"), warnings: renderPrompt(s, task, variant, null, null).warnings };
-    const warnings = [...pr.warnings, ...(s.materials_state?.[task.id]?.missing || []).map((m) => `\u7D20\u6750\u7F3A\u5931\uFF1A${m}\uFF08\u5148\u5728\u300C\u8BBE\u7F6E \u2192 \u8BC4\u6D4B\u673A\u300D\u8FD0\u884C\u201C\u751F\u6210\u7D20\u6750\u201D\uFF09`)];
-    if (task.id === "T02") warnings.push("T02 \u9700\u8981\u628A\u7528\u6237\u63D0\u4F9B\u7684 minecraft-stop-motion-director skill \u590D\u5236\u5230\u5DE5\u4F5C\u76EE\u5F55\u7684 skills/ \u4E0B\u3002");
+    const warnings = [...pr.warnings];
     if (task.id === "T06") warnings.push("T06 \u4E3A\u6709\u4EBA\u503C\u5B88\uFF1A\u6309 hidden/intent.md \u56DE\u7B54\u6A21\u578B\u63D0\u95EE\uFF0C\u5E76\u5728\u5B8C\u6210\u65F6\u586B\u5199 transcript_notes\u3002");
     store.log("ws-create", run.ref);
     refreshWorkspaces();
@@ -2637,11 +2808,16 @@ async function startServer(over = {}) {
     petProc.unref();
     return { ok: true, running: true };
   });
-  R.get("/api/harness", (req) => detectHarnesses(req.query.get("refresh") === "1"));
+  R.get("/api/harness", async (req) => {
+    const force = req.query.get("refresh") === "1";
+    await scanShell(force);
+    return detectHarnesses(force);
+  });
   R.post("/api/harness/open", async (req) => {
     const b = await readJson(req);
     const cwd = b.ref ? ws.files(b.ref).ws : null;
     const id = b.id || harnessByName(b.name)?.id;
+    await scanShell();
     return openHarness(id, cwd);
   });
   R.get("/api/models/infer", (req) => {
@@ -2843,7 +3019,7 @@ async function startServer(over = {}) {
   R.get("/api/scripts", (req) => {
     const dir = req.query.get("ref") ? import_node_path8.default.join(ws.files(req.query.get("ref")).ws, req.query.get("sub") || "") : resolveSafe(cfg.root, req.query.get("cwd") || "");
     const found = [];
-    const scan = (d, depth) => {
+    const scan2 = (d, depth) => {
       if (depth > 2 || !import_node_fs9.default.existsSync(d)) return;
       const pj = import_node_path8.default.join(d, "package.json");
       if (import_node_fs9.default.existsSync(pj)) {
@@ -2852,9 +3028,9 @@ async function startServer(over = {}) {
         } catch {
         }
       }
-      for (const e of import_node_fs9.default.readdirSync(d, { withFileTypes: true })) if (e.isDirectory() && !["node_modules", ".git", "dist"].includes(e.name) && !e.name.startsWith(".")) scan(import_node_path8.default.join(d, e.name), depth + 1);
+      for (const e of import_node_fs9.default.readdirSync(d, { withFileTypes: true })) if (e.isDirectory() && !["node_modules", ".git", "dist"].includes(e.name) && !e.name.startsWith(".")) scan2(import_node_path8.default.join(d, e.name), depth + 1);
     };
-    scan(dir, 0);
+    scan2(dir, 0);
     const pyApps = ["app.py", "server.py", "main.py"].filter((f2) => import_node_fs9.default.existsSync(import_node_path8.default.join(dir, f2)));
     return { packages: found, python: pyApps, bench_json: import_node_fs9.default.existsSync(import_node_path8.default.join(dir, "bench.json")) ? JSON.parse(import_node_fs9.default.readFileSync(import_node_path8.default.join(dir, "bench.json"), "utf8")) : null };
   });

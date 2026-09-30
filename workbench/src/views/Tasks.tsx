@@ -172,7 +172,19 @@ function TaskView({ t }: { t: SpecTask }) {
             {d.files.map((f) => <div key={f.path} className={cls('deliv-f', f.optional && 'opt')}><FileCheck2 size={14} /><span className="mono">{f.any ? f.label : f.path + (f.dir ? '/' : '')}</span>{!f.any && f.label && f.label !== f.path && <span className="muted xs">{f.label}</span>}{f.optional && <Badge>可选</Badge>}</div>)}
             <div className="deliv-f fin"><FileCheck2 size={14} /><span className="mono">{FINAL_FILE}</span><span className="muted xs">工作目录根，最后回复原文</span></div>
           </div>
-          {t.materials.length > 0 && <div className="mt"><div className="field-l">预置素材（自动复制到工作目录）</div><ul className="plain-list">{t.materials.map((m) => <li key={m} className="mono small">{m.replace(/^materials\//, '')}</li>)}</ul></div>}
+          {t.materials.length > 0 && (() => {
+            const miss = wb.spec?.materials_state?.[t.id]?.missing || [];
+            const isMiss = (m: string) => miss.some((x) => m.startsWith(x));
+            return (
+              <div className="mt">
+                <div className="field-l">预置素材（每次发车时复制一份干净副本到工作目录）</div>
+                <ul className="plain-list">{t.materials.map((m) => (
+                  <li key={m} className="mono small">{isMiss(m) ? <Badge tone="warn">缺失</Badge> : <Badge tone="ok">就绪</Badge>} {m.replace(/^materials\//, '')}</li>
+                ))}</ul>
+                {miss.length > 0 && <div className="muted xs">{['T03', 'T04'].includes(t.id) ? '发车时会自动生成缺失的音频。' : '缺素材时会拒绝发车。'}</div>}
+              </div>
+            );
+          })()}
           <div className="alert mt"><Lock size={14} />隐藏测试、参考实现与意图表不会进入工作目录；工作目录是独立 git 根，被测 Agent 找不到评分 skill。</div>
         </Card>
 

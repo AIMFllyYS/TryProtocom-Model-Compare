@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPE } from 'react';
 import { ArrowRight, Check, ClipboardCopy, Clock3, FolderOpen, Gauge, Grip, ListChecks, Package, Rocket, Wallet } from 'lucide-react';
 import type { Billing, ModelProfile, SpecTask, WorkspaceRun } from '../../shared/types';
-import { HARNESSES } from '../../shared/vendors';
+import { HARNESSES, harnessHint } from '../../shared/vendors';
 import { deliverableFor } from '../../shared/deliverables';
 import { QUOTA_UNITS, unitPrice } from '../../shared/quota';
 import { get, post } from '../api';
@@ -91,7 +91,7 @@ export function LaunchPad({ model, onClose, initialTask }: { model: ModelProfile
           {dock.map((h) => (
             <button key={h.id} data-drop={h.id} className={cls('dock-t', h.name === harness && 'pref')} onClick={() => void dispatch(h.id)} disabled={!pr || !!stamp}>
               <HarnessIcon name={h.name} size="md" />
-              <span className="stack s" style={{ gap: 0, minWidth: 0 }}><b className="ellipsis">{h.name}</b><span className="muted xs">{h.kind === 'cli' ? '在工作目录开终端' : h.kind === 'ide' ? '打开工作目录' : '启动应用'}</span></span>
+              <span className="stack s" style={{ gap: 0, minWidth: 0 }}><b className="ellipsis">{h.name}</b><span className="muted xs">{harnessHint(h.kind, wb.harness.find((x) => x.id === h.id)?.opens_dir)}</span></span>
             </button>
           ))}
           <button data-drop="__copy" className="dock-t copy" onClick={() => void dispatch(null)} disabled={!pr || !!stamp}>

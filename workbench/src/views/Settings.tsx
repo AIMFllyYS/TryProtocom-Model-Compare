@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Ban, Bot, Database, FileCode2, FolderOpen, Gauge, Info, Keyboard, MessageSquareText, RefreshCw, Save, Terminal, Wrench } from 'lucide-react';
 import type { JobInfo, WbSettings } from '../../shared/types';
-import { HARNESSES, harnessById } from '../../shared/vendors';
+import { HARNESSES, harnessById, harnessHint } from '../../shared/vendors';
 import { get, post, desktop } from '../api';
 import { bus, jobKey, useBus, useWb } from '../state';
 import { go, href, useRoute } from '../lib/router';
@@ -82,12 +82,12 @@ function HarnessSettings() {
       <Card title="本机检测到的 harness" sub={`${inst.length} / ${HARNESSES.length}`} extra={<Btn size="sm" icon={<RefreshCw size={13} />} onClick={() => void get('/api/harness', { refresh: 1 }).then(() => wb.refresh(['harness']))}>重新检测</Btn>} pad={false}>
         <div className="tbl-wrap"><table className="tbl">
           <thead><tr><th>Harness</th><th>类型</th><th>路径</th><th /></tr></thead>
-          <tbody>{HARNESSES.map((h) => {
+          <tbody>{[...HARNESSES].sort((a, b) => Number(!!wb.harness.find((x) => x.id === b.id)?.installed) - Number(!!wb.harness.find((x) => x.id === a.id)?.installed)).map((h) => {
             const d = wb.harness.find((x) => x.id === h.id);
             return (
               <tr key={h.id}>
                 <td><span className="row gap-s"><HarnessIcon name={h.name} size="sm" /><b>{h.name}</b>{s.default_harness === h.id && <Badge tone="accent">默认</Badge>}</span></td>
-                <td className="small">{h.kind === 'cli' ? '命令行（在工作目录开新终端）' : h.kind === 'ide' ? 'IDE（打开工作目录）' : '桌面应用'}</td>
+                <td className="small">{harnessHint(h.kind, d?.opens_dir, true)}</td>
                 <td className="mono xs muted ellipsis" style={{ maxWidth: 360 }}>{d?.path || '未检测到'}</td>
                 <td>{d?.installed ? <Btn size="xs" onClick={() => void post<{ how: string }>('/api/harness/open', { id: h.id }).then((r) => toast.ok(r.how), (e) => toast.error(e.message))}>试打开</Btn> : <Badge>未安装</Badge>}</td>
               </tr>

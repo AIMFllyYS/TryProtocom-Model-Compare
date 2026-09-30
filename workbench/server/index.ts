@@ -3,13 +3,13 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import type { Aggregate, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
 import { aggregate } from '../shared/aggregate';
 import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { settleQuota } from '../shared/quota';
 import { parseModelInput, suggestHarness, harnessByName, harnessById, iconFor } from '../shared/vendors';
-import { detectHarnesses, openHarness } from './harness';
+import { detectHarnesses, openHarness, scanShell } from './harness';
 import { loadConfig, PREVIEW_PORT_RANGE, VERSION, type Config } from './config';
 import { listDir, readText, resolveSafe, sendRaw, toRel } from './fsapi';
 import { EventHub, HttpError, mimeOf, readJson, Router, sendJson, type Req, type Res } from './http';
@@ -164,6 +164,53 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const wsAbs = cur?.workspace || ws.wsPath(q.vendor, q.model, tkey, index);
     return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
   }
+  // ---------- 预置素材：发车前保证齐全 ----------
+  // 素材在“每次运行创建时”复制进 rN/（而不是新增模型时）：每次运行都要一份没被动过的副本（T08 会就地修改种子仓库）。
+  // T03/T04 的音频由 build_materials.py 确定性生成，缺了就自动生成；仍然缺就拒绝发车，免得白跑一次。
+  const buildScript = path.join(cfg.graderDir, 'scripts', 'build_materials.py');
+  const GENERATED_TASKS = new Set(['T03', 'T04']);
+  function missingMaterials(t: SpecTask): string[] {
+    const dir = taskDirOf(t);
+    const out: string[] = [];
+    for (const raw of t.materials || []) {
+      if (!raw.startsWith('materials/')) continue;
+      const m = raw.split('（')[0].split('(')[0].trim();
+      if (m.includes('*')) {
+        const cut = m.lastIndexOf('/');
+        const re = new RegExp('^' + m.slice(cut + 1).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i');
+        let ok = false;
+        try { ok = fs.readdirSync(path.join(dir, m.slice(0, cut))).some((f) => re.test(f)); } catch { /* 目录不存在 */ }
+        if (!ok) out.push(m);
+      } else if (!fs.existsSync(path.join(dir, m))) out.push(m);
+    }
+    return out;
+  }
+  let building: Promise<void> | null = null;
+  async function ensureMaterials(t: SpecTask) {
+    let miss = missingMaterials(t);
+    if (!miss.length) return;
+    let genErr = '';
+    if (GENERATED_TASKS.has(t.id) && fs.existsSync(buildScript) && cfg.python) {
+      building ||= new Promise<void>((resolve) => {
+        execFile(cfg.python!, [buildScript], { cwd: cfg.graderDir, timeout: 180000, windowsHide: true, encoding: 'utf8' }, (err, _o, stderr) => {
+          if (err) genErr = String(stderr || err.message).trim().split(/\r?\n/).slice(-2).join(' ');
+          building = null;
+          resolve();
+        });
+      });
+      await building;
+      miss = missingMaterials(t);
+      store.log('materials', miss.length ? `生成素材后仍缺：${miss.join('、')}` : `已自动生成 ${t.id} 素材`);
+      void loadSpec(true);
+    }
+    if (!miss.length) return;
+    const where = path.join(taskDirOf(t), 'materials');
+    const hint = GENERATED_TASKS.has(t.id)
+      ? `自动生成没有成功${genErr ? `（${genErr}）` : ''}：请确认 Python 装了 numpy，再到「设置 → 评测机」点“生成素材”。`
+      : `请把素材放进 ${where} 对应位置后再发车。`;
+    throw new HttpError(409, `${t.id} 的预置素材不齐，已停止发车（缺素材的运行会作废）：${miss.join('、')}。${hint}`);
+  }
+
   async function claimRun(b: { vendor: string; model: string; task: string; variant?: string | null; index?: number; start?: boolean; harness?: string; open?: boolean; quota_before?: number | null; quota_unit?: string }) {
     const { s, t } = await findTask(b.task);
     const variant = b.variant || null;
@@ -172,6 +219,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const harness = b.harness || prof?.harness || harnessById(settings().default_harness)?.name || '';
     let run = claimable(b.vendor, b.model, tkey);
     if (!run || (b.index && run.index !== b.index)) {
+      await ensureMaterials(t);
       run = ws.createRun({ vendor: b.vendor, model: b.model, task: t, variant, harness, taskDir: taskDirOf(t), index: b.index, prompt: (wsAbs, n) => renderPrompt(s, t, variant, wsAbs, n).text });
       store.log('ws-create', run.ref);
     } else if (harness && !run.harness) run = ws.patchRun(run.ref, { harness });
@@ -180,6 +228,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const text = fs.readFileSync(ws.files(run.ref).prompt, 'utf8');
     let opened: string | null = null;
     if (b.open) {
+      await scanShell();
       const h = harnessByName(harness) || harnessById(settings().default_harness);
       if (h) { try { opened = openHarness(h.id, run.workspace || null).how; } catch (e) { opened = `未能打开：${(e as Error).message}`; } }
     }
@@ -260,6 +309,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     }
     if (!b.vendor) throw new HttpError(400, `无法从“${b.name}”推断供应商，请手动选择或输入“供应商/模型”`);
     if (!b.harness && !store.data.models.some((m) => m.vendor === b.vendor && m.name === b.name)) {
+      await scanShell();
       const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
       b.harness = suggestHarness(b.vendor, installed, settings().default_harness)?.name || '';
     }
@@ -289,10 +339,10 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const b = await readJson(req);
     const { s, t: task } = await findTask(b.task);
     const variant = b.variant || null;
+    await ensureMaterials(task);
     const run = ws.createRun({ vendor: b.vendor, model: b.model, task, variant, harness: b.harness || '', taskDir: taskDirOf(task), prompt: (wsAbs, n) => renderPrompt(s, task, variant, wsAbs, n).text });
     const pr = { text: fs.readFileSync(ws.files(run.ref).prompt, 'utf8'), warnings: renderPrompt(s, task, variant, null, null).warnings };
-    const warnings = [...pr.warnings, ...(s.materials_state?.[task.id]?.missing || []).map((m) => `素材缺失：${m}（先在「设置 → 评测机」运行“生成素材”）`)];
-    if (task.id === 'T02') warnings.push('T02 需要把用户提供的 minecraft-stop-motion-director skill 复制到工作目录的 skills/ 下。');
+    const warnings = [...pr.warnings];
     if (task.id === 'T06') warnings.push('T06 为有人值守：按 hidden/intent.md 回答模型提问，并在完成时填写 transcript_notes。');
     store.log('ws-create', run.ref);
     refreshWorkspaces();
@@ -378,11 +428,12 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   });
 
   // harness（Agent 软件）
-  R.get('/api/harness', (req) => detectHarnesses(req.query.get('refresh') === '1'));
+  R.get('/api/harness', async (req) => { const force = req.query.get('refresh') === '1'; await scanShell(force); return detectHarnesses(force); });
   R.post('/api/harness/open', async (req) => {
     const b = await readJson(req);
     const cwd = b.ref ? ws.files(b.ref).ws : null;
     const id = b.id || harnessByName(b.name)?.id;
+    await scanShell();
     return openHarness(id, cwd);
   });
   R.get('/api/models/infer', (req) => {
