@@ -1,0 +1,65 @@
+{
+  "name": "bench-workbench",
+  "productName": "Bench Workbench",
+  "private": true,
+  "version": "1.0.0",
+  "description": "TryProtocom Model-Compare 评测工作台：规范、运行、评分、盲评、对比与产物预览舞台",
+  "type": "module",
+  "main": "desktop/app/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:web && npm run build:node",
+    "build:web": "vite build",
+    "build:node": "node scripts/build-node.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist-node/server.cjs --open",
+    "wb": "node dist-node/wb.cjs",
+    "desktop": "electron .",
+    "dist:win": "npm run build && electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "electron": "44.5.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "lucide-react": "1.48.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1"
+  },
+  "build": {
+    "appId": "com.tryprotocom.benchworkbench",
+    "productName": "Bench Workbench",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/app/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": "web"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "Bench-Workbench-${version}-portable.exe"
+    }
+  }
+}

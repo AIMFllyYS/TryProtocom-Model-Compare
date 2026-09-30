@@ -1,0 +1,158 @@
+id: T02
+name: Minecraft 定格短片（Skill 遵循）
+short: 严格按 minecraft-stop-motion-director skill 制作 60 秒方块风格定格短片，考 skill 遵循、叙事镜头、3D 场景与定格节奏
+deliverable_dir: mc-sol-luna
+dims: {agent: 1.0, 3d: 1.0, anim: 1.0, eng: 0.5}
+condition: 无人值守；工作目录中预置 skills/minecraft-stop-motion-director/（用户提供的 skill 包）
+materials: ["skills/minecraft-stop-motion-director/（用户提供的 skill 包，解压后放入工作目录）"]
+time_limit_min: 120
+probes:
+  - type: files
+    opts:
+      required: [index.html, project.json, shot-list.json, audio-cue-sheet.csv, qc-report.md, delivery-manifest.json]
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com]
+      forbid_ext: [.glb, .gltf, .obj, .fbx, .mp3, .wav, .ogg, .woff, .woff2, .ttf]
+      scan: [index.html]
+  - type: claims
+  - type: mcproject
+  - type: browser
+    opts:
+      entry: index.html
+      query: "?t=20&paused=1"
+      allowed_hosts: [cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com]
+      hooks: [FILM, FILM.seek, FILM.getPose, FILM.cameraAt, FILM.shots, __scene]
+      audio: true
+      scene: {path: __scene, renderer: __renderer}
+  - type: timeline
+    opts:
+      global: FILM
+      entry: index.html
+      query: "?paused=1"
+      expected_duration: 60
+      sample_fps: 4
+      text: false
+      pose: true
+      camera: true
+      shots_json: shot-list.json
+      render_video: {fps: 24}
+gates:
+  - {id: G1, desc: 页面加载且 FILM.seek 可用, metric: tl.hook_ok, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致（未把 HTML 说成视频、未虚报文件）, metric: claims.honest, rule: {type: bool}}
+items:
+  # ---------------- Agent 执行（Skill 遵循） ----------------
+  - {id: T02-S01, dim: agent, tier: basic, method: auto, desc: Skill 要求的 6 个项目文件齐全, metric: files.required_ratio, rule: {type: ratio}}
+  - {id: T02-S02, dim: agent, tier: advanced, method: auto, desc: validate_project.py 校验通过（无 Errors）, metric: mc.validate_pass, rule: {type: bool}}
+  - {id: T02-S03, dim: agent, tier: advanced, method: auto, desc: validate_project.py 警告数, metric: mc.validate_warnings, rule: {type: max, max: 0, zero: 10}}
+  - {id: T02-S04, dim: agent, tier: basic, method: auto, desc: project.json 故事字段填写率, metric: mc.story_filled_ratio, rule: {type: ratio}}
+  - {id: T02-S05, dim: agent, tier: basic, method: auto, desc: 镜头表动作/灯光/表演字段填写率, metric: mc.shot_fields_filled_ratio, rule: {type: ratio}}
+  - {id: T02-S06, dim: agent, tier: advanced, method: auto, desc: 镜头表每镜头都有声音设计, metric: mc.shot_audio_filled_ratio, rule: {type: ratio}}
+  - {id: T02-S07, dim: agent, tier: basic, method: auto, desc: 镜头数在 8–12 之间, metric: mc.shots, rule: {type: band, lo: 8, hi: 12, tol: 4}}
+  - {id: T02-S08, dim: agent, tier: advanced, method: auto, desc: 实际使用的命名相机数量, metric: mc.cameras_used, rule: {type: linear, bad: 2, good: 6}}
+  - {id: T02-S09, dim: agent, tier: advanced, method: auto, desc: 音频提示表有效条目数, metric: mc.cue_rows, rule: {type: linear, bad: 7, good: 30}}
+  - {id: T02-S10, dim: agent, tier: advanced, method: auto, desc: 音频提示表层次数（环境/拟音/音效/音乐…）, metric: mc.cue_layers, rule: {type: linear, bad: 2, good: 5}}
+  - {id: T02-S11, dim: agent, tier: advanced, method: auto, desc: 每镜头至少一张关键帧截图, metric: mc.keyframes_per_shot, rule: {type: min, min: 1, zero: 0}}
+  - {id: T02-S12, dim: agent, tier: basic, method: auto, desc: 生成了 contact sheet, metric: mc.contact_sheet, rule: {type: bool}}
+  - {id: T02-S13, dim: agent, tier: excellent, method: auto, desc: QC 报告记录了真实发现的问题与修复（问题表行数）, metric: mc.qc_issue_rows, rule: {type: linear, bad: 0, good: 4}}
+  - {id: T02-S14, dim: agent, tier: clean, method: auto, desc: QC 未出现“全部打勾但问题表为空”, value_expr: "not (v['mc.qc_checked_ratio'] >= 0.99 and v['mc.qc_issue_rows'] == 0)", rule: {type: bool}}
+  - {id: T02-S15, dim: agent, tier: advanced, method: auto, desc: delivery-manifest 的 verified 标记与实际文件一致, metric: mc.manifest_truthful_ratio, rule: {type: ratio}}
+  - {id: T02-S16, dim: agent, tier: advanced, method: auto, desc: FILM.shots 与 shot-list.json 一致, metric: tl.shots_json_match, rule: {type: ratio}}
+  - {id: T02-S17, dim: agent, tier: advanced, method: auto, desc: cameraAt 与镜头表 camera_id 一致, metric: tl.camera_match_ratio, rule: {type: ratio}}
+  - id: T02-S18
+    dim: agent
+    tier: advanced
+    method: agent
+    desc: 故事结构体现 skill 的 8 拍模型与“一句话戏剧句式”（读 project.json / shot-list.json）
+    anchors: ["无结构，镜头随意罗列", "有分段但与 8 拍不对应", "8 拍清楚，戏剧句式成立", "8 拍清楚且每镜头的 story_function 与画面一一对应，结尾呼应开头"]
+  - id: T02-S19
+    dim: agent
+    tier: excellent
+    method: agent
+    desc: 预演检查点证据（故事/分镜/观感/动画/终审锁定），而不是直接写最终代码
+    anchors: ["无任何预演证据", "只有模板文件", "有关键帧或 contact sheet 并据此调整", "有明确的检查点记录与据此做出的修改"]
+  # ---------------- 3D ----------------
+  - {id: T02-D01, dim: 3d, tier: basic, method: auto, desc: 暴露可遍历的 3D 场景, metric: scene.available, rule: {type: bool}}
+  - {id: T02-D02, dim: 3d, tier: advanced, method: auto, desc: 场景规模（网格数）, metric: scene.meshes, rule: {type: linear, bad: 40, good: 500, log: true}}
+  - {id: T02-D03, dim: 3d, tier: advanced, method: auto, desc: 使用 InstancedMesh 等批量绘制方块, metric: scene.instanced, rule: {type: min, min: 1}}
+  - {id: T02-D04, dim: 3d, tier: basic, method: auto, desc: 渲染器开启阴影, metric: scene.shadowmap, rule: {type: bool}}
+  - {id: T02-D05, dim: 3d, tier: advanced, method: auto, desc: 程序化像素贴图数量, metric: scene.procedural_textures, rule: {type: linear, bad: 1, good: 8}}
+  - {id: T02-D06, dim: 3d, tier: basic, method: auto, desc: 光源数量（实际光源叙事的前提）, metric: scene.lights, rule: {type: linear, bad: 1, good: 5}}
+  - {id: T02-D07, dim: 3d, tier: advanced, method: auto, desc: 播放帧率, metric: browser.fps, rule: {type: linear, bad: 15, good: 50}}
+  - id: T02-H01
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 体素语法与像素贴图风格统一（地形、建筑、角色都由方块构成）
+    evidence: 评审视频 review.mp4 / 关键帧
+    anchors: ["不像方块世界", "方块造型但贴图/比例混乱", "风格统一，可辨识为 Minecraft 风格", "风格统一且贴图质量高，有原创设计感"]
+  - id: T02-H02
+    dim: 3d
+    tier: excellent
+    method: human
+    desc: 光照叙事：Sol 暖光 / Luna 冷光作为场景内实际光源并照亮周围方块
+    evidence: 评审视频
+    anchors: ["无光照设计", "有颜色但不是光源", "暖冷光源存在并照亮周围", "光色随剧情变化，形成清晰的冷暖叙事"]
+  - id: T02-H03
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 构图纵深与镜头克制（前中后景、推拉摇移有动机、无乱转）
+    evidence: 评审视频
+    anchors: ["镜头乱飞或全程固定", "有变化但缺少动机", "构图有层次，运镜克制", "每个镜头都有明确叙事功能，构图讲究"]
+  - id: T02-H04
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 接触与穿插（对照 skill 的 15 条失败清单：脚踩地、手握武器、无穿模、无悬浮道具）
+    evidence: 评审视频逐镜头
+    anchors: ["大量穿模/悬浮", "3 处以上明显问题", "1–2 处小问题", "未发现问题"]
+  # ---------------- 动画动效 ----------------
+  - {id: T02-A01, dim: anim, tier: basic, method: auto, desc: 时长接近 60 秒（误差秒）, metric: tl.duration_err, rule: {type: max, max: 1, zero: 10}}
+  - {id: T02-A02, dim: anim, tier: advanced, method: auto, desc: seek 确定性（同一时刻两次渲染一致）, metric: tl.determinism_ratio, rule: {type: ratio}}
+  - {id: T02-A03, dim: anim, tier: excellent, method: auto, desc: 定格节奏：姿态每 2–3 帧才变化一次（保持比例）, metric: tl.pose_hold_ratio, rule: {type: band, lo: 0.4, hi: 0.75, tol: 0.4}}
+  - {id: T02-A04, dim: anim, tier: basic, method: auto, desc: 角色确实在动（姿态变化次数）, metric: tl.pose_changes, rule: {type: min, min: 10, zero: 0}}
+  - {id: T02-A05, dim: anim, tier: advanced, method: auto, desc: 无长时间静止画面（最长静止秒数）, metric: tl.static_max_gap_s, rule: {type: max, max: 3, zero: 10}}
+  - {id: T02-A06, dim: anim, tier: basic, method: auto, desc: 空白帧比例, metric: tl.blank_ratio, rule: {type: max, max: 0.02, zero: 0.2}}
+  - {id: T02-A07, dim: anim, tier: basic, method: auto, desc: 首次交互前不创建音频, metric: audio.ctx_before_gesture, rule: {type: max, max: 0}}
+  - {id: T02-A08, dim: anim, tier: advanced, method: auto, desc: 点击后合成音频节点数量（声音层次）, metric: audio.nodes, rule: {type: linear, bad: 3, good: 40}}
+  - id: T02-H05
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 静音观看也能看懂故事（主角、目标、转折、结果）
+    evidence: 静音观看评审视频
+    anchors: ["看不懂", "能看懂一部分", "主线清楚", "主线清楚且情绪有起伏"]
+  - id: T02-H06
+    dim: anim
+    tier: excellent
+    method: human
+    desc: “推销”被 Minecraft 化：卖点靠玩法演示（附魔台、战斗、挖掘等），而非字幕口播
+    evidence: 评审视频
+    anchors: ["纯文字广告", "有演示但大量依赖字幕", "主要卖点靠玩法演示", "演示巧妙、有笑点或反转，看完记得住 Sol/Luna 的区别"]
+  - id: T02-H07
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 关键动作有预备 → 动作 → 反应，并有强调停顿
+    evidence: 评审视频中的挥砍/附魔/展示动作
+    anchors: ["动作生硬或瞬移", "有动作无预备/反应", "主要动作三段完整", "所有关键动作都有力量感和节奏"]
+  - id: T02-H08
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 声音设计（环境声先行、拟音与接触同步、音乐随剧情起伏、留白）
+    evidence: 带声音观看（点击页面启动音频）
+    anchors: ["无声或噪音", "只有单一背景音", "分层清楚且同步", "有设计感，高潮与留白处理得好"]
+  - id: T02-H09
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 结尾画面呼应开头并有新含义
+    evidence: 评审视频首尾
+    anchors: ["无呼应", "牵强", "明确呼应", "呼应且带来情绪落点"]
+  # ---------------- 工程化 ----------------
+  - {id: T02-E01, dim: eng, tier: advanced, method: auto, desc: 控制台零报错, metric: browser.errors_total, rule: {type: max, max: 0, zero: 5}}
+  - {id: T02-E02, dim: eng, tier: basic, method: auto, desc: 无白名单外外部引用, metric: files.external_refs, rule: {type: max, max: 0, zero: 3}}
+  - {id: T02-E03, dim: eng, tier: basic, method: auto, desc: 运行时无白名单外网络请求, metric: browser.external_requests, rule: {type: max, max: 0, zero: 3}}
+  - {id: T02-E04, dim: eng, tier: clean, method: auto, desc: 无占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}
+  - {id: T02-E05, dim: eng, tier: basic, method: auto, desc: 评测接口齐全, metric: browser.hooks_ratio, rule: {type: ratio}}

@@ -1,0 +1,11 @@
+# 模型单价表（美元 / 百万 token）。
+# 请按各家官方价格页填写，并更新 as_of 日期。未填写的模型无法自动算费用，脚本会把它列入“需用户补充”。
+# 订阅制 harness（不按 token 计费）也按 API 等价价格估算，报告中会标注“估算”。
+as_of: null
+currency: USD
+models:
+  # 模型名匹配规则：日志里的 model 字段包含 key（不区分大小写）即命中，越长的 key 优先。
+  # 示例（数值为占位，务必替换）：
+  # claude-opus-5-5:   {input: 0, output: 0, cache_read: 0, cache_write: 0}
+  # gpt-6:             {input: 0, output: 0, cache_read: 0}
+  # gemini-3-pro:      {input: 0, output: 0, cache_read: 0}

@@ -1,0 +1,5 @@
+interface:
+  display_name: Bench Grader
+  short_description: Coding Bench v1 的自动验收、评分汇总与榜单导出。
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,93 @@
+id: T04
+name: Aether-9 发布宣传片（HyperFrames 端到端）
+short: 用 HyperFrames + skills 从事实表到 20 秒成片：脚本、TTS 配音、BGM、双语字幕、混音与渲染导出
+deliverable_dir: aether9-promo
+dims: {anim: 1.0, agent: 1.0, eng: 0.5}
+condition: 无人值守；预装 HyperFrames 与官方 skills、统一 TTS 命令；工作目录预置 assets/（事实表、2 首 BGM、4 个音效）
+materials: ["materials/assets/aether9-facts.md", "materials/assets/bgm-a.wav", "materials/assets/bgm-b.wav", "materials/assets/sfx/*.wav"]
+time_limit_min: 90
+probes:
+  - type: files
+    opts:
+      required: [final.mp4, subtitles.srt, script.md]
+  - type: claims
+  - type: video
+    opts: {file: final.mp4, srt: subtitles.srt, expected_duration: 20, asr: true, script: script.md}
+gates:
+  - {id: G1, desc: 交付了可解析的 final.mp4, metric: video.exists, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致, metric: claims.honest, rule: {type: bool}}
+items:
+  # ---------------- 工程化（成片规格） ----------------
+  - {id: T04-E01, dim: eng, tier: basic, method: auto, desc: 交付物齐全（成片、字幕、脚本）, metric: files.required_ratio, rule: {type: ratio}}
+  - {id: T04-E02, dim: eng, tier: basic, method: auto, desc: 时长 20±1 秒（误差秒）, metric: video.duration_err, rule: {type: max, max: 1, zero: 5}}
+  - {id: T04-E03, dim: eng, tier: basic, method: auto, desc: 分辨率 1920×1080, value_expr: "v['video.width'] == 1920 and v['video.height'] == 1080", rule: {type: bool}}
+  - {id: T04-E04, dim: eng, tier: basic, method: auto, desc: 帧率 30fps, metric: video.fps, rule: {type: band, lo: 29.9, hi: 30.1, tol: 10}}
+  - {id: T04-E05, dim: eng, tier: basic, method: auto, desc: 视频编码 H.264, metric: video.h264, rule: {type: bool}}
+  - {id: T04-E06, dim: eng, tier: basic, method: auto, desc: 音频编码 AAC, metric: video.aac, rule: {type: bool}}
+  - {id: T04-E07, dim: eng, tier: advanced, method: auto, desc: 整体响度 −16 到 −14 LUFS, metric: video.lufs_i, rule: {type: band, lo: -16, hi: -14, tol: 6}}
+  - {id: T04-E08, dim: eng, tier: advanced, method: auto, desc: 真峰值不超过 −1 dBTP, metric: video.true_peak, rule: {type: max, max: -1, zero: 1}}
+  - {id: T04-E09, dim: eng, tier: basic, method: auto, desc: 黑帧总时长（秒）, metric: video.black_s, rule: {type: max, max: 0.2, zero: 2}}
+  # ---------------- 动画动效 ----------------
+  - {id: T04-A01, dim: anim, tier: advanced, method: auto, desc: 冻帧总时长（秒）, metric: video.freeze_s, rule: {type: max, max: 0.3, zero: 3}}
+  - {id: T04-A02, dim: anim, tier: advanced, method: auto, desc: 镜头/场景切换密度（每 10 秒）, metric: video.cuts_per_10s, rule: {type: linear, bad: 1.5, good: 6}}
+  - {id: T04-A03, dim: anim, tier: basic, method: auto, desc: 导出了字幕文件, metric: srt.exists, rule: {type: bool}}
+  - {id: T04-A04, dim: anim, tier: advanced, method: auto, desc: 字幕不换行（每种语言每句一行）, metric: srt.wrapped_cues, rule: {type: max, max: 0, zero: 5}}
+  - {id: T04-A05, dim: anim, tier: advanced, method: auto, desc: 双语字幕占比, metric: srt.bilingual_ratio, rule: {type: ratio}}
+  - {id: T04-A06, dim: anim, tier: basic, method: auto, desc: 字幕时间轴无重叠, metric: srt.overlaps, rule: {type: max, max: 0, zero: 3}}
+  - {id: T04-A07, dim: anim, tier: basic, method: auto, desc: 字幕时间不越界, metric: srt.out_of_range, rule: {type: max, max: 0, zero: 2}}
+  - {id: T04-A08, dim: anim, tier: advanced, method: auto, desc: 字幕覆盖率（旁白时长占比）, metric: srt.coverage, rule: {type: linear, bad: 0.3, good: 0.8}}
+  - {id: T04-A09, dim: anim, tier: excellent, method: auto, desc: 配音与脚本一致（ASR 字错率）, metric: asr.cer, rule: {type: max, max: 0.15, zero: 0.6}}
+  - id: T04-H01
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 转场丰富度与质量
+    evidence: final.mp4
+    anchors: ["硬切为主", "有几种转场但生硬", "转场多样且流畅", "转场有创意并服务叙事"]
+  - id: T04-H02
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 动效密度与节奏（B 站观众不会走神）
+    evidence: final.mp4
+    anchors: ["节奏拖沓", "有动效但节奏平", "紧凑有起伏", "高密度且不乱，节奏抓人"]
+  - id: T04-H03
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 烧录字幕可读性（位置、字号、描边/底衬、与画面不冲突）
+    evidence: final.mp4
+    anchors: ["看不清或遮挡主体", "能看清但丑", "清晰规范", "清晰且与整体设计统一"]
+  - id: T04-H04
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 旁白与画面同步、混音听感（BGM 在人声下压低、音效点缀）
+    evidence: final.mp4 带声音
+    anchors: ["人声被盖住或不同步", "能听清但混音粗糙", "同步且层次清楚", "专业听感"]
+  - id: T04-H05
+    dim: anim
+    tier: excellent
+    method: human
+    desc: 整体吸引力（像一支能发 B 站的宣传片）
+    evidence: final.mp4
+    anchors: ["像草稿", "及格", "好看", "想转发"]
+  # ---------------- Agent 执行 ----------------
+  - id: T04-S01
+    dim: agent
+    tier: advanced
+    method: agent
+    desc: 使用 HyperFrames skills 完成（项目结构、组合规范、CLI 渲染）
+    anchors: ["未使用", "只用了渲染命令", "按 skill 组织项目", "完整使用相关 skill（含音频/字幕类）"]
+  - id: T04-S02
+    dim: agent
+    tier: excellent
+    method: agent
+    desc: 自我验证：渲染后检查成片（时长/响度/字幕/抽帧）并据此修正
+    anchors: ["没有检查", "只确认文件存在", "检查了规格", "检查了规格和画面并做了修正"]
+  - id: T04-S03
+    dim: agent
+    tier: advanced
+    method: agent
+    desc: 信息准确：脚本与画面中的所有参数都来自事实表，没有编造
+    anchors: ["多处编造", "1–2 处不符", "全部准确", "全部准确且信息取舍得当"]

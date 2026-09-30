@@ -1,0 +1,33 @@
+# ---- 评测方私有材料：隐藏测试、参考实现、意图表（bench-grader 规则 1，绝不公开）----
+skills/bench-grader/tasks/*/hidden/
+
+# ---- 工作台构建与运行时 ----
+workbench/node_modules/
+workbench/desktop/app/
+workbench/release/
+workbench/.runtime/
+workbench/*.tsbuildinfo
+# 说明：workbench/dist（前端）与 workbench/dist-node（服务 + CLI）已提交，
+# 这样另一台电脑只要装了 Node.js 就能直接运行，无需 npm install。
+
+# ---- 模型工作区：只提交档案与留档（model.json、rN.run.json、rN.prompt.md、rN.final.md、_report/），
+#      不提交模型在 rN/ 里产出的完整工作目录（可能含 node_modules、视频等大文件）----
+model/*/*/T*/r*/
+!model/*/*/T*/r*.run.json
+!model/*/*/T*/r*.prompt.md
+!model/*/*/T*/r*.final.md
+!model/*/*/T*/r*.transcript.json
+
+# ---- bench-grader 工作数据（含交付物副本，体积大）；可移植结果在 data/bench-store.json ----
+bench-data/
+reports/
+
+# ---- 本地环境 ----
+.kiro/
+GOAL_PROGRESS.md
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+Thumbs.db
+*.log

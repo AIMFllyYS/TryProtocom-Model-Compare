@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Bench Workbench CLI（macOS / Linux / Git Bash）：./wb status
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec node "$DIR/workbench/dist-node/wb.cjs" "$@"
