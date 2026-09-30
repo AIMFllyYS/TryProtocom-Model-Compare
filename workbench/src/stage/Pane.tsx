@@ -5,7 +5,7 @@ import type { LogEntry, PreviewSession } from '../../shared/types';
 import { desktop, post, rawUrl } from '../api';
 import { bus, logKey, navKey, perfKey, useBus } from '../state';
 import { cls } from '../lib/format';
-import { Badge, Btn, IconBtn, Modal, Spinner } from '../ui/kit';
+import { Badge, Btn, IconBtn, Modal, Select, Spinner } from '../ui/kit';
 import { toast } from '../ui/toast';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { DevTools } from './DevTools';
@@ -173,22 +173,18 @@ export function Pane({ pane, session, focused, onFocus, onChange, onClose, dtHei
         <div className="pane-tools">
           {pane.src.type === 'session' && (
             <>
-              <select className="xs" value={pane.device} onChange={(e) => onChange({ device: e.target.value })} aria-label="设备" title="设备尺寸">
-                {['响应式', '桌面', '平板', '手机'].map((g) => <optgroup key={g} label={g}>{DEVICES.filter((d) => d.group === g).map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}</optgroup>)}
-                <option value="custom">自定义…</option>
-              </select>
+              <Select size="xs" value={pane.device} onChange={(v) => onChange({ device: v })} label="设备" place="bottom-end"
+                options={[...DEVICES.map((d) => ({ value: d.id, label: d.label, group: d.group })), { value: 'custom', label: '自定义尺寸…', group: '自定义' }]} />
               {pane.device === 'custom' && (
                 <span className="custom-size">
-                  <input type="number" value={pane.custom?.w || 1280} onChange={(e) => onChange({ custom: { w: Number(e.target.value) || 320, h: pane.custom?.h || 800 } })} aria-label="宽" />×
-                  <input type="number" value={pane.custom?.h || 800} onChange={(e) => onChange({ custom: { h: Number(e.target.value) || 320, w: pane.custom?.w || 1280 } })} aria-label="高" />
+                  <input className="input sm" type="number" value={pane.custom?.w || 1280} onChange={(e) => onChange({ custom: { w: Number(e.target.value) || 320, h: pane.custom?.h || 800 } })} aria-label="宽" />×
+                  <input className="input sm" type="number" value={pane.custom?.h || 800} onChange={(e) => onChange({ custom: { h: Number(e.target.value) || 320, w: pane.custom?.w || 1280 } })} aria-label="高" />
                 </span>
               )}
               {!fill && <IconBtn label="旋转（横竖屏）" size="xs" active={pane.rotate} onClick={() => onChange({ rotate: !pane.rotate })}><RotateCcw size={14} /></IconBtn>}
               <IconBtn label="快速切换手机 / 桌面" size="xs" onClick={() => onChange({ device: dev.mobile ? 'd1440' : 'iphone16' })}>{dev.mobile ? <MonitorSmartphone size={14} /> : <Smartphone size={14} />}</IconBtn>
-              <select className="xs" value={String(pane.zoom)} onChange={(e) => onChange({ zoom: e.target.value === 'fit' ? 'fit' : Number(e.target.value) })} aria-label="缩放" title="缩放">
-                <option value="fit">{fill ? '100%' : `适应 ${Math.round(scale * 100)}%`}</option>
-                {ZOOMS.map((z) => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
-              </select>
+              <Select size="xs" value={String(pane.zoom)} onChange={(v) => onChange({ zoom: v === 'fit' ? 'fit' : Number(v) })} label="缩放" place="bottom-end"
+                options={[{ value: 'fit', label: fill ? '100%' : `适应 ${Math.round(scale * 100)}%` }, ...ZOOMS.map((z) => ({ value: String(z), label: `${Math.round(z * 100)}%` }))]} />
               <IconBtn label={isDesk ? '截图（保存 PNG）' : '无头截图 + 报错检查'} size="xs" onClick={() => void screenshot()} disabled={probing}>{probing ? <Spinner size={13} /> : <Camera size={14} />}</IconBtn>
               {!isDesk && <IconBtn label="无头检查（Python Playwright：报错 + 截图）" size="xs" onClick={() => void runProbe()} disabled={probing}><ScanSearch size={14} /></IconBtn>}
               <IconBtn label="控制台 / 网络面板" size="xs" active={pane.devtools} onClick={() => onChange({ devtools: !pane.devtools })}>

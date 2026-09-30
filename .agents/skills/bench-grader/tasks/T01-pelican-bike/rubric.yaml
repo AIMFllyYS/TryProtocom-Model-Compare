@@ -1,0 +1,168 @@
+id: T01
+name: 鹈鹕骑自行车
+short: 2.5D(SVG) / 3D(Three.js) 双模式交互页面，考程序化建模、物理与生物准确度、角色运动、音效合成
+deliverable_dir: pelican-bike
+dims: {3d: 1.0, anim: 0.5, eng: 0.5}
+condition: 无人值守；无需任何素材
+materials: []
+time_limit_min: 60
+probes:
+  - type: files
+    opts:
+      required: [index.html]
+      allowed: [index.html]
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com, threejs.org]
+      forbid_ext: [.png, .jpg, .jpeg, .gif, .webp, .glb, .gltf, .obj, .fbx, .mp3, .wav, .ogg, .woff, .woff2, .ttf]
+  - type: claims
+  - type: browser
+    opts:
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com, threejs.org]
+      hooks: [__bench, __bench.getState, __bench.setMode, __bench.setSpeed]
+      mobile: true
+      audio: true
+      scene:
+        setup: ["window.__bench.setMode('3d')"]
+        path: __scene
+        renderer: __renderer
+        fps_label: 3d
+      js_metrics:
+        svg: |
+          const b = window.__bench; b.setSpeed(3); b.setMode('2.5d'); await sleep(1500);
+          const svgs = [...document.querySelectorAll('svg')].filter(s => { const r = s.getBoundingClientRect(); return r.width > 100 && r.height > 100; });
+          const els = svgs.flatMap(s => [...s.querySelectorAll('*')]);
+          const snap = () => els.map(e => [e.getAttribute('transform'), e.style.transform, (e.getAttribute('d') || '').length, e.getAttribute('cx'), e.getAttribute('x1'), e.getAttribute('x2'), (e.getAttribute('points') || '').slice(0, 60)].join('|'));
+          const a = snap(); await sleep(500); const c = snap();
+          let changed = 0; for (let i = 0; i < a.length; i++) if (a[i] !== c[i]) changed++;
+          let n = 0; const t0 = performance.now();
+          await new Promise(res => { const f = (t) => { n++; if (t - t0 < 2000) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+          const fps = n * 1000 / (performance.now() - t0);
+          b.setMode('3d'); await sleep(800);
+          return {elements: els.length, animated: changed, fps};
+        phys: |
+          const b = window.__bench; const out = {};
+          const safe = async (k, fn) => { try { out[k] = await fn(); } catch (e) { out[k] = null; } };
+          b.setMode('3d'); b.setSpeed(3); await sleep(1200);
+          const s1 = b.getState(); const t1 = performance.now(); await sleep(2000); const s2 = b.getState(); const dt = (performance.now() - t1) / 1000;
+          await safe('slip_err', () => { const dist = s2.speed * dt; const roll = Math.abs(s2.wheelAngle - s1.wheelAngle) * s2.wheelRadius; return Math.abs(roll - dist) / Math.max(dist, 1e-6); });
+          await safe('gear_err', () => { const dW = s2.wheelAngle - s1.wheelAngle, dC = s2.crankAngle - s1.crankAngle; const exp = s2.cogTeeth / s2.chainringTeeth; return Math.abs(Math.abs(dC / dW) - exp) / exp; });
+          let pmax = 0, fmax = 0, hmax = 0, ok = true;
+          for (let i = 0; i < 24; i++) { try { const s = b.getState(); pmax = Math.max(pmax, ...s.pedalAngles.map(a => Math.abs(a) * 180 / Math.PI)); fmax = Math.max(fmax, ...s.footToPedal.map(Math.abs)); hmax = Math.max(hmax, Math.abs(s.hipToSaddle)); } catch (e) { ok = false; } await sleep(83); }
+          out.pedal_max_deg = ok ? pmax : null; out.foot_max_m = ok ? fmax : null; out.hip_max_m = ok ? hmax : null;
+          await safe('static_at_zero', async () => { b.setSpeed(0); await sleep(700); const z1 = b.getState(); await sleep(1000); const z2 = b.getState(); return Math.abs(z2.wheelAngle - z1.wheelAngle) < 1e-3 && Math.abs(z2.crankAngle - z1.crankAngle) < 1e-3; });
+          await safe('switch_err', async () => { b.setSpeed(3); await sleep(1000); const a1 = b.getState(); const ta = performance.now(); b.setMode('2.5d'); await sleep(1500); const a2 = b.getState(); const tb = (performance.now() - ta) / 1000; const exp = (3 / a2.wheelRadius) * (a2.cogTeeth / a2.chainringTeeth) * tb; return Math.abs(Math.abs(a2.crankAngle - a1.crankAngle) - exp) / exp; });
+          await safe('mode_switched', () => b.getMode() === '2.5d');
+          b.setMode('3d'); await sleep(800);
+          return out;
+        bio: |
+          const txt = document.body.innerText + ' ' + ((window.__bench && window.__bench.species) || '');
+          return {species_ok: /Pelecanus\s+(occidentalis|erythrorhynchos|onocrotalus|conspicillatus|crispus|rufescens|philippensis|thagus)/i.test(txt)};
+gates:
+  - {id: G1, desc: 页面能在 Chromium 中加载, metric: browser.loaded, rule: {type: bool}}
+  - {id: G2, desc: 交付了 index.html, metric: files.entry_exists, rule: {type: bool}}
+  - {id: G3, desc: 最终汇报与实际产出一致（未谎报文件/视频）, metric: claims.honest, rule: {type: bool}}
+items:
+  # ---------------- 工程化 ----------------
+  - {id: T01-E01, dim: eng, tier: basic, method: auto, desc: 交付目录只含 index.html, metric: files.unexpected_count, rule: {type: max, max: 0, zero: 3}}
+  - {id: T01-E02, dim: eng, tier: basic, method: auto, desc: 源码中无白名单外的外部引用, metric: files.external_refs, rule: {type: max, max: 0, zero: 3}}
+  - {id: T01-E03, dim: eng, tier: basic, method: auto, desc: CDN 依赖固定版本号, metric: files.cdn_unpinned, rule: {type: max, max: 0, zero: 2}}
+  - {id: T01-E04, dim: eng, tier: clean, method: auto, desc: 无“此处省略”等占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}
+  - {id: T01-E05, dim: eng, tier: advanced, method: auto, desc: 控制台与页面零报错（桌面+手机）, metric: browser.errors_total, rule: {type: max, max: 0, zero: 5}}
+  - {id: T01-E06, dim: eng, tier: basic, method: auto, desc: 运行时无白名单外网络请求, metric: browser.external_requests, rule: {type: max, max: 0, zero: 3}}
+  - {id: T01-E07, dim: eng, tier: basic, method: auto, desc: 评测接口齐全（__bench 各方法）, metric: browser.hooks_ratio, rule: {type: ratio}}
+  - {id: T01-E08, dim: eng, tier: clean, method: auto, desc: 未携带图片/模型/音频/字体文件, metric: files.forbidden_assets, rule: {type: max, max: 0}}
+  - {id: T01-E09, dim: eng, tier: basic, method: auto, desc: 手机宽度（390px）无横向溢出, metric: mobile.overflow_px, rule: {type: max, max: 0, zero: 200}}
+  - id: T01-E10
+    dim: eng
+    tier: advanced
+    method: agent
+    desc: IK 实现正确：大腿/小腿两段链用解析解或迭代求解，脚目标跟随踏板，而非硬编码关键帧
+    anchors: ["无 IK，腿部是固定姿势或简单摆动", "有 IK 形式但计算错误，腿会拉伸/穿模", "两段 IK 基本正确，偶有膝关节翻转", "两段 IK 正确，膝关节方向约束合理，参数与车架几何联动"]
+  - id: T01-E11
+    dim: eng
+    tier: advanced
+    method: agent
+    desc: 物理常量集中定义（轮径、齿数、曲柄长度等），与说明面板显示一致
+    anchors: ["常量散落或硬编码魔法数", "有常量但与面板不一致", "集中定义，面板大体一致", "集中定义、面板完全一致、单位清楚"]
+  # ---------------- 3D ----------------
+  - {id: T01-D01, dim: 3d, tier: basic, method: auto, desc: 3D 模式暴露可遍历的场景, metric: scene.available, rule: {type: bool}}
+  - {id: T01-D02, dim: 3d, tier: advanced, method: auto, desc: 建模细节：网格数量, metric: scene.meshes, rule: {type: linear, bad: 20, good: 150}}
+  - {id: T01-D03, dim: 3d, tier: advanced, method: auto, desc: 建模细节：三角面数（对数刻度）, metric: scene.triangles, rule: {type: linear, bad: 2000, good: 40000, log: true}}
+  - {id: T01-D04, dim: 3d, tier: basic, method: auto, desc: 渲染器开启阴影, metric: scene.shadowmap, rule: {type: bool}}
+  - {id: T01-D05, dim: 3d, tier: basic, method: auto, desc: 至少一个投射阴影的光源, metric: scene.shadow_lights, rule: {type: min, min: 1}}
+  - {id: T01-D06, dim: 3d, tier: basic, method: auto, desc: 有接收阴影的物体（地面）, metric: scene.shadow_receivers, rule: {type: min, min: 1}}
+  - {id: T01-D07, dim: 3d, tier: advanced, method: auto, desc: PBR 材质占比, metric: scene.pbr_ratio, rule: {type: linear, bad: 0.2, good: 0.9}}
+  - {id: T01-D08, dim: 3d, tier: excellent, method: auto, desc: 程序化贴图（Canvas/Data 纹理）数量, metric: scene.procedural_textures, rule: {type: linear, bad: 0, good: 4}}
+  - {id: T01-D09, dim: 3d, tier: basic, method: auto, desc: 开启色调映射, metric: scene.tonemapping, rule: {type: bool}}
+  - {id: T01-D10, dim: 3d, tier: advanced, method: auto, desc: 3D 模式帧率（评测机统一测量，相对可比）, metric: browser.fps_3d, rule: {type: linear, bad: 15, good: 55}}
+  - {id: T01-P01, dim: 3d, tier: advanced, method: auto, desc: 车轮无打滑（滚动距离 vs 前进距离相对误差）, metric: js.phys.slip_err, rule: {type: max, max: 0.03, zero: 0.3}}
+  - {id: T01-P02, dim: 3d, tier: advanced, method: auto, desc: 传动比一致（曲柄/后轮转角比 vs 齿数比）, metric: js.phys.gear_err, rule: {type: max, max: 0.03, zero: 0.3}}
+  - {id: T01-P03, dim: 3d, tier: advanced, method: auto, desc: 踏板保持水平（最大倾角，度）, metric: js.phys.pedal_max_deg, rule: {type: max, max: 12, zero: 45}}
+  - {id: T01-P04, dim: 3d, tier: excellent, method: auto, desc: 脚始终贴合踏板（最大偏离，米）, metric: js.phys.foot_max_m, rule: {type: max, max: 0.02, zero: 0.1}}
+  - {id: T01-P05, dim: 3d, tier: advanced, method: auto, desc: 髋部固定在车座附近（最大偏离，米）, metric: js.phys.hip_max_m, rule: {type: max, max: 0.05, zero: 0.2}}
+  - {id: T01-P06, dim: 3d, tier: basic, method: auto, desc: 速度为 0 时所有运动部件静止, metric: js.phys.static_at_zero, rule: {type: bool}}
+  - {id: T01-P07, dim: 3d, tier: excellent, method: auto, desc: 切换模式后骑行相位连续（曲柄推进量相对误差）, metric: js.phys.switch_err, rule: {type: max, max: 0.15, zero: 1.0}}
+  - {id: T01-P08, dim: 3d, tier: basic, method: auto, desc: 页面标注了有效的鹈鹕学名, metric: js.bio.species_ok, rule: {type: bool}}
+  - id: T01-H01
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 3D 建模精细度与比例（鹈鹕、自行车、车架几何）
+    evidence: 3D 模式截图与实际操作
+    anchors: ["几何体堆砌，难以辨认", "能认出鹈鹕和自行车，但比例明显失调", "比例协调、部件完整（链条/辐条/车把等）", "细节丰富且比例可信，接近专业程序化建模水准"]
+  - id: T01-H02
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 材质与光照观感
+    evidence: 3D 模式截图
+    anchors: ["平涂或全黑/过曝", "有光影但材质单一", "材质区分明确（羽毛/金属/橡胶），阴影自然", "光照有氛围，材质细腻，整体有质感"]
+  - id: T01-H03
+    dim: 3d
+    tier: excellent
+    method: human
+    desc: 生物准确性 · 喙与喉囊（长喙、喙尖钩、可见喉囊并轻微摆动）
+    evidence: 3D/2.5D 近看
+    anchors: ["无明显特征", "只有长喙", "长喙+喉囊，但缺钩或喉囊不动", "三项齐全且喉囊有摆动"]
+  - id: T01-H04
+    dim: 3d
+    tier: excellent
+    method: human
+    desc: 生物准确性 · 足与腿（全蹼足四趾相连、短粗腿、关节位置符合鸟类踝关节）
+    evidence: 3D 近看
+    anchors: ["人形腿或无足", "鸟腿但无蹼", "有蹼但趾数/关节有误", "全蹼足、短腿、踝关节位置正确"]
+  - id: T01-H05
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 生物准确性 · 翅膀羽毛分层、S 形头颈、眼睛与物种羽色
+    evidence: 3D/2.5D 截图，对照标注的物种
+    anchors: ["与物种不符", "部分符合", "大体符合，羽毛至少两层", "姿态、羽色、眼睛均与物种一致，羽毛分层清楚"]
+  # ---------------- 动画动效 ----------------
+  - {id: T01-A01, dim: anim, tier: basic, method: auto, desc: 2.5D 模式 SVG 元素数量, metric: js.svg.elements, rule: {type: linear, bad: 30, good: 300}}
+  - {id: T01-A02, dim: anim, tier: advanced, method: auto, desc: 2.5D 独立运动部件数（0.5 秒内属性变化的元素）, metric: js.svg.animated, rule: {type: linear, bad: 3, good: 20}}
+  - {id: T01-A03, dim: anim, tier: advanced, method: auto, desc: 2.5D 模式帧率, metric: js.svg.fps, rule: {type: linear, bad: 20, good: 55}}
+  - {id: T01-A04, dim: anim, tier: basic, method: auto, desc: 首次交互前不创建音频（遵守自动播放策略）, metric: audio.ctx_before_gesture, rule: {type: max, max: 0}}
+  - {id: T01-A05, dim: anim, tier: advanced, method: auto, desc: 点击后合成音频节点数量, metric: audio.nodes, rule: {type: linear, bad: 2, good: 20}}
+  - id: T01-H06
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 2.5D 画面：分层、渐变、阴影营造的纵深感
+    evidence: 2.5D 模式截图与运行
+    anchors: ["平面剪影", "有分层但单调", "纵深明显，部件清楚", "插画级质量，层次与光影讲究"]
+  - id: T01-H07
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 模式切换过渡（≤1 秒、平滑、状态保持）
+    evidence: 实际切换 3 次
+    anchors: ["硬切或从头重播", "有过渡但卡顿/跳变", "平滑且状态保持", "过渡本身有设计感（镜头/形变衔接）"]
+  - id: T01-H08
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 音效与运动联动（咔哒声随踏频、风噪随速度、叫声低沉短促）
+    evidence: 拖动速度滑块试听
+    anchors: ["无声或噪音", "有声音但与速度无关", "咔哒与风噪随速度变化", "三类声音齐全、联动自然、音色讲究"]

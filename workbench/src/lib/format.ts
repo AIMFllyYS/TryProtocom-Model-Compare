@@ -47,7 +47,7 @@ export const WS_STATUS: Record<WsStatus, { label: string; tone: string }> = {
   graded: { label: '已评分', tone: 'ok' },
   reviewed: { label: '已复核', tone: 'ok' },
 };
-export const wsStatus = (w: WorkspaceRun): WsStatus => w.status || (w.grader_run_id ? 'registered' : w.ended_at ? 'finished' : w.started_at ? 'running' : 'prepared');
+export const wsStatus = (w: WorkspaceRun): WsStatus => w.status || (w.grader_run_id ? 'registered' : w.ended_at || w.detect?.final ? 'finished' : w.started_at ? 'running' : 'prepared');
 
 /** 维度配色（与 benchmark-spec.html 保持一致，深浅主题各一套，通过 CSS 变量 --d-<id> 提供） */
 export const dimVar = (id: string) => `var(--d-${id}, var(--accent))`;

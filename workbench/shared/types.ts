@@ -1,4 +1,6 @@
 // 工作台前后端共享的领域类型。数据来源：bench-grader（Python）+ 模型工作区（model/<供应商>/<模型>）+ 可移植存储文件。
+import type { DetectResult } from './deliverables';
+export type { DetectResult } from './deliverables';
 
 export type DimKind = 'quality' | 'efficiency';
 export interface Dimension { id: string; name: string; kind: DimKind; weight?: number; desc: string }
@@ -78,6 +80,18 @@ export interface WorkspaceRun {
   deliverable_dir: string; grader_run_id: string | null; timed_out?: boolean; notes?: string;
   usage?: Partial<Usage>; status?: WsStatus; workspace?: string; has_final?: boolean; has_deliverable?: boolean;
   entry?: string | null;               // 相对 workspace 的预览入口（dist/index.html、index.html、final.mp4…）
+  detect?: DetectResult;               // 交付检测（服务端实时计算）
+  auto_finished?: boolean;             // 由 FINAL_MESSAGE.md 自动结束计时
+}
+
+export interface WbSettings {
+  tts_command?: string;
+  default_harness?: string;            // harness id，例如 deepseek-harness
+  prompt_header?: boolean;             // 复制提示词时附带统一运行约定（默认 true）
+  open_harness?: boolean;              // 复制提示词后自动打开 harness（默认 false）
+  auto_start?: boolean;                // 复制提示词即开始计时（默认 true）
+  current_model?: string;              // 当前测评模型 供应商/模型
+  github?: string;                     // 开源仓库地址
 }
 
 export interface StoreNote { id: string; target: string; text: string; at: string }
@@ -86,7 +100,7 @@ export interface StoreHistory { at: string; action: string; detail?: string }
 export interface BenchStore {
   schema: 'bench-store/1'; updated_at: string; created_at: string; machine?: string;
   benchmark: { name?: string; version?: string };
-  settings: { tts_command?: string; default_harness?: string };
+  settings: WbSettings;
   models: ModelProfile[]; runs: StoreRun[]; workspaces: WorkspaceRun[]; notes: StoreNote[];
   history: StoreHistory[]; spec?: SpecData | null;
 }
@@ -141,8 +155,8 @@ export interface JobInfo {
 
 export interface SessionInfo {
   version: string; token: string; port: number; preview_ports: [number, number]; root: string;
-  paths: { model: string; bench_data: string; store: string; reports: string; grader: string; skill: string };
-  python: string | null; desktop: boolean; started_at: number;
+  paths: { model: string; bench_data: string; store: string; reports: string; grader: string; skill: string; agents_skills: string };
+  python: string | null; desktop: boolean; started_at: number; github: string;
 }
 
 /** SSE 事件 */

@@ -1,0 +1,58 @@
+/* ============================================================
+   02 · 材质：Liquid Glass
+   - 背景：半透明着色 + backdrop 模糊/饱和/提亮
+   - 边缘：渐变“环形高光”（mask 挖空，只留 1px 边），模拟玻璃厚度对光的折射
+   - 表面：左上角的光池 + 跟随指针的镜面高光（--mx/--my 由 JS 写入）
+   - 透镜：Chromium 下对小型浮动元素叠加 SVG 位移滤镜，边缘产生真实折射
+   ============================================================ */
+
+.glass, .glass-thin, .glass-thick, .glass-solid {
+  position: relative; isolation: isolate;
+  -webkit-backdrop-filter: blur(var(--blur-reg)) saturate(var(--sat)) brightness(1.03);
+  backdrop-filter: blur(var(--blur-reg)) saturate(var(--sat)) brightness(1.03);
+  background: var(--g-reg);
+  border-radius: var(--r-l);
+  box-shadow: 0 0 0 .5px var(--edge), inset 0 1px 0 0 var(--rim-hi), inset 0 -.5px 0 0 var(--rim-lo), var(--sh-2);
+  corner-shape: squircle;
+}
+.glass-thin { background: var(--g-thin); -webkit-backdrop-filter: blur(var(--blur-thin)) saturate(var(--sat)) brightness(1.04); backdrop-filter: blur(var(--blur-thin)) saturate(var(--sat)) brightness(1.04); box-shadow: 0 0 0 .5px var(--edge), inset 0 1px 0 0 var(--rim-hi), var(--sh-1); }
+.glass-thick { background: var(--g-thick); -webkit-backdrop-filter: blur(var(--blur-thick)) saturate(200%) brightness(1.05); backdrop-filter: blur(var(--blur-thick)) saturate(200%) brightness(1.05); box-shadow: 0 0 0 .5px var(--edge), inset 0 1px 0 0 var(--rim-hi), var(--sh-3); }
+.glass-solid { background: var(--g-solid); }
+
+/* 环形高光 */
+.glass::before, .glass-thin::before, .glass-thick::before, .glass-solid::before, .rim::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 2;
+  background: linear-gradient(150deg, var(--rim-hi) 0%, var(--rim-mid) 16%, var(--rim-lo) 40%, var(--rim-lo) 62%, var(--rim-mid) 86%, var(--rim-hi) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+/* 表面光池 */
+.glass::after, .glass-thick::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: radial-gradient(140% 70% at 12% -12%, var(--sheen), transparent 52%);
+}
+.rim { position: relative; }
+
+/* 跟随指针的镜面高光：给交互玻璃元素加 .sheen */
+.sheen { --mx: 50%; --my: -40%; }
+.sheen > .sheen-l {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 1; opacity: 0;
+  background: radial-gradient(160px circle at var(--mx) var(--my), var(--sheen), transparent 62%);
+  transition: opacity var(--t) var(--ease-out);
+}
+.sheen:hover > .sheen-l { opacity: 1; }
+
+/* 透镜折射（仅 Chromium，html.can-refract 由 main.tsx 判定后添加） */
+html.can-refract .lens {
+  -webkit-backdrop-filter: url(#lg-lens) blur(3px) saturate(190%) brightness(1.06);
+  backdrop-filter: url(#lg-lens) blur(3px) saturate(190%) brightness(1.06);
+}
+
+/* 分隔线 / 发丝线 */
+.hair { height: 1px; background: var(--hair); border: 0; margin: 0; }
+.vhair { width: 1px; align-self: stretch; background: var(--hair); }
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .glass-thin, .glass-thick { background: var(--g-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .aura i { display: none; }
+}

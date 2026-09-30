@@ -1,0 +1,174 @@
+id: T05
+name: Aether-9 3D 产品官网
+short: React + TS + three.js 构建成单文件的 3D 交互官网，考 3D 真实感、前端设计、交互与工程化
+deliverable_dir: aether9-site
+dims: {3d: 1.0, ui: 1.0, eng: 1.0}
+condition: 无人值守；可访问 npm registry
+materials: []
+time_limit_min: 120
+probes:
+  - type: files
+    opts:
+      required: [package.json, dist/index.html]
+      scan: ["src/**/*.ts", "src/**/*.tsx", "index.html"]
+      allowed_hosts: []
+  - type: claims
+  - type: build
+    opts:
+      allowed_deps: [react, react-dom, three, "@react-three/fiber", "@react-three/drei", "@react-three/postprocessing", postprocessing, gsap, vite, vite-plugin-singlefile, typescript, tailwindcss, "@vitejs/plugin-react", "@vitejs/plugin-react-swc", autoprefixer, postcss, "@tailwindcss/vite"]
+      allowed_prefixes: ["@types/"]
+  - type: browser
+    opts:
+      entry: dist/index.html
+      allowed_hosts: []
+      hooks: [__scene, __renderer, __bench, __bench.launch, __bench.getTelemetry, __bench.setExploded, __bench.listHotspots, __bench.openHotspot, __bench.scrollToSection, __bench.setTimeScale]
+      first_frame: true
+      mobile: true
+      axe: true
+      scene:
+        path: __scene
+        renderer: __renderer
+        prefixes: [engine-s1-, engine-s2-sl-, engine-s2-vac-, gridfin-]
+      shot_sets:
+        sections:
+          wait_ms: 1800
+          steps:
+            - "window.__bench.scrollToSection('hero')"
+            - "window.__bench.scrollToSection('specs')"
+            - "window.__bench.scrollToSection('launch')"
+            - "window.__bench.scrollToSection('reuse')"
+            - "window.__bench.scrollToSection('cta')"
+      js_metrics:
+        hot: |
+          const ids = window.__bench.listHotspots() || []; const before = document.body.innerText;
+          const ok = ids.length ? window.__bench.openHotspot(ids[0]) : false; await sleep(900);
+          return {count: ids.length, opened: !!ok && document.body.innerText !== before};
+        explode: |
+          const sc = window.__scene; const find = (p) => { let o = null; sc.traverse(x => { if (!o && x.name && x.name.startsWith(p)) o = x; }); return o; };
+          const a = find('engine-s1-'), c = find('engine-s2-');
+          if (!a || !c) return {ratio: null};
+          const V = a.position.constructor; const pa = new V(), pc = new V();
+          a.getWorldPosition(pa); c.getWorldPosition(pc); const d0 = pa.distanceTo(pc);
+          window.__bench.setExploded(true); await sleep(2500); a.getWorldPosition(pa); c.getWorldPosition(pc); const d1 = pa.distanceTo(pc);
+          window.__bench.setExploded(false); await sleep(1500);
+          return {ratio: d1 / Math.max(d0, 1e-6)};
+        tel: |
+          const b = window.__bench; b.setTimeScale(20); b.launch(); const pts = [];
+          for (let i = 0; i < 110; i++) { await sleep(100); try { pts.push(b.getTelemetry()); } catch (e) {} }
+          let mono = pts.length > 10;
+          for (let i = 1; i < pts.length; i++) if (pts[i].t < pts[i-1].t - 1e-6 || pts[i].altitudeKm < pts[i-1].altitudeKm - 0.01) mono = false;
+          const sep = pts.find(p => p.stage === 2);
+          return {samples: pts.length, monotonic: mono, sep_t_err: sep ? Math.abs(sep.t - 160) : null, sep_alt_err: sep ? Math.abs(sep.altitudeKm - 70) : null};
+gates:
+  - {id: G1, desc: 交付了构建产物 dist/index.html, metric: build.dist_index, rule: {type: bool}}
+  - {id: G2, desc: 页面能加载, metric: browser.loaded, rule: {type: bool}}
+  - {id: G3, desc: 最终汇报与实际产出一致, metric: claims.honest, rule: {type: bool}}
+items:
+  # ---------------- 工程化 ----------------
+  - {id: T05-E01, dim: eng, tier: basic, method: auto, desc: 提交了 lock 文件, metric: build.lockfile, rule: {type: bool}}
+  - {id: T05-E02, dim: eng, tier: basic, method: auto, desc: 依赖安装成功, metric: build.install_ok, rule: {type: bool}}
+  - {id: T05-E03, dim: eng, tier: advanced, method: auto, desc: 从零复现构建成功, metric: build.rebuild_ok, rule: {type: bool}}
+  - {id: T05-E04, dim: eng, tier: advanced, method: auto, desc: tsc --noEmit 错误数, metric: build.tsc_errors, rule: {type: max, max: 0, zero: 20}}
+  - {id: T05-E05, dim: eng, tier: basic, method: auto, desc: tsconfig 开启 strict, metric: build.ts_strict, rule: {type: bool}}
+  - {id: T05-E06, dim: eng, tier: advanced, method: auto, desc: 显式 any 使用次数, metric: build.any_count, rule: {type: max, max: 0, zero: 20}}
+  - {id: T05-E07, dim: eng, tier: clean, method: auto, desc: "@ts-ignore / @ts-nocheck 次数", metric: build.ts_ignore, rule: {type: max, max: 0, zero: 5}}
+  - {id: T05-E08, dim: eng, tier: basic, method: auto, desc: 依赖均在白名单内, metric: build.dep_violations, rule: {type: max, max: 0, zero: 3}}
+  - {id: T05-E09, dim: eng, tier: advanced, method: auto, desc: 构建产物是单个 HTML 文件, metric: build.dist_single, rule: {type: bool}}
+  - {id: T05-E10, dim: eng, tier: basic, method: auto, desc: 产物体积 ≤ 8 MB, metric: build.dist_mb, rule: {type: max, max: 8, zero: 20}}
+  - {id: T05-E11, dim: eng, tier: advanced, method: auto, desc: 运行时零网络请求, metric: browser.external_requests, rule: {type: max, max: 0, zero: 3}}
+  - {id: T05-E12, dim: eng, tier: advanced, method: auto, desc: 控制台零报错（桌面+手机）, metric: browser.errors_total, rule: {type: max, max: 0, zero: 5}}
+  - {id: T05-E13, dim: eng, tier: basic, method: auto, desc: 评测接口齐全, metric: browser.hooks_ratio, rule: {type: ratio}}
+  - {id: T05-E14, dim: eng, tier: clean, method: auto, desc: 无占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}
+  - id: T05-E15
+    dim: eng
+    tier: advanced
+    method: agent
+    desc: 代码组织（组件拆分、3D 与 UI 状态分离、无巨型文件）
+    anchors: ["单文件堆砌", "有拆分但职责混乱", "结构清晰", "结构清晰且可维护性好（hooks/常量/类型定义规范）"]
+  # ---------------- 3D ----------------
+  - {id: T05-D01, dim: 3d, tier: basic, method: auto, desc: 暴露可遍历的 3D 场景, metric: scene.available, rule: {type: bool}}
+  - {id: T05-D02, dim: 3d, tier: advanced, method: auto, desc: PBR 材质占比, metric: scene.pbr_ratio, rule: {type: linear, bad: 0.3, good: 0.95}}
+  - {id: T05-D03, dim: 3d, tier: excellent, method: auto, desc: 程序化细节贴图数量, metric: scene.procedural_textures, rule: {type: linear, bad: 0, good: 5}}
+  - {id: T05-D04, dim: 3d, tier: basic, method: auto, desc: 开启色调映射, metric: scene.tonemapping, rule: {type: bool}}
+  - {id: T05-D05, dim: 3d, tier: basic, method: auto, desc: 开启阴影且有投影光源, value_expr: "v['scene.shadowmap'] and v['scene.shadow_lights'] >= 1", rule: {type: bool}}
+  - {id: T05-D06, dim: 3d, tier: advanced, method: auto, desc: 模型细节（三角面数，对数刻度）, metric: scene.triangles, rule: {type: linear, bad: 5000, good: 150000, log: true}}
+  - {id: T05-D07, dim: 3d, tier: advanced, method: auto, desc: 一级发动机数量 = 21, metric: scene.named.engine-s1-, rule: {type: band, lo: 21, hi: 21, tol: 21}}
+  - {id: T05-D08, dim: 3d, tier: advanced, method: auto, desc: 二级海平面发动机 = 3, metric: scene.named.engine-s2-sl-, rule: {type: band, lo: 3, hi: 3, tol: 3}}
+  - {id: T05-D09, dim: 3d, tier: advanced, method: auto, desc: 二级真空发动机 = 3, metric: scene.named.engine-s2-vac-, rule: {type: band, lo: 3, hi: 3, tol: 3}}
+  - {id: T05-D10, dim: 3d, tier: advanced, method: auto, desc: 栅格舵 = 4, metric: scene.named.gridfin-, rule: {type: band, lo: 4, hi: 4, tol: 4}}
+  - {id: T05-D11, dim: 3d, tier: advanced, method: auto, desc: 帧率（评测机统一测量）, metric: browser.fps, rule: {type: linear, bad: 15, good: 55}}
+  - {id: T05-D12, dim: 3d, tier: advanced, method: auto, desc: 首个 3D 画面出现时间（毫秒）, metric: browser.first_canvas_ms, rule: {type: max, max: 3000, zero: 10000}}
+  - {id: T05-D13, dim: 3d, tier: advanced, method: auto, desc: 遥测数据单调合理, metric: js.tel.monotonic, rule: {type: bool}}
+  - {id: T05-D14, dim: 3d, tier: excellent, method: auto, desc: 级分离时间误差（秒，目标 T+160）, metric: js.tel.sep_t_err, rule: {type: max, max: 5, zero: 40}}
+  - {id: T05-D15, dim: 3d, tier: excellent, method: auto, desc: 级分离高度误差（km，目标 70）, metric: js.tel.sep_alt_err, rule: {type: max, max: 8, zero: 40}}
+  - {id: T05-D16, dim: 3d, tier: advanced, method: auto, desc: 爆炸视图拉开两级（距离放大倍数）, metric: js.explode.ratio, rule: {type: linear, bad: 1.0, good: 1.3}}
+  - id: T05-H01
+    dim: 3d
+    tier: excellent
+    method: human
+    desc: 3D 真实感（材质、光照、尾焰整体观感）
+    evidence: 桌面截图与实际操作
+    anchors: ["玩具感", "有质感但一眼假", "接近写实", "接近产品级渲染"]
+  - id: T05-H02
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 模型细节与比例（118 m × 9 m 的细长比、级间段、栅格舵、发动机布局）
+    evidence: 近看与爆炸视图
+    anchors: ["比例错误", "大致像火箭", "比例正确、部件齐全", "细节丰富且工程感强"]
+  - id: T05-H03
+    dim: 3d
+    tier: advanced
+    method: human
+    desc: 尾焰与发射特效（体积感、随推力变化、分离效果）
+    evidence: 发射演示
+    anchors: ["无尾焰", "静态尾焰", "动态尾焰且随推力变化", "尾焰、烟雾、分离效果都很出彩"]
+  # ---------------- 前端 UI/UX ----------------
+  - {id: T05-U01, dim: ui, tier: basic, method: auto, desc: 热点数量 ≥ 4, metric: js.hot.count, rule: {type: min, min: 4, zero: 0}}
+  - {id: T05-U02, dim: ui, tier: basic, method: auto, desc: 打开热点后出现说明内容, metric: js.hot.opened, rule: {type: bool}}
+  - {id: T05-U03, dim: ui, tier: advanced, method: auto, desc: 滚动叙事：5 个区块镜头画面各不相同, metric: shots.sections.distinct, rule: {type: linear, bad: 1, good: 5}}
+  - {id: T05-U04, dim: ui, tier: basic, method: auto, desc: 手机宽度无横向溢出, metric: mobile.overflow_px, rule: {type: max, max: 0, zero: 200}}
+  - {id: T05-U05, dim: ui, tier: advanced, method: auto, desc: 手机端文字出界数, metric: mobile.text_offscreen, rule: {type: max, max: 0, zero: 5}}
+  - {id: T05-U06, dim: ui, tier: advanced, method: auto, desc: 桌面端文字重叠数, metric: browser.text_overlaps, rule: {type: max, max: 0, zero: 5}}
+  - {id: T05-U07, dim: ui, tier: advanced, method: auto, desc: 严重无障碍问题节点数（axe serious+critical）, metric: a11y.serious_nodes, rule: {type: max, max: 0, zero: 20}}
+  - id: T05-H04
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 视觉设计与信息层级（首屏主张、区块节奏、留白）
+    evidence: 桌面截图与滚动浏览
+    anchors: ["杂乱", "模板感", "清晰有层级", "有品牌感和记忆点"]
+  - id: T05-H05
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 字体排版与 3D/UI 风格统一
+    evidence: 桌面截图
+    anchors: ["割裂", "基本统一", "统一且精致", "排版本身成为设计亮点"]
+  - id: T05-H06
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 手机端体验（布局、触控、3D 性能可接受）
+    evidence: 手机截图，或用手机实际打开
+    anchors: ["不可用", "能用但别扭", "体验良好", "专门为手机优化过"]
+  - id: T05-H07
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 必做交互手感（旋转缩放边界、热点、爆炸视图、发射、滚动）
+    evidence: 逐项实际操作
+    anchors: ["多项不可用", "可用但生硬", "流畅", "流畅且有细节反馈"]
+  - id: T05-H08
+    dim: ui
+    tier: excellent
+    method: human
+    desc: 开放交互的新颖程度与价值（是否真的帮用户理解产品）
+    evidence: 页面上的说明 + 实际操作
+    anchors: ["没有", "有但只是炫技", "新颖且有信息价值", "让人眼前一亮并明显加深理解"]
+  - id: T05-S01
+    dim: ui
+    tier: advanced
+    method: agent
+    desc: 内容准确：页面与遥测数据与参数表一致，没有编造参数
+    anchors: ["多处编造", "1–2 处不符", "全部准确", "全部准确且表达清楚"]

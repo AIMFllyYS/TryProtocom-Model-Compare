@@ -1,0 +1,5 @@
+interface:
+  display_name: Bench Workbench
+  short_description: 通过 wb CLI 在 Agent 中完成评测全流程：工作区、计时、登记、评分、Agent 审查、页面报错检查、对比与导出。
+policy:
+  allow_implicit_invocation: false

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, ChevronLeft, ChevronRight, Maximize, Pause, Play, Repeat, Volume2, VolumeX } from 'lucide-react';
 import { cls, download, fmt } from '../lib/format';
-import { IconBtn } from '../ui/kit';
+import { IconBtn, Select } from '../ui/kit';
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 1.5, 2, 4];
 
@@ -105,12 +105,8 @@ export function VideoPlayer({ src, name, fps: fps0 = 30, autoPlay, className }: 
           <IconBtn label="下一帧 (.)" onClick={() => step(1)}><ChevronRight size={16} /></IconBtn>
           <span className="mono small vp-time">{fmtT(t)} / {fmtT(dur)} <span className="muted">· 帧 {frame}</span></span>
           <div className="grow" />
-          <select className="xs" value={rate} onChange={(e) => { v.current!.playbackRate = Number(e.target.value); }} aria-label="播放速度">
-            {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
-          </select>
-          <select className="xs" value={fps} onChange={(e) => setFps(Number(e.target.value))} aria-label="帧率（逐帧步进用）" title="逐帧步进使用的帧率">
-            {[24, 25, 30, 48, 50, 60, 120].map((s) => <option key={s} value={s}>{s} fps</option>)}
-          </select>
+          <Select size="xs" value={String(rate)} onChange={(x) => { v.current!.playbackRate = Number(x); }} label="播放速度" place="top-start" options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }))} />
+          <Select size="xs" value={String(fps)} onChange={(x) => setFps(Number(x))} label="逐帧步进帧率" place="top-start" options={[24, 25, 30, 48, 50, 60, 120].map((s) => ({ value: String(s), label: `${s} fps` }))} />
           <IconBtn label={ab[0] != null ? 'A-B 循环（\\ 清除）' : '设 A 点 [，B 点 ]'} active={ab[0] != null} onClick={() => setAb(ab[0] == null ? [t, null] : ab[1] == null ? [ab[0], t] : [null, null])}>
             <span className="mono xs">{ab[0] == null ? 'A' : ab[1] == null ? 'B' : 'AB'}</span>
           </IconBtn>

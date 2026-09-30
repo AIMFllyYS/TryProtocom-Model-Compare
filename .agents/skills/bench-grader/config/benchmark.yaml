@@ -1,0 +1,40 @@
+# 基准全局参数
+name: Coding Bench
+version: v1.0
+frozen_date: null          # 正式开跑当天填写，例如 2026-10-08
+
+runs_per_task: 3           # 每个模型每题至少跑 3 次
+pass_threshold: 60         # 单次运行题目总分 ≥ 60 视为“达标”，用于达标率和期望成本
+low_confidence_na_ratio: 0.2   # 某次运行中 N/A（评测环境原因无法检查）项权重占比超过 20% 时标记“低可信”
+
+# 同一题目对各维度的贡献权重：主要考察 1.0，次要考察 0.5（在各题 rubric.yaml 的 dims 字段里声明）
+
+efficiency:
+  cost:                    # 期望成功成本（美元）→ 分数，对数刻度线性插值
+    best: 0.3              # ≤ 0.3 美元记 100 分
+    worst: 30              # ≥ 30 美元记 0 分
+  speed:                   # 期望达标用时（分钟）→ 分数
+    best: 5                # ≤ 5 分钟记 100 分
+    worst: 180             # ≥ 180 分钟记 0 分
+
+composite:                 # 可选综合分。默认只报告质量总分 + 两个效率维度，不强行合并
+  enabled: false
+  quality_weight: 0.8
+  cost_weight: 0.1
+  speed_weight: 0.1
+
+statistics:
+  bootstrap_samples: 2000
+  ci: 0.95                 # 置信区间重叠的名次记为并列
+
+blinding:
+  alias_prefix: R          # 人工评分时运行被重命名为 R01、R02……，隐藏模型名
+
+# 外部依赖路径（评测机上）
+external:
+  minecraft_skill_dir: null   # minecraft-stop-motion-director 目录，用于运行其 validate_project.py
+  axe_core_js: null           # axe-core 的 axe.min.js 路径（npm i axe-core 后在 node_modules/axe-core/axe.min.js）
+  log_roots:                  # 用时/成本日志搜索根目录；留空用默认位置
+    claude_code: ~/.claude/projects
+    codex: ~/.codex/sessions
+    gemini_cli: ~/.gemini/tmp

@@ -6,10 +6,11 @@ import { del, get, post } from '../api';
 import { useWb } from '../state';
 import { go, useLocal, useRoute } from '../lib/router';
 import { cls, isVideo } from '../lib/format';
-import { Badge, Btn, Empty, IconBtn, Seg } from '../ui/kit';
+import { Badge, Btn, Empty, IconBtn, Seg, Select } from '../ui/kit';
 import { toast } from '../ui/toast';
 import { resolveArtifact } from '../components/artifact';
 import { useNamer } from '../components/common';
+import { ScoreSheet } from '../components/ScoreSheet';
 import { Pane, type PaneState } from '../stage/Pane';
 import { OpenDialog } from '../stage/OpenDialog';
 import { ProcOutput } from '../stage/DevTools';
@@ -27,6 +28,7 @@ export default function Stage() {
   const [focus, setFocus] = useState<string | null>(null);
   const [openDlg, setOpenDlg] = useState(false);
   const [showProcs, setShowProcs] = useState(false);
+  const [scoreRun, setScoreRun] = useLocal<string | null>('stage.score', null);
   const handled = useRef('');
 
   const addPane = (p: Omit<PaneState, 'id' | 'device' | 'zoom' | 'rotate' | 'devtools'> & Partial<PaneState>, replaceFocused = false) => {
@@ -56,6 +58,7 @@ export default function Stage() {
         }
         if (q.get('url')) openSession(await post<PreviewSession>('/api/preview', { url: q.get('url') }));
         if (q.get('ref')) await openRef('ws:' + q.get('ref'));
+        if (q.get('score')) setScoreRun(q.get('score'));
         if (q.get('open')) {
           const list = q.get('open')!.split(',').filter(Boolean);
           if (list.length > 1) setLayout(list.length > 2 ? 'grid' : 'cols');
@@ -112,10 +115,12 @@ export default function Stage() {
         </div>
         <div className="grow" />
         {unusedSessions.length > 0 && (
-          <select className="xs" value="" onChange={(e) => { const s = wb.previews.find((x) => x.id === e.target.value); if (s) openSession(s); }} aria-label="已打开的预览会话">
-            <option value="">会话（{wb.previews.length}）…</option>
-            {unusedSessions.map((s) => <option key={s.id} value={s.id}>{s.label} · {s.kind}</option>)}
-          </select>
+          <Select size="sm" value="" onChange={(id) => { const s = wb.previews.find((x) => x.id === id); if (s) openSession(s); }} label="已打开的预览会话" placeholder={`会话（${wb.previews.length}）`} place="bottom-end"
+            options={unusedSessions.map((s) => ({ value: s.id, label: s.label, desc: s.kind === 'proxy' ? '开发服务器' : s.kind === 'url' ? '外部地址' : '静态' }))} />
+        )}
+        {!scoreRun && (wb.store?.runs || []).length > 0 && (
+          <Select size="sm" value="" onChange={(id) => setScoreRun(id)} label="打开评分面板" placeholder="评分面板" place="bottom-end" searchable
+            options={(wb.store?.runs || []).filter((r) => r.score?.items.some((i) => i.method === 'human')).map((r) => ({ value: r.run_id, label: `${r.tkey} · ${nm.blind ? r.alias || '匿名' : r.model}`, desc: r.score?.pending.length ? `待评 ${r.score.pending.length}` : '已完成' }))} />
         )}
         <Btn size="sm" tone={showProcs ? 'primary' : 'default'} icon={<Server size={14} />} onClick={() => setShowProcs(!showProcs)}>开发服务器{running.length ? ` · ${running.length}` : ''}</Btn>
       </div>
@@ -140,6 +145,7 @@ export default function Stage() {
         </div>
       )}
       {openDlg && <OpenDialog onClose={() => setOpenDlg(false)} onOpenSession={(s, rep) => openSession(s, rep)} onOpenVideo={(path, label) => addPane({ src: { type: 'video', path, label } })} onOpenRef={(x) => void openRef(x).catch((e) => toast.error(e.message))} />}
+      {scoreRun && <ScoreSheet runId={scoreRun} onClose={() => setScoreRun(null)} />}
     </div>
   );
 }

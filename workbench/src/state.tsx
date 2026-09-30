@@ -1,9 +1,11 @@
 // 全局数据层：会话、题库规范、存储文件、汇总、任务、预览会话与进程。SSE 事件驱动增量刷新。
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, ProcInfo, RequestEntry, SessionInfo, SpecData, WbEvent } from '../shared/types';
+import type { HarnessInfo } from '../server/harness';
 import { boot, connectEvents, get, post, type Conn } from './api';
-import { go, type View } from './lib/router';
+import { go, normView } from './lib/router';
 import { toast } from './ui/toast';
+export type { HarnessInfo };
 
 // ---------- 高频流数据（日志、任务输出）的外部存储，避免整棵树重渲染 ----------
 type Listener = () => void;
@@ -63,10 +65,14 @@ export interface Wb {
   previews: PreviewSession[];
   procs: ProcInfo[];
   conn: Conn;
-  refresh: (what?: ('spec' | 'store' | 'agg' | 'jobs' | 'previews' | 'procs')[]) => Promise<void>;
+  refresh: (what?: ('spec' | 'store' | 'agg' | 'jobs' | 'previews' | 'procs' | 'harness')[]) => Promise<void>;
   runJob: (body: Record<string, unknown>, label?: string) => Promise<JobInfo | null>;
   blind: boolean;
   setBlind: (b: boolean) => void;
+  harness: HarnessInfo[];
+  /** 当前测评模型（“供应商/模型”），题目页复制提示词时默认用它 */
+  current: string;
+  setCurrent: (key: string) => void;
 }
 const Ctx = createContext<Wb | null>(null);
 export const useWb = () => {
@@ -87,16 +93,24 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
   const [conn, setConn] = useState<Conn>('connecting');
   const [blind, setBlindS] = useState(() => localStorage.getItem('wb.blind') === '1');
   const setBlind = (b: boolean) => { localStorage.setItem('wb.blind', b ? '1' : '0'); setBlindS(b); };
+  const [harness, setHarness] = useState<HarnessInfo[]>([]);
+  const [current, setCurrentS] = useState(() => localStorage.getItem('wb.current') || '');
+  const setCurrent = useCallback((k: string) => {
+    localStorage.setItem('wb.current', k);
+    setCurrentS(k);
+    void post('/api/settings', { current_model: k }).catch(() => {});
+  }, []);
   const storeTimer = useRef<number | undefined>(undefined);
 
-  const refresh = useCallback<Wb['refresh']>(async (what = ['spec', 'store', 'agg', 'jobs', 'previews', 'procs']) => {
+  const refresh = useCallback<Wb['refresh']>(async (what = ['spec', 'store', 'agg', 'jobs', 'previews', 'procs', 'harness']) => {
     const tasks: Promise<unknown>[] = [];
     if (what.includes('spec')) tasks.push(get<SpecData>('/api/spec').then(setSpec));
-    if (what.includes('store')) tasks.push(get<BenchStore>('/api/store').then(setStore));
+    if (what.includes('store')) tasks.push(get<BenchStore>('/api/store').then((s) => { setStore(s); if (!localStorage.getItem('wb.current') && s.settings.current_model) setCurrentS(s.settings.current_model); }));
     if (what.includes('agg')) tasks.push(get<Aggregate>('/api/aggregate').then(setAgg));
     if (what.includes('jobs')) tasks.push(get<JobInfo[]>('/api/jobs').then(setJobs));
     if (what.includes('previews')) tasks.push(get<PreviewSession[]>('/api/preview').then(setPreviews));
     if (what.includes('procs')) tasks.push(get<ProcInfo[]>('/api/procs').then(setProcs));
+    if (what.includes('harness')) tasks.push(get<HarnessInfo[]>('/api/harness').then(setHarness).catch(() => {}));
     const rs = await Promise.allSettled(tasks);
     const bad = rs.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
     if (bad) toast.error('刷新失败：' + (bad.reason?.message || bad.reason));
@@ -122,8 +136,8 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
             const i = js.findIndex((j) => j.id === e.job.id);
             const prev = i >= 0 ? js[i] : null;
             if (prev && prev.status !== e.job.status) {
-              if (e.job.status === 'done') toast.ok(`完成：${e.job.title}`, { action: { label: '查看', run: () => go('jobs', [e.job.id]) } });
-              if (e.job.status === 'failed') toast.error(`失败：${e.job.title}${e.job.error ? ' · ' + e.job.error : ''}`, { action: { label: '查看输出', run: () => go('jobs', [e.job.id]) } });
+              if (e.job.status === 'done') toast.ok(`完成：${e.job.title}`, { action: { label: '查看', run: () => go('settings', ['jobs'], { job: e.job.id }) } });
+              if (e.job.status === 'failed') toast.error(`失败：${e.job.title}${e.job.error ? ' · ' + e.job.error : ''}`, { action: { label: '查看输出', run: () => go('settings', ['jobs'], { job: e.job.id }) } });
             }
             if (i >= 0) { const c = js.slice(); c[i] = e.job; return c; }
             return [e.job, ...js];
@@ -164,8 +178,8 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     } catch (e: any) { toast.error(e.message); return null; }
   }, []);
 
-  const value = useMemo<Wb | null>(() => session && { session, spec, store, agg, jobs, previews, procs, conn, refresh, runJob, blind, setBlind },
-    [session, spec, store, agg, jobs, previews, procs, conn, refresh, runJob, blind]);
+  const value = useMemo<Wb | null>(() => session && { session, spec, store, agg, jobs, previews, procs, conn, refresh, runJob, blind, setBlind, harness, current, setCurrent },
+    [session, spec, store, agg, jobs, previews, procs, conn, refresh, runJob, blind, harness, current, setCurrent]);
   if (!value) return <>{fallback(err, start)}</>;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -175,15 +189,16 @@ function handleUi(action: string, p: Record<string, unknown>) {
   const s = (k: string) => (p[k] == null ? undefined : String(p[k]));
   switch (action) {
     case 'open': {
-      const v = (s('view') || 'overview') as View;
+      const v = normView(s('view') || 'overview');
       go(v, s('id') ? [s('id')!] : []);
       break;
     }
     case 'preview': go('stage', [], { session: s('session'), url: s('url'), path: s('path'), ref: s('ref') }); break;
     case 'run': go('runs', s('ref') ? [s('ref')!] : [], { id: s('id') }); break;
-    case 'compare': go('board', ['compare'], { e: s('entrants') || s('e') }); break;
-    case 'review': go('review', [], { task: s('task') }); break;
-    case 'spec': go('spec', s('task') ? [s('task')!] : []); break;
+    case 'compare': go('compare', [], { e: s('entrants') || s('e') }); break;
+    case 'review': go('runs', [], { tab: 'review', task: s('task') }); break;
+    case 'spec': case 'task': go('tasks', s('task') ? [s('task')!] : []); break;
+    case 'docs': go('docs', s('section') ? [s('section')!] : []); break;
     default: toast.info(`收到界面指令：${action}`);
   }
   window.focus();

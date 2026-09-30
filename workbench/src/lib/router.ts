@@ -1,8 +1,11 @@
-// 基于 hash 的极简路由：#/<view>/<a>/<b>?k=v。可深链、可被 CLI（wb ui open …）遥控。
+// 基于 hash 的极简路由：#/<view>/<a>/<b>?k=v。可深链、可被 CLI（wb ui …）遥控。
 import { useEffect, useState } from 'react';
 
-export type View = 'overview' | 'board' | 'models' | 'runs' | 'review' | 'stage' | 'spec' | 'jobs' | 'system';
-export const VIEWS: View[] = ['overview', 'board', 'models', 'runs', 'review', 'stage', 'spec', 'jobs', 'system'];
+export type View = 'overview' | 'models' | 'tasks' | 'runs' | 'stage' | 'board' | 'compare' | 'exports' | 'docs' | 'settings';
+export const VIEWS: View[] = ['overview', 'models', 'tasks', 'runs', 'stage', 'board', 'compare', 'exports', 'docs', 'settings'];
+/** 旧视图名（v1 / CLI 文档）→ 新视图 */
+const ALIAS: Record<string, View> = { spec: 'tasks', review: 'runs', jobs: 'settings', system: 'settings', method: 'docs', methodology: 'docs', leaderboard: 'board' };
+export const normView = (v: string): View => (VIEWS.includes(v as View) ? (v as View) : ALIAS[v] || 'overview');
 
 export interface Route { view: View; parts: string[]; query: URLSearchParams }
 
@@ -10,8 +13,8 @@ export function parseHash(h = location.hash): Route {
   const raw = h.replace(/^#\/?/, '');
   const [p, q = ''] = raw.split('?');
   const parts = p.split('/').filter(Boolean).map(decodeURIComponent);
-  const v = (parts.shift() || 'overview') as View;
-  return { view: VIEWS.includes(v) ? v : 'overview', parts, query: new URLSearchParams(q) };
+  const v = normView(parts.shift() || 'overview');
+  return { view: v, parts, query: new URLSearchParams(q) };
 }
 
 export function href(view: View, parts: (string | number)[] = [], query?: Record<string, string | number | undefined | null>) {

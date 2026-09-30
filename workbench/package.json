@@ -12,6 +12,7 @@
     "build:web": "vite build",
     "build:node": "node scripts/build-node.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "esbuild tests/shared.test.ts --bundle --platform=node --format=cjs --outfile=.runtime/shared.test.cjs --log-level=warning && node .runtime/shared.test.cjs",
     "start": "node dist-node/server.cjs --open",
     "wb": "node dist-node/wb.cjs",
     "desktop": "electron .",

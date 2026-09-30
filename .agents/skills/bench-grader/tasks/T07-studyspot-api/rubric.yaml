@@ -1,0 +1,94 @@
+id: T07
+name: StudySpot 后端 API
+short: 按规格实现自习室预约 API（鉴权、规则、错误码、并发、持久化），隐藏测试套件 48 项 + 持久化 + 压测
+deliverable_dir: studyspot-api
+dims: {be: 1.0, eng: 1.0, req: 0.5}
+condition: 无人值守；评测机有 Node 22 与 Python 3.11，可访问包管理源
+materials: []
+time_limit_min: 90
+probes:
+  - type: files
+    opts:
+      required: [bench.json, README.md, DECISIONS.md]
+      scan: ["**/*.py", "**/*.js", "**/*.ts", "**/*.go"]
+  - type: claims
+  - type: docs
+    opts:
+      docs:
+        decisions:
+          path: DECISIONS.md
+          groups:
+            ban_existing: ["封禁|ban", "(已有|现有|未来|之前|existing|future).{0,20}(预约|booking)|(预约|booking).{0,20}(已有|现有|未来|existing|future)"]
+            limit_scope: ["(4|四)\\s*小时|daily.?limit|每日|上限", "爽约|no.?show|签到|check.?in|取消|cancel"]
+  - type: api
+    opts:
+      tests: [hidden/test_api.py]
+      persist_test: hidden/test_persist.py
+      categories: [func, edge, sec, conc, amb]
+      named_tests:
+        tz: test_edge_timezone_shanghai
+        race_slot: test_conc_same_slot_single_winner
+        race_limit: test_conc_daily_limit_under_race
+        ban: test_func_ban_after_two_no_shows
+        noshow: test_func_no_show_status
+      perf:
+        path: /api/availability?date=2026-10-08
+        headers: {X-Bench-Now: "2026-10-08T07:00:00+08:00"}
+        requests: 400
+        concurrency: 20
+      pin_probe: "735194"
+gates:
+  - {id: G1, desc: 提供 bench.json 且服务能启动并通过健康检查, metric: api.started, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致, metric: claims.honest, rule: {type: bool}}
+items:
+  # ---------------- 后端 ----------------
+  - {id: T07-B01, dim: be, tier: basic, weight: 4, method: auto, desc: 主流程测试通过率（15 项）, metric: api.cat.func, rule: {type: ratio}}
+  - {id: T07-B02, dim: be, tier: advanced, weight: 5, method: auto, desc: 边界与规则测试通过率（20 项）, metric: api.cat.edge, rule: {type: ratio}}
+  - {id: T07-B03, dim: be, tier: advanced, weight: 4, method: auto, desc: 鉴权与安全测试通过率（9 项）, metric: api.cat.sec, rule: {type: ratio}}
+  - {id: T07-B04, dim: be, tier: excellent, weight: 3, method: auto, desc: 并发测试通过率（2 项）, metric: api.cat.conc, rule: {type: ratio}}
+  - {id: T07-B05, dim: be, tier: excellent, method: auto, desc: 时区按 Asia/Shanghai 处理（UTC 时间头）, metric: api.test.tz, rule: {type: bool}}
+  - {id: T07-B06, dim: be, tier: excellent, method: auto, desc: 爽约 2 次触发封禁, metric: api.test.ban, rule: {type: bool}}
+  - {id: T07-B07, dim: be, tier: advanced, weight: 2, method: auto, desc: 重启后数据仍在（持久化）, metric: api.persist_ok, rule: {type: bool}}
+  - {id: T07-B08, dim: be, tier: clean, weight: 2, method: auto, desc: 数据文件中无 PIN 明文, metric: api.pin_plaintext, rule: {type: bool, expect: false}}
+  - {id: T07-B09, dim: be, tier: advanced, method: auto, desc: 20 并发下查询 p95 延迟（毫秒）, metric: api.p95_ms, rule: {type: max, max: 100, zero: 1000}}
+  - {id: T07-B10, dim: be, tier: basic, method: auto, desc: 压测错误率, metric: api.load_error_rate, rule: {type: max, max: 0, zero: 0.2}}
+  - id: T07-S01
+    dim: be
+    tier: advanced
+    method: agent
+    desc: 数据建模与事务（唯一约束/锁/事务保证不超卖，时间与时区处理集中）
+    anchors: ["无并发保护、时区混乱", "有保护但不完整", "关键路径有事务或锁，时区集中处理", "设计严谨，并在代码/文档中说明了原因"]
+  - id: T07-S02
+    dim: be
+    tier: advanced
+    method: agent
+    desc: 错误处理一致（统一错误格式、未捕获异常不泄露堆栈、输入校验集中）
+    anchors: ["各处各样", "大体统一但有泄露", "统一且安全", "统一、安全且易扩展"]
+  # ---------------- 工程化 ----------------
+  - {id: T07-E01, dim: eng, tier: basic, method: auto, desc: 交付文件齐全（bench.json、README、DECISIONS）, metric: files.required_ratio, rule: {type: ratio}}
+  - {id: T07-E02, dim: eng, tier: basic, method: auto, desc: 启动耗时（秒）, metric: api.startup_s, rule: {type: max, max: 3, zero: 30}}
+  - {id: T07-E03, dim: eng, tier: advanced, method: auto, desc: 自带测试能跑通, metric: api.own_tests_ok, rule: {type: bool}}
+  - {id: T07-E04, dim: eng, tier: advanced, method: auto, desc: 自带测试通过数量, metric: api.own_tests_passed, rule: {type: linear, bad: 3, good: 30}}
+  - {id: T07-E05, dim: eng, tier: clean, method: auto, desc: 无占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}
+  - id: T07-S03
+    dim: eng
+    tier: excellent
+    method: agent
+    desc: 自带测试质量（是否覆盖规格里的每条业务规则与错误码，而不只是冒烟）
+    anchors: ["无测试或只有冒烟", "覆盖主流程", "覆盖大部分规则与错误码", "系统覆盖规则、边界、并发与鉴权"]
+  - id: T07-S04
+    dim: eng
+    tier: advanced
+    method: agent
+    desc: 代码结构（路由/业务/存储分层，配置与常量集中）
+    anchors: ["单文件堆砌", "有拆分但耦合严重", "分层清楚", "分层清楚且易测试"]
+  # ---------------- 需求理解 ----------------
+  - {id: T07-R01, dim: req, tier: advanced, method: auto, desc: 隐含需求：首尾相接的时段不算冲突（2 项）, metric: api.cat.amb, rule: {type: ratio}}
+  - {id: T07-R02, dim: req, tier: basic, method: auto, desc: DECISIONS.md 提到“封禁期间已有预约如何处理”（关键词辅助）, metric: docs.decisions.hits.ban_existing, rule: {type: bool}}
+  - {id: T07-R03, dim: req, tier: basic, method: auto, desc: DECISIONS.md 提到“每日上限统计范围”（关键词辅助）, metric: docs.decisions.hits.limit_scope, rule: {type: bool}}
+  - id: T07-S05
+    dim: req
+    tier: excellent
+    method: agent
+    desc: DECISIONS.md 准确识别规格空白（封禁期间已有预约、上限是否计入爽约/签到等）并给出合理处理
+    anchors: ["没有或只是复述规格", "识别了 1 处", "识别了 2 处及以上且处理合理", "识别全面、理由充分，并在代码中一致实现"]

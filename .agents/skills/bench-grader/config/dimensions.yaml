@@ -1,0 +1,46 @@
+# 雷达图维度定义。quality 维度参与质量总分；efficiency 维度单独换算。
+# weight 是质量总分中的权重，可按你的实际用途调整（调整后需在报告中注明）。
+dimensions:
+  - id: 3d
+    name: 3D
+    kind: quality
+    weight: 1.0
+    desc: 程序化建模、材质与光照、3D 运动与相机、3D 交互与性能、领域准确性（物理/生物/工程比例）
+  - id: anim
+    name: 动画动效
+    kind: quality
+    weight: 1.0
+    desc: 缓动与节奏、编排层次、转场、文字动效、音画配合、定格节奏
+  - id: ui
+    name: 前端 UI/UX
+    kind: quality
+    weight: 1.0
+    desc: 视觉设计、信息层级、交互流程、状态处理（空/加载/错误）、响应式、无障碍
+  - id: be
+    name: 后端
+    kind: quality
+    weight: 1.0
+    desc: API 实现与规格一致、数据建模、鉴权与安全、并发与健壮性、性能
+  - id: eng
+    name: 工程化
+    kind: quality
+    weight: 1.0
+    desc: 构建与打包、类型安全、依赖控制、可复现、代码完整性、调试修复、测试
+  - id: req
+    name: 需求理解
+    kind: quality
+    weight: 1.0
+    desc: 识别歧义与矛盾、该问才问、写明假设、最终结果贴合真实意图
+  - id: agent
+    name: Agent 执行
+    kind: quality
+    weight: 1.0
+    desc: skill 遵循、自我验证（运行/截图/测试）、出错后修复、汇报与实际一致
+  - id: cost
+    name: 成本效率
+    kind: efficiency
+    desc: 期望成功成本 = 单次平均费用 ÷ 达标率，按对数锚点换算为 0–100（越便宜越高）
+  - id: speed
+    name: 速度
+    kind: efficiency
+    desc: 期望达标用时 = 单次平均用时 ÷ 达标率，按对数锚点换算为 0–100（越快越高）

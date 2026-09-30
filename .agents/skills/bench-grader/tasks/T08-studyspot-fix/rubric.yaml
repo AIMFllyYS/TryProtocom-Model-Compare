@@ -1,0 +1,96 @@
+id: T08
+name: StudySpot 修复与扩展（改已有代码）
+short: 在线上项目中定位 4 个已报告 + 1 个未报告缺陷的根因并修复，补回归测试，新增统计接口，不重写项目
+deliverable_dir: studyspot-legacy
+dims: {be: 1.0, eng: 1.0, agent: 1.0}
+condition: 无人值守；工作目录预置 materials/studyspot-legacy/ 的副本
+materials: ["materials/studyspot-legacy/（种子仓库，复制到工作目录）"]
+time_limit_min: 60
+bugs:
+  B1: {issue: "#31", title: 首尾相接的时段被判冲突, root: "create_booking 冲突判断用了 <= 而不是 <", test: test_amb_back_to_back_allowed}
+  B2: {issue: "#34", title: 能取消别人的预约, root: "cancel 未校验预约归属（没有走 owned()）", test: test_sec_cancel_others_forbidden}
+  B3: {issue: "#37", title: UTC 服务器上日期判断错一天, root: "now_from 用服务器本地时区；check_date 用 now.date() 未转换到 Asia/Shanghai", test: test_edge_timezone_shanghai}
+  B4: {issue: "#40", title: 高峰期撞座/超额, root: "dispatch 去掉了全局锁，读-判-写不是原子操作", test: "test_conc_daily_limit_under_race, test_conc_same_slot_single_winner"}
+  B5: {issue: 未报告, title: 取消后当天额度不恢复, root: "每日上限统计使用 mine_all（含已取消的预约）", test: test_edge_cancel_restores_quota}
+probes:
+  - type: files
+    opts:
+      required: [app.py, FIXES.md, bench.json]
+      scan: ["**/*.py"]
+  - type: claims
+  - type: diff
+    opts: {seed: materials/studyspot-legacy}
+  - type: docs
+    opts:
+      docs:
+        fixes:
+          path: FIXES.md
+          groups:
+            b5: ["取消|cancel", "额度|限额|上限|4\\s*小时|daily|quota"]
+  - type: api
+    opts:
+      tests: [../T07-studyspot-api/hidden/test_api.py, hidden/test_feature.py]
+      categories: [func, edge, sec, conc, amb, feat]
+      named_tests:
+        B1: test_amb_back_to_back_allowed
+        B2: test_sec_cancel_others_forbidden
+        B3: test_edge_timezone_shanghai
+        B4: [test_conc_daily_limit_under_race, test_conc_same_slot_single_winner]
+        B5: test_edge_cancel_restores_quota
+      regression_exclude: [test_amb_back_to_back_allowed, test_sec_cancel_others_forbidden, test_edge_timezone_shanghai, test_conc_daily_limit_under_race, test_conc_same_slot_single_winner, test_edge_cancel_restores_quota]
+gates:
+  - {id: G1, desc: 服务能按 bench.json 启动, metric: api.started, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致（没有声称修好但实际未修）, metric: claims.honest, rule: {type: bool}}
+items:
+  # ---------------- 后端 ----------------
+  - {id: T08-B01, dim: be, tier: advanced, weight: 2, method: auto, desc: "B1 #31 首尾相接误判冲突已修复", metric: api.test.B1, rule: {type: bool}}
+  - {id: T08-B02, dim: be, tier: advanced, weight: 3, method: auto, desc: "B2 #34 越权取消已修复", metric: api.test.B2, rule: {type: bool}}
+  - {id: T08-B03, dim: be, tier: excellent, weight: 3, method: auto, desc: "B3 #37 时区问题已修复", metric: api.test.B3, rule: {type: bool}}
+  - {id: T08-B04, dim: be, tier: excellent, weight: 3, method: auto, desc: "B4 #40 并发竞态已修复", metric: api.test.B4, rule: {type: bool}}
+  - {id: T08-B05, dim: be, tier: excellent, weight: 4, method: auto, desc: B5 未报告缺陷（取消后额度不恢复）被发现并修复, metric: api.test.B5, rule: {type: bool}}
+  - {id: T08-B06, dim: be, tier: advanced, weight: 4, method: auto, desc: 新接口 /api/stats/me 测试通过率（5 项）, metric: api.cat.feat, rule: {type: ratio}}
+  - {id: T08-B07, dim: be, tier: basic, weight: 4, method: auto, desc: 无回归（其余 42 项原本通过的测试仍通过）, metric: api.regression_ratio, rule: {type: linear, bad: 0.8, good: 1.0}}
+  # ---------------- 工程化 ----------------
+  - {id: T08-E01, dim: eng, tier: advanced, method: auto, desc: 没有重写项目（删除/改写的原始行占比）, metric: diff.churn_ratio, rule: {type: max, max: 0.15, zero: 0.6}}
+  - {id: T08-E02, dim: eng, tier: basic, method: auto, desc: 未引入运行时第三方依赖, metric: diff.runtime_third_party, rule: {type: max, max: 0}}
+  - {id: T08-E03, dim: eng, tier: advanced, method: auto, desc: 新增回归测试函数数量, metric: diff.new_test_functions, rule: {type: linear, bad: 1, good: 8}}
+  - {id: T08-E04, dim: eng, tier: advanced, method: auto, desc: 项目自带测试全部通过, metric: api.own_tests_ok, rule: {type: bool}}
+  - {id: T08-E05, dim: eng, tier: basic, method: auto, desc: 交付了 FIXES.md, metric: docs.fixes.exists, rule: {type: bool}}
+  - id: T08-S01
+    dim: eng
+    tier: advanced
+    method: agent
+    desc: 回归测试确实能复现原问题（修复前失败、修复后通过；可用种子仓库验证）
+    anchors: ["没有回归测试", "有测试但测不到原问题", "大部分能复现", "每个修复都有能复现的测试"]
+  # ---------------- Agent 执行（调试与汇报） ----------------
+  - id: T08-S02
+    dim: agent
+    tier: advanced
+    method: agent
+    desc: FIXES.md · B1 根因定位准确（指出冲突判断的边界条件）
+    anchors: ["未提及或错误", "只描述现象", "根因正确", "根因正确并指出代码位置与修复理由"]
+  - id: T08-S03
+    dim: agent
+    tier: advanced
+    method: agent
+    desc: FIXES.md · B2 根因定位准确（取消接口缺少归属校验）
+    anchors: ["未提及或错误", "只描述现象", "根因正确", "根因正确并排查了其他接口是否有同类问题"]
+  - id: T08-S04
+    dim: agent
+    tier: excellent
+    method: agent
+    desc: FIXES.md · B3 根因定位准确（服务器本地时区 + 未转换到 Asia/Shanghai）
+    anchors: ["未提及或错误", "只描述现象", "指出时区问题", "完整指出两处原因并统一了时间处理"]
+  - id: T08-S05
+    dim: agent
+    tier: excellent
+    method: agent
+    desc: FIXES.md · B4 根因定位准确（读-判-写非原子，缺少锁/事务）
+    anchors: ["未提及或错误", "只描述现象", "指出竞态", "指出竞态并说明为何该方案能保证原子性"]
+  - {id: T08-S06, dim: agent, tier: excellent, method: auto, desc: FIXES.md 记录了未报告的 B5（关键词辅助）, metric: docs.fixes.hits.b5, rule: {type: bool}}
+  - id: T08-S07
+    dim: agent
+    tier: advanced
+    method: agent
+    desc: 自我验证：修改后实际运行了测试并在汇报中如实说明结果
+    anchors: ["没有运行", "声称运行但无证据", "运行并报告结果", "运行、报告并在失败时继续修复直至通过"]

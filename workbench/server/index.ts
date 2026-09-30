@@ -3,10 +3,12 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
-import type { Aggregate, SessionInfo, SpecData, StoreRun } from '../shared/types';
+import { spawn, spawnSync } from 'node:child_process';
+import type { Aggregate, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
 import { aggregate } from '../shared/aggregate';
-import { buildPrompt } from '../shared/prompt';
+import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
+import { parseModelInput, suggestHarness, harnessByName, harnessById, iconFor } from '../shared/vendors';
+import { detectHarnesses, openHarness } from './harness';
 import { loadConfig, PREVIEW_PORT_RANGE, VERSION, type Config } from './config';
 import { listDir, readText, resolveSafe, sendRaw, toRel } from './fsapi';
 import { EventHub, HttpError, mimeOf, readJson, Router, sendJson, type Req, type Res } from './http';
@@ -133,10 +135,110 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     spawn(cmd, [p], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
   };
 
+  // ---------- 提示词（统一运行约定） ----------
+  const taskDirOf = (task: SpecTask) => spec?.materials_state?.[task.id]?.dir
+    || path.join(cfg.graderDir, 'tasks', fs.readdirSync(path.join(cfg.graderDir, 'tasks')).find((d) => d.startsWith(task.id + '-')) || task.id);
+  const findTask = async (id: unknown) => {
+    const s = await loadSpec();
+    const t = s.tasks.find((x) => x.id === String(id || '').toUpperCase());
+    if (!t) throw new HttpError(404, `题目不存在：${id}`);
+    return { s, t };
+  };
+  const settings = () => store.data.settings;
+  const renderPrompt = (s: SpecData, t: SpecTask, variant: string | null, wsAbs: string | null, index: number | null) => buildRunPrompt(t.prompt, {
+    bench: `${s.cfg.name} ${s.cfg.version}`, taskId: t.id, taskName: t.name, variant, runIndex: index, workspace: wsAbs,
+    deliverableDir: t.deliverable, timeLimit: t.time_limit, materials: t.materials, condition: t.condition,
+  }, { tts: settings().tts_command, header: settings().prompt_header !== false });
+  /** 可以直接拿来用的运行：已创建、没开始、没交付、没登记 */
+  const claimable = (vendor: string, model: string, tkey: string): WorkspaceRun | undefined => ws.listRuns().find((w) =>
+    w.vendor === vendor && w.model === model && w.tkey === tkey && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
+  async function promptFor(q: { vendor?: string | null; model?: string | null; task: string; variant?: string | null }) {
+    const { s, t } = await findTask(q.task);
+    const variant = q.variant || null;
+    if (Object.keys(t.variants || {}).length && !variant) throw new HttpError(400, `${t.id} 需要选择变体（${Object.keys(t.variants).join(' / ')}）`);
+    if (!q.vendor || !q.model) return { ...renderPrompt(s, t, variant, null, null), ref: null, workspace: null, index: null, exists: false };
+    const tkey = t.id + (variant || '');
+    const cur = claimable(q.vendor, q.model, tkey);
+    const index = cur ? cur.index : ws.nextIndex(q.vendor, q.model, tkey);
+    const wsAbs = cur?.workspace || ws.wsPath(q.vendor, q.model, tkey, index);
+    return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
+  }
+  async function claimRun(b: { vendor: string; model: string; task: string; variant?: string | null; index?: number; start?: boolean; harness?: string; open?: boolean }) {
+    const { s, t } = await findTask(b.task);
+    const variant = b.variant || null;
+    const tkey = t.id + (variant || '');
+    const prof = store.data.models.find((m) => m.vendor === b.vendor && m.name === b.model);
+    const harness = b.harness || prof?.harness || harnessById(settings().default_harness)?.name || '';
+    let run = claimable(b.vendor, b.model, tkey);
+    if (!run || (b.index && run.index !== b.index)) {
+      run = ws.createRun({ vendor: b.vendor, model: b.model, task: t, variant, harness, taskDir: taskDirOf(t), index: b.index, prompt: (wsAbs, n) => renderPrompt(s, t, variant, wsAbs, n).text });
+      store.log('ws-create', run.ref);
+    } else if (harness && !run.harness) run = ws.patchRun(run.ref, { harness });
+    if (b.start !== false && !run.started_at) run = ws.patchRun(run.ref, { started_at: new Date().toISOString(), ended_at: null });
+    const text = fs.readFileSync(ws.files(run.ref).prompt, 'utf8');
+    let opened: string | null = null;
+    if (b.open) {
+      const h = harnessByName(harness) || harnessById(settings().default_harness);
+      if (h) { try { opened = openHarness(h.id, run.workspace || null).how; } catch (e) { opened = `未能打开：${(e as Error).message}`; } }
+    }
+    refreshWorkspaces();
+    return { run, text, opened };
+  }
+
+  // ---------- skills 镜像到 .agents/skills（Agent 软件的约定位置；不含 hidden/） ----------
+  const agentsSkills = path.join(cfg.root, '.agents', 'skills');
+  function mirrorSkills(): { copied: number; dir: string } {
+    let copied = 0;
+    for (const name of ['bench-grader', 'bench-workbench']) {
+      const src = path.join(cfg.root, 'skills', name);
+      const dst = path.join(agentsSkills, name);
+      if (!fs.existsSync(src)) continue;
+      const walk = (a: string, b: string) => {
+        fs.mkdirSync(b, { recursive: true });
+        for (const e of fs.readdirSync(a, { withFileTypes: true })) {
+          if (e.name === 'hidden' || e.name === '__pycache__' || e.name.endsWith('.pyc')) continue;
+          const sa = path.join(a, e.name), sb = path.join(b, e.name);
+          if (e.isDirectory()) walk(sa, sb);
+          else {
+            const st = fs.statSync(sa);
+            let same = false;
+            try { const tb = fs.statSync(sb); same = tb.size === st.size && tb.mtimeMs >= st.mtimeMs; } catch { /* */ }
+            if (!same) { fs.copyFileSync(sa, sb); copied++; }
+          }
+        }
+      };
+      walk(src, dst);
+    }
+    fs.writeFileSync(path.join(agentsSkills, 'README.md'), '# .agents/skills\n\n由 Bench Workbench 自动从 `skills/` 镜像（不含 `hidden/`）。请修改 `skills/` 下的源文件，不要直接改这里。\n', 'utf8');
+    return { copied, dir: agentsSkills };
+  }
+  try { mirrorSkills(); } catch (e) { console.error('[wb] skills 镜像失败：', (e as Error).message); }
+
+  // ---------- 交付检测：轮询未登记运行的工作目录 ----------
+  const fp = new Map<string, string>();
+  const detectTick = () => {
+    let changed = false;
+    for (const w of store.data.workspaces) {
+      if (w.grader_run_id) continue;
+      try {
+        if (ws.absorbFinal(w.ref)) changed = true;
+        const p = ws.parseRef(w.ref);
+        const r = ws.readRun(p.vendor, p.model, p.tkey, p.index);
+        const key = JSON.stringify([r.detect?.done, r.detect?.dir_exists, r.detect?.final, r.detect?.last_change, r.ended_at, r.has_final, r.entry]);
+        if (fp.has(w.ref) && fp.get(w.ref) !== key) changed = true;
+        fp.set(w.ref, key);
+      } catch { /* 目录被删 */ changed = true; }
+    }
+    if (changed) refreshWorkspaces();
+  };
+  const detectTimer = setInterval(detectTick, 3000);
+  detectTimer.unref();
+
   // ======================= 路由 =======================
   R.get('/api/session', (): SessionInfo => ({
     version: VERSION, token: cfg.token, port: cfg.port, preview_ports: PREVIEW_PORT_RANGE, root: cfg.root, python: cfg.python, desktop: cfg.desktop, started_at: startedAt,
-    paths: { model: cfg.modelDir, bench_data: cfg.benchData, store: cfg.storeFile, reports: cfg.reportsDir, grader: cfg.graderDir, skill: cfg.skillDir },
+    paths: { model: cfg.modelDir, bench_data: cfg.benchData, store: cfg.storeFile, reports: cfg.reportsDir, grader: cfg.graderDir, skill: cfg.skillDir, agents_skills: agentsSkills },
+    github: settings().github || 'https://github.com/AIMFllyYS/TryProtocom-Model-Compare',
   }));
   R.get('/api/health', () => ({ ok: true, version: VERSION, port: cfg.port, pid: process.pid }));
   R.get('/api/events', (req, res) => { hub.attach(res); return undefined; });
@@ -149,6 +251,16 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.get('/api/models', () => store.data.models);
   R.post('/api/models', async (req) => {
     const b = await readJson(req);
+    if (b.input && !b.name) {
+      const p = parseModelInput(String(b.input));
+      b.vendor = b.vendor || p.vendor;
+      b.name = p.name;
+    }
+    if (!b.vendor) throw new HttpError(400, `无法从“${b.name}”推断供应商，请手动选择或输入“供应商/模型”`);
+    if (!b.harness && !store.data.models.some((m) => m.vendor === b.vendor && m.name === b.name)) {
+      const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
+      b.harness = suggestHarness(b.vendor, installed, settings().default_harness)?.name || '';
+    }
     const m = ws.upsertModel(b);
     store.log('model', `新增/更新模型 ${m.vendor}/${m.name}`);
     refreshWorkspaces();
@@ -166,25 +278,67 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.get('/api/ws', () => store.data.workspaces);
   R.post('/api/ws/scan', () => { refreshWorkspaces(); return store.data.workspaces; });
   R.get('/api/ws/prompt', async (req) => {
-    const s = await loadSpec();
-    const task = s.tasks.find((t) => t.id === req.query.get('task'));
-    if (!task) throw new HttpError(404, '题目不存在');
-    return buildPrompt(task.prompt, task.id, req.query.get('variant') || null, { tts: store.data.settings.tts_command });
+    const q = req.query;
+    const model = q.get('for') ? parseModelInput(q.get('for')!) : null;
+    return promptFor({ task: q.get('task') || '', variant: q.get('variant'), vendor: model?.vendor || q.get('vendor'), model: model?.name || q.get('model') });
   });
+  R.post('/api/ws/claim', async (req) => claimRun(await readJson(req)));
   R.post('/api/ws/create', async (req) => {
     const b = await readJson(req);
-    const s = await loadSpec();
-    const task = s.tasks.find((t) => t.id === b.task);
-    if (!task) throw new HttpError(400, `题目不存在：${b.task}`);
-    const pr = buildPrompt(task.prompt, task.id, b.variant || null, { tts: store.data.settings.tts_command });
-    const taskDir = s.materials_state?.[task.id]?.dir || path.join(cfg.graderDir, 'tasks', fs.readdirSync(path.join(cfg.graderDir, 'tasks')).find((d) => d.startsWith(task.id + '-')) || task.id);
-    const run = ws.createRun({ vendor: b.vendor, model: b.model, task, variant: b.variant || null, harness: b.harness || '', taskDir, prompt: pr.text });
-    const warnings = [...pr.warnings, ...(s.materials_state?.[task.id]?.missing || []).map((m) => `素材缺失：${m}（先在「系统」运行“生成素材”）`)];
+    const { s, t: task } = await findTask(b.task);
+    const variant = b.variant || null;
+    const run = ws.createRun({ vendor: b.vendor, model: b.model, task, variant, harness: b.harness || '', taskDir: taskDirOf(task), prompt: (wsAbs, n) => renderPrompt(s, task, variant, wsAbs, n).text });
+    const pr = { text: fs.readFileSync(ws.files(run.ref).prompt, 'utf8'), warnings: renderPrompt(s, task, variant, null, null).warnings };
+    const warnings = [...pr.warnings, ...(s.materials_state?.[task.id]?.missing || []).map((m) => `素材缺失：${m}（先在「设置 → 评测机」运行“生成素材”）`)];
     if (task.id === 'T02') warnings.push('T02 需要把用户提供的 minecraft-stop-motion-director skill 复制到工作目录的 skills/ 下。');
     if (task.id === 'T06') warnings.push('T06 为有人值守：按 hidden/intent.md 回答模型提问，并在完成时填写 transcript_notes。');
     store.log('ws-create', run.ref);
     refreshWorkspaces();
     return { run, prompt: pr.text, warnings, workspace: run.workspace };
+  });
+  R.get('/api/ws/detect', () => { detectTick(); return store.data.workspaces.filter((w) => !w.grader_run_id).map((w) => ({ ref: w.ref, detect: w.detect, ended_at: w.ended_at, has_final: w.has_final, entry: w.entry })); });
+
+  // harness（Agent 软件）
+  R.get('/api/harness', (req) => detectHarnesses(req.query.get('refresh') === '1'));
+  R.post('/api/harness/open', async (req) => {
+    const b = await readJson(req);
+    const cwd = b.ref ? ws.files(b.ref).ws : null;
+    const id = b.id || harnessByName(b.name)?.id;
+    return openHarness(id, cwd);
+  });
+  R.get('/api/models/infer', (req) => {
+    const p = parseModelInput(req.query.get('name') || '');
+    const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
+    const h = suggestHarness(p.vendor, installed, settings().default_harness);
+    const exists = store.data.models.some((m) => m.vendor === p.vendor && m.name === p.name);
+    return { ...p, icon: iconFor(p.vendor, p.name), harness: h ? { id: h.id, name: h.name } : null, exists, vendors: ws.vendors() };
+  });
+
+  // AI 评审提示词（给评分 Agent）
+  R.get('/api/review-prompt', async (req) => {
+    const s = await loadSpec();
+    const rid = req.query.get('run_id');
+    const ref = req.query.get('ref');
+    const agg = await getAgg();
+    if (!rid && !ref) return { text: reviewPrompt({ root: cfg.root, bench: `${s.cfg.name} ${s.cfg.version}`, scope: 'all', pendingAgent: agg.pending.agent }) };
+    const w = ref ? store.data.workspaces.find((x) => x.ref === ref) : store.data.workspaces.find((x) => x.grader_run_id === rid);
+    const run = rid ? store.data.runs.find((r) => r.run_id === rid) : w?.grader_run_id ? store.data.runs.find((r) => r.run_id === w.grader_run_id) : undefined;
+    const task = run?.task || w?.task || null;
+    return { text: reviewPrompt({ root: cfg.root, bench: `${s.cfg.name} ${s.cfg.version}`, scope: { run_id: run?.run_id || w?.grader_run_id || rid, ref: w?.ref || ref, task, taskName: s.tasks.find((t) => t.id === task)?.name } }) };
+  });
+
+  // skills 镜像 / 源码下载
+  R.post('/api/skills/sync', () => mirrorSkills());
+  R.get('/api/source.zip', (req, res) => {
+    const r = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: cfg.root, encoding: 'utf8', windowsHide: true });
+    if (r.status !== 0) throw new HttpError(500, '当前目录不是 git 仓库，无法打包源码');
+    const rev = r.stdout.trim();
+    res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="TryProtocom-Model-Compare-${rev}.zip"` });
+    // git archive 只打包已提交的文件：hidden/ 已被 .gitignore 排除，不会进入源码包
+    const p = spawn('git', ['archive', '--format=zip', `--prefix=TryProtocom-Model-Compare/`, 'HEAD'], { cwd: cfg.root, windowsHide: true });
+    p.stdout.pipe(res);
+    p.on('error', () => res.end());
+    return undefined;
   });
   R.post('/api/ws/start', async (req) => {
     const b = await readJson(req);
@@ -425,6 +579,8 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     req.query = u.searchParams; req.pathname = u.pathname;
     try {
       if (u.pathname.startsWith('/api/')) {
+        const host = String(req.headers.host || '').toLowerCase();
+        if (host && !/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host)) throw new HttpError(403, '拒绝非本机 Host');
         const origin = req.headers.origin;
         if (origin && !ownOrigins.has(origin) && origin !== 'null' && !origin.startsWith('file://')) throw new HttpError(403, '拒绝跨源请求');
         const m = R.match(req.method || 'GET', u.pathname);

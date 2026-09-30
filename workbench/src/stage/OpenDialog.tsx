@@ -5,7 +5,7 @@ import type { PreviewSession, ProcInfo } from '../../shared/types';
 import { get, post } from '../api';
 import { useWb } from '../state';
 import { isVideo } from '../lib/format';
-import { Badge, Btn, Empty, Field, Modal, Spinner, Tabs } from '../ui/kit';
+import { Badge, Btn, CheckBox, Empty, Field, Modal, Select, Spinner, Tabs } from '../ui/kit';
 import { toast } from '../ui/toast';
 import { FileBrowser } from '../components/Files';
 import { Score, WsBadge, useNamer } from '../components/common';
@@ -39,7 +39,7 @@ export function OpenDialog({ onClose, onOpenSession, onOpenVideo, onOpenRef }: {
             {!list.length && <Empty title="没有运行">先在“运行”页新建运行。</Empty>}
             {list.map((x) => (
               <label key={x.key} className="pick-i">
-                <input type="checkbox" checked={picked.has(x.key)} onChange={() => togglePick(x.key)} />
+                <CheckBox checked={picked.has(x.key)} onChange={() => togglePick(x.key)} label="选择" />
                 <span className="mono grow ellipsis">{x.title}</span>
                 <span className="muted small">{x.sub}</span>
                 <span className="mono xs muted ellipsis" style={{ maxWidth: 200 }}>{x.entry || (x.w ? '未发现入口' : '存储运行')}</span>
@@ -115,9 +115,7 @@ function DevServer({ onOpen }: { onOpen: (s: PreviewSession) => void }) {
     <div className="grid-2">
       <div className="stack">
         <Field label="工作区运行">
-          <select value={ref} onChange={(e) => setRef(e.target.value)}>
-            {ws.map((w) => <option key={w.ref} value={w.ref}>{nm.ref(w.ref)}</option>)}
-          </select>
+          <Select value={ref} onChange={setRef} block searchable options={ws.map((w) => ({ value: w.ref, label: nm.ref(w.ref) }))} />
         </Field>
         {loading && <Spinner />}
         {scan && (

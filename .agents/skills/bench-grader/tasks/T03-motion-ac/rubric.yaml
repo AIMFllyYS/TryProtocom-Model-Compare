@@ -1,0 +1,108 @@
+id: T03
+name: Tempo 动效短片（A 手写 / C 用 Skill）
+short: 同一份 15 秒产品动效 brief，A 组纯手写、C 组用 HyperFrames skills，对比纯动画功底与 skill 增益
+deliverable_dir: tempo-promo
+dims: {anim: 1.0}
+variants:
+  A: {dims: {anim: 1.0, eng: 0.5}, desc: 纯手写，无 skill、无视频框架}
+  C: {dims: {anim: 1.0, agent: 0.5, eng: 0.5}, desc: HyperFrames + 官方 skills}
+condition: 无人值守；工作目录预置 assets/（copy.md、bgm.wav、beats.json）；A/C 环境按提示词说明隔离
+materials: ["materials/assets/copy.md", "materials/assets/bgm.wav", "materials/assets/beats.json"]
+time_limit_min: 60
+probes:
+  - type: files
+    opts:
+      required: [index.html]
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com]
+      grep: {framework: "hyperframes|remotion"}
+  - type: claims
+  - type: browser
+    opts:
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com]
+      hooks: [__hf, __hf.seek, __hf.duration]
+      fps: false
+  - type: timeline
+    opts:
+      global: __hf
+      entry: index.html
+      expected_duration: 15
+      sample_fps: 15
+      text: true
+      text_every: 3
+      beats: materials/assets/beats.json
+      cut_threshold: 22
+      render_video: {fps: 30, audio: materials/assets/bgm.wav}
+gates:
+  - {id: G1, desc: 页面加载且 __hf.seek 可用, metric: tl.hook_ok, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致, metric: claims.honest, rule: {type: bool}}
+  - {id: G3, desc: A 组未使用视频框架（源码中不含 hyperframes/remotion）, metric: files.grep.framework, rule: {type: max, max: 0}, variants: [A]}
+items:
+  # ---------------- 动画动效（自动） ----------------
+  - {id: T03-A01, dim: anim, tier: basic, method: auto, desc: 时长 15±0.5 秒（误差秒）, metric: tl.duration_err, rule: {type: max, max: 0.5, zero: 3}}
+  - {id: T03-A02, dim: anim, tier: advanced, method: auto, desc: seek 确定性, metric: tl.determinism_ratio, rule: {type: ratio}}
+  - {id: T03-A03, dim: anim, tier: basic, method: auto, desc: 空白帧比例, metric: tl.blank_ratio, rule: {type: max, max: 0.02, zero: 0.2}}
+  - {id: T03-A04, dim: anim, tier: advanced, method: auto, desc: 动效密度：最长静止时长（秒）, metric: tl.static_max_gap_s, rule: {type: max, max: 1.0, zero: 4}}
+  - {id: T03-A05, dim: anim, tier: advanced, method: auto, desc: 平均帧间变化量（运动强度）, metric: tl.motion_mean, rule: {type: linear, bad: 1, good: 6}}
+  - {id: T03-A06, dim: anim, tier: advanced, method: auto, desc: 视觉重音数量（明显的画面变化峰值）, metric: tl.visual_accents, rule: {type: linear, bad: 4, good: 16}}
+  - {id: T03-A07, dim: anim, tier: excellent, method: auto, desc: 视觉重音落在节拍上的比例（随机约 0.3）, metric: tl.beat_hit_ratio, rule: {type: linear, bad: 0.3, good: 0.8}}
+  - {id: T03-A08, dim: anim, tier: basic, method: auto, desc: 场景/段落切换次数, metric: tl.cuts, rule: {type: linear, bad: 1, good: 6}}
+  - {id: T03-A09, dim: anim, tier: advanced, method: auto, desc: 文字碰撞帧比例（运动途中文字互相遮挡）, metric: tl.text_overlap_ratio, rule: {type: max, max: 0, zero: 0.3}}
+  - {id: T03-A10, dim: anim, tier: advanced, method: auto, desc: 文字出画帧比例, metric: tl.text_offscreen_ratio, rule: {type: max, max: 0, zero: 0.3}}
+  - {id: T03-A11, dim: anim, tier: advanced, method: auto, desc: 中文字幕换行帧比例（要求每句一行）, metric: tl.multiline_ratio, rule: {type: max, max: 0, zero: 0.3}}
+  # ---------------- 动画动效（人工） ----------------
+  - id: T03-H01
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 缓动质量（非线性、有加减速、落点有弹性或阻尼）
+    evidence: 评审视频（统一渲染）
+    anchors: ["线性或生硬跳变", "部分有缓动", "普遍使用合适缓动", "缓动风格统一且有性格"]
+  - id: T03-H02
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 编排层次（元素先后展开、有主次，不是一起出现）
+    evidence: 评审视频
+    anchors: ["全部同时出现", "有先后但杂乱", "层次清楚", "编排有节奏感，视线引导明确"]
+  - id: T03-H03
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 构图与排版（留白、对齐、字号层级、安全边距）
+    evidence: 评审视频关键帧
+    anchors: ["拥挤或错位", "可读但平庸", "干净有层级", "专业级排版"]
+  - id: T03-H04
+    dim: anim
+    tier: excellent
+    method: human
+    desc: 创意与吸引力（有记忆点的转场或视觉概念）
+    evidence: 评审视频
+    anchors: ["模板化", "有一两个亮点", "整体有设计概念", "让人想重看，概念贯穿始终"]
+  - id: T03-H05
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 音画配合（重要变化踩在节拍/重拍上，段落与音乐结构对应）
+    evidence: 带声音观看评审视频
+    anchors: ["无关", "偶尔对上", "大部分重要变化踩点", "精确踩点且随音乐强弱变化"]
+  - id: T03-H06
+    dim: anim
+    tier: advanced
+    method: human
+    desc: 工艺（无闪烁、无跳帧、无元素穿帮、文字清晰）
+    evidence: 评审视频逐段
+    anchors: ["问题很多", "3 处以上问题", "1–2 处小问题", "无问题"]
+  # ---------------- 工程化 ----------------
+  - {id: T03-E01, dim: eng, tier: advanced, method: auto, desc: 控制台零报错, metric: browser.errors_total, rule: {type: max, max: 0, zero: 5}}
+  - {id: T03-E02, dim: eng, tier: basic, method: auto, desc: A 组运行时无白名单外网络请求, metric: browser.external_requests, rule: {type: max, max: 0, zero: 3}, variants: [A]}
+  - {id: T03-E03, dim: eng, tier: clean, method: auto, desc: 无占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}
+  # ---------------- Agent 执行（仅 C 组） ----------------
+  - id: T03-S01
+    dim: agent
+    tier: advanced
+    method: agent
+    variants: [C]
+    desc: 按 HyperFrames skill 流程工作（使用其组合规范、运行 lint/check/snapshot 等并据结果修改）
+    anchors: ["未使用 skill", "只套用了框架外壳", "按 skill 规范组织，运行过检查", "完整走完 skill 流程，并根据检查结果迭代"]

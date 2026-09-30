@@ -5,7 +5,7 @@ import type { LogEntry, PreviewSession, RequestEntry } from '../../shared/types'
 import { get, post } from '../api';
 import { bus, logKey, perfKey, procKey, reqKey, seedLogs, useBus, useWb } from '../state';
 import { cls, fmt } from '../lib/format';
-import { IconBtn, Tabs } from '../ui/kit';
+import { IconBtn, Switch, Tabs } from '../ui/kit';
 
 type T = 'console' | 'network' | 'perf' | 'server';
 const LEVELS = [
@@ -118,7 +118,7 @@ function Network({ reqs, logs }: { reqs: RequestEntry[]; logs: LogEntry[] }) {
     <div className="network">
       <div className="dt-bar">
         <div className="search-in xs"><Search size={12} /><input placeholder="筛选 URL" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        <label className="check xs"><input type="checkbox" checked={onlyFail} onChange={(e) => setOnlyFail(e.target.checked)} />仅失败</label>
+        <label className="row gap-s xs"><Switch size="sm" checked={onlyFail} onChange={setOnlyFail} label="仅失败" />仅失败</label>
         <span className="muted xs">{all.length} 个请求 · {fmt.bytes(total)}</span>
       </div>
       <div className="net-list">

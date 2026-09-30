@@ -43,7 +43,7 @@ function findRoot() {
   }
   return process.cwd();
 }
-var BOOL = /* @__PURE__ */ new Set(["json", "all", "fast", "skip-graded", "wait", "no-wait", "errors", "follow", "mobile", "full", "show", "register", "no-grade", "timed-out", "open", "no-inject", "warnings", "help"]);
+var BOOL = /* @__PURE__ */ new Set(["json", "all", "fast", "skip-graded", "wait", "no-wait", "errors", "follow", "mobile", "full", "show", "register", "no-grade", "timed-out", "open", "no-inject", "warnings", "help", "refresh"]);
 var flags = {};
 var pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -169,8 +169,12 @@ async function resolveRef(s) {
 var HELP = `wb \u2014 Bench Workbench CLI\uFF08\u5DE5\u4F5C\u53F0 http://127.0.0.1:41873\uFF09
 
 \u670D\u52A1      wb status | wb serve [--open] | wb start | wb stop | wb open [\u89C6\u56FE]
-\u9898\u5E93      wb tasks | wb prompt <T05> [--variant A]
-\u6A21\u578B      wb models | wb model add <\u4F9B\u5E94\u5546>/<\u6A21\u578B> [--harness "Claude Code"]
+\u9898\u5E93      wb tasks | wb prompt <T05> [--for \u4F9B\u5E94\u5546/\u6A21\u578B] [--variant A]   \u5E26\u7EDF\u4E00\u8FD0\u884C\u7EA6\u5B9A\uFF08\u5DE5\u4F5C\u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84\u3001\u4EA4\u4ED8\u6587\u4EF6\u5939\u540D\uFF09
+\u6A21\u578B      wb models | wb model add <\u6A21\u578B\u540D|\u4F9B\u5E94\u5546/\u6A21\u578B> [--vendor X] [--harness "Claude Code"]   \u53EA\u5199\u6A21\u578B\u540D\u65F6\u81EA\u52A8\u8BC6\u522B\u4F9B\u5E94\u5546
+Harness   wb harness [--refresh] | wb harness open <id> [--ref \u4F9B\u5E94\u5546/\u6A21\u578B/\u9898\u53F7/rN]
+\u4EA4\u4ED8      wb detect   \u5404\u8FD0\u884C\u7684\u4EA4\u4ED8\u6E05\u5355\u8FDB\u5EA6\u3001FINAL_MESSAGE.md \u662F\u5426\u51FA\u73B0
+AI \u8BC4\u5BA1   wb ai-prompt [run_id|ref]   \u7ED9\u8BC4\u5206 Agent \u7684\u63D0\u793A\u8BCD\uFF08skills \u8DEF\u5F84 + \u6B65\u9AA4\uFF09\uFF1B\u4E0D\u5E26\u53C2\u6570 = \u5168\u90E8\u5F85\u8BC4 Agent \u9879
+Skills    wb skills sync   \u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF08\u4E0D\u542B hidden/\uFF09
 \u8FD0\u884C      wb run new <\u4F9B\u5E94\u5546>/<\u6A21\u578B> <T05> [--variant A|C] [--harness X]
           wb run list [--model \u4F9B\u5E94\u5546/\u6A21\u578B] [--task T05]
           wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "\u2026"] [--wall-min 30 --cost-usd 1.2 \u2026] [--timed-out] [--register] [--no-grade]
@@ -246,21 +250,46 @@ Python ${s.python || "\u672A\u627E\u5230"}`);
       return out(rows, () => table([["\u9898\u53F7", "\u540D\u79F0", "\u4EA4\u4ED8\u76EE\u5F55", "\u53D8\u4F53", "\u68C0\u67E5\u9879", "\u4EBA\u5DE5", "agent", "\u65F6\u9650"], ...rows.map((r) => [r.id, r.name, r.deliverable + "/", r.variants.join("/") || "\u2014", r.items, r.human, r.agent, (r.time_limit ?? "\u2014") + "\u2032"])]));
     }
     case "prompt": {
-      if (!sub) die("\u7528\u6CD5\uFF1Awb prompt <T05> [--variant A]");
-      const r = await get(`/api/ws/prompt?task=${encodeURIComponent(sub.toUpperCase())}&variant=${encodeURIComponent(str("variant") || "")}`);
+      if (!sub) die("\u7528\u6CD5\uFF1Awb prompt <T05> [--for \u4F9B\u5E94\u5546/\u6A21\u578B] [--variant A]");
+      const r = await get(`/api/ws/prompt?task=${encodeURIComponent(sub.toUpperCase())}&variant=${encodeURIComponent(str("variant") || "")}&for=${encodeURIComponent(str("for") || "")}`);
       return out(r, () => {
         for (const w of r.warnings) console.error("\u26A0 " + w);
+        if (r.workspace) console.error(`\xB7 \u5DE5\u4F5C\u76EE\u5F55 ${r.workspace}${r.exists ? "\uFF08\u590D\u7528\u672A\u5F00\u59CB\u7684\u8FD0\u884C\uFF09" : "\uFF08\u5C1A\u672A\u521B\u5EFA\uFF0Cwb run new \u4F1A\u521B\u5EFA\uFF09"}`);
         process.stdout.write(r.text);
       });
+    }
+    case "ai-prompt": {
+      const q = !sub ? "" : sub.includes("/") ? `?ref=${encodeURIComponent(sub)}` : `?run_id=${encodeURIComponent(sub)}`;
+      const r = await get(`/api/review-prompt${q}`);
+      return out(r, () => process.stdout.write(r.text));
+    }
+    case "detect": {
+      const rows = await get("/api/ws/detect");
+      return out(rows, () => table([["ref", "\u4EA4\u4ED8", "FINAL_MESSAGE", "\u7ED3\u675F", "\u5165\u53E3"], ...rows.map((r) => [r.ref, r.detect ? `${r.detect.done}/${r.detect.total}` : "\u2014", r.detect?.final ? "\u2714" : "", r.ended_at ? "\u2714" : "", r.entry || "\u2014"])]));
+    }
+    case "harness": {
+      if (sub === "open") {
+        if (!rest[0]) die("\u7528\u6CD5\uFF1Awb harness open <id> [--ref \u4F9B\u5E94\u5546/\u6A21\u578B/\u9898\u53F7/rN]");
+        const r = await post("/api/harness/open", { id: rest[0], ref: str("ref") });
+        return out(r, () => console.log("\u2714 " + r.how));
+      }
+      const rows = await get(`/api/harness${flags.refresh ? "?refresh=1" : ""}`);
+      return out(rows, () => table([["id", "\u540D\u79F0", "\u7C7B\u578B", "\u5DF2\u5B89\u88C5", "\u8DEF\u5F84"], ...rows.map((h) => [h.id, h.name, h.kind, h.installed ? "\u2714" : "", h.path || "\u2014"])]));
+    }
+    case "skills": {
+      if (sub !== "sync") die("\u7528\u6CD5\uFF1Awb skills sync   \uFF08\u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF0C\u4E0D\u542B hidden/\uFF09");
+      const r = await post("/api/skills/sync");
+      return out(r, () => console.log(`\u2714 \u5DF2\u540C\u6B65\u5230 ${r.dir}\uFF08\u66F4\u65B0 ${r.copied} \u4E2A\u6587\u4EF6\uFF09`));
     }
     case "models": {
       const st = await get("/api/store");
       return out(st.models, () => table([["\u4F9B\u5E94\u5546", "\u6A21\u578B", "\u9ED8\u8BA4 harness", "\u5DE5\u4F5C\u533A\u8FD0\u884C", "\u5DF2\u767B\u8BB0"], ...st.models.map((m) => [m.vendor, m.name, m.harness || "\u2014", st.workspaces.filter((w) => w.vendor === m.vendor && w.model === m.name).length, st.runs.filter((r) => r.model === m.name).length])]));
     }
     case "model": {
-      if (sub !== "add" || !rest[0]) die("\u7528\u6CD5\uFF1Awb model add <\u4F9B\u5E94\u5546>/<\u6A21\u578B> [--harness X] [--notes \u2026]");
+      if (sub !== "add" || !rest[0]) die("\u7528\u6CD5\uFF1Awb model add <\u6A21\u578B\u540D> \u6216 <\u4F9B\u5E94\u5546>/<\u6A21\u578B> [--harness X] [--notes \u2026]");
+      const hasVendor = rest[0].includes("/");
       const [vendor, ...n] = rest[0].split("/");
-      const m = await post("/api/models", { vendor, name: n.join("/"), harness: str("harness"), notes: str("notes"), family: str("family") });
+      const m = await post("/api/models", hasVendor ? { vendor, name: n.join("/"), harness: str("harness"), notes: str("notes"), family: str("family") } : { input: rest[0], vendor: str("vendor"), harness: str("harness"), notes: str("notes"), family: str("family") });
       return out(m, () => console.log(`\u2714 \u6A21\u578B ${m.vendor}/${m.name}
   \u5DE5\u4F5C\u533A ${import_node_path.default.join(ROOT, "model", m.vendor, m.name)}`));
     }

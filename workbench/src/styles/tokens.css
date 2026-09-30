@@ -1,0 +1,171 @@
+/* ============================================================
+   Bench Workbench · Liquid Glass 设计系统
+   01 · Tokens + 基础 + 环境背景
+   材质分三层：thin（外壳 chrome）/ regular（内容卡片）/ thick（浮层）
+   ============================================================ */
+
+:root {
+  --font: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+
+  --r-xs: 7px; --r-s: 10px; --r-m: 13px; --r-l: 20px; --r-xl: 26px; --r-2xl: 32px; --r-pill: 999px;
+  --ease: cubic-bezier(.32, .72, 0, 1);          /* iOS 抽屉/弹层 */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --spring: cubic-bezier(.34, 1.4, .64, 1);      /* 轻微回弹 */
+  --t-fast: 140ms; --t: 240ms; --t-slow: 420ms;
+
+  --blur-thin: 30px; --blur-reg: 26px; --blur-thick: 44px;
+  --sat: 185%;
+  --side-w: 252px;
+  --gap: 14px;
+
+  /* 维度色（与雷达图一致，深浅主题共用，选饱和度适中、互相可分辨的色相） */
+  --d-3d: #7b6cff; --d-anim: #ff7aa8; --d-ui: #3fb6ff; --d-be: #34c38f; --d-eng: #f5a524;
+  --d-req: #b67cff; --d-agent: #ff8a4c; --d-cost: #2ec4b6; --d-speed: #8fa3bf;
+}
+
+/* ---------- 浅色 ---------- */
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --bg: #eceef4;
+  --text: rgb(20 22 30);
+  --text-2: rgb(20 22 30 / .64);
+  --text-3: rgb(20 22 30 / .44);
+  --text-4: rgb(20 22 30 / .28);
+  --hair: rgb(20 22 30 / .075);
+  --hair-2: rgb(20 22 30 / .12);
+  --fill-1: rgb(20 22 30 / .04);
+  --fill-2: rgb(20 22 30 / .07);
+  --fill-3: rgb(20 22 30 / .11);
+
+  --g-thin: rgb(255 255 255 / .44);
+  --g-reg: rgb(255 255 255 / .58);
+  --g-thick: rgb(252 252 255 / .78);
+  --g-solid: rgb(250 251 254 / .94);
+  --rim-hi: rgb(255 255 255 / .96);
+  --rim-mid: rgb(255 255 255 / .42);
+  --rim-lo: rgb(255 255 255 / .12);
+  --edge: rgb(20 22 40 / .07);                    /* 外轮廓发丝线，防止白底上玻璃“化掉” */
+  --sheen: rgb(255 255 255 / .55);
+
+  --sh-1: 0 1px 1px rgb(24 28 50 / .04), 0 2px 6px -2px rgb(24 28 50 / .08);
+  --sh-2: 0 1px 1px rgb(24 28 50 / .04), 0 10px 28px -10px rgb(24 28 60 / .18), 0 28px 64px -32px rgb(24 28 60 / .22);
+  --sh-3: 0 2px 4px rgb(24 28 50 / .05), 0 22px 50px -16px rgb(24 28 60 / .28), 0 50px 120px -40px rgb(24 28 60 / .30);
+
+  --accent: #6a5cff;
+  --accent-ink: #4f3fe0;
+  --accent-soft: rgb(106 92 255 / .12);
+  --ok: #17a05d; --ok-soft: rgb(23 160 93 / .12);
+  --warn: #c47a00; --warn-soft: rgb(230 150 20 / .14);
+  --bad: #e0453c; --bad-soft: rgb(224 69 60 / .12);
+  --info: #1f7aec; --info-soft: rgb(31 122 236 / .12);
+
+  --ink-btn: linear-gradient(180deg, rgb(52 54 66), rgb(20 21 27));
+  --ink-btn-hover: linear-gradient(180deg, rgb(64 66 80), rgb(28 29 36));
+  --ink-btn-text: #fff;
+
+  --aura-1: #ffd9c7; --aura-2: #d8d0ff; --aura-3: #c6efe2; --aura-4: #cfe1ff; --aura-5: #ffe7a8;
+  --aura-opacity: 1;
+  --code-bg: rgb(20 22 30 / .045);
+  --scroll: rgb(20 22 30 / .18);
+}
+
+/* ---------- 深色 ---------- */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #090b10;
+  --text: rgb(242 244 250);
+  --text-2: rgb(236 239 247 / .64);
+  --text-3: rgb(236 239 247 / .42);
+  --text-4: rgb(236 239 247 / .26);
+  --hair: rgb(255 255 255 / .07);
+  --hair-2: rgb(255 255 255 / .12);
+  --fill-1: rgb(255 255 255 / .045);
+  --fill-2: rgb(255 255 255 / .075);
+  --fill-3: rgb(255 255 255 / .11);
+
+  --g-thin: rgb(24 27 36 / .5);
+  --g-reg: rgb(30 33 44 / .52);
+  --g-thick: rgb(36 40 52 / .74);
+  --g-solid: rgb(26 29 38 / .96);
+  --rim-hi: rgb(255 255 255 / .30);
+  --rim-mid: rgb(255 255 255 / .11);
+  --rim-lo: rgb(255 255 255 / .03);
+  --edge: rgb(0 0 0 / .35);
+  --sheen: rgb(255 255 255 / .12);
+
+  --sh-1: 0 1px 1px rgb(0 0 0 / .3), 0 2px 8px -2px rgb(0 0 0 / .4);
+  --sh-2: 0 1px 1px rgb(0 0 0 / .3), 0 14px 34px -12px rgb(0 0 0 / .6), 0 30px 70px -34px rgb(0 0 0 / .7);
+  --sh-3: 0 2px 6px rgb(0 0 0 / .35), 0 26px 60px -18px rgb(0 0 0 / .7), 0 60px 140px -40px rgb(0 0 0 / .8);
+
+  --accent: #a597ff;
+  --accent-ink: #bdb3ff;
+  --accent-soft: rgb(165 151 255 / .16);
+  --ok: #3ddc97; --ok-soft: rgb(61 220 151 / .14);
+  --warn: #ffc24b; --warn-soft: rgb(255 194 75 / .14);
+  --bad: #ff6b62; --bad-soft: rgb(255 107 98 / .15);
+  --info: #5eb1ff; --info-soft: rgb(94 177 255 / .15);
+
+  --ink-btn: linear-gradient(180deg, rgb(255 255 255), rgb(226 229 238));
+  --ink-btn-hover: linear-gradient(180deg, rgb(255 255 255), rgb(240 242 248));
+  --ink-btn-text: #0c0d12;
+
+  --aura-1: #3a2a6e; --aura-2: #123f4e; --aura-3: #4a1f4a; --aura-4: #1d2f6b; --aura-5: #4a3413;
+  --aura-opacity: .9;
+  --code-bg: rgb(255 255 255 / .05);
+  --scroll: rgb(255 255 255 / .16);
+}
+
+/* ---------- 基础 ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; font: 13.5px/1.5 var(--font); color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11"; overflow: hidden;
+}
+h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; letter-spacing: -.012em; font-weight: 650; }
+p { margin: 0; }
+a { color: var(--accent-ink); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+code, kbd, pre, .mono { font-family: var(--mono); font-size: .92em; }
+code { background: var(--code-bg); padding: .1em .4em; border-radius: 6px; }
+button { font: inherit; color: inherit; }
+input, textarea { font: inherit; color: inherit; }
+img, svg { display: block; }
+::selection { background: color-mix(in oklab, var(--accent) 30%, transparent); }
+:focus-visible { outline: 2px solid color-mix(in oklab, var(--accent) 70%, transparent); outline-offset: 2px; border-radius: 8px; }
+.tnum, .num { font-variant-numeric: tabular-nums; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 环境背景：缓慢流动的光晕，给玻璃提供可折射的色彩 ---------- */
+.aura { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--bg); }
+.aura i {
+  position: absolute; width: 62vmax; height: 62vmax; border-radius: 50%; filter: blur(90px); opacity: var(--aura-opacity);
+  animation: aura-drift 38s var(--ease) infinite alternate; will-change: transform;
+}
+.aura i:nth-child(1) { background: var(--aura-1); left: -16vmax; top: -22vmax; }
+.aura i:nth-child(2) { background: var(--aura-2); right: -18vmax; top: -12vmax; animation-duration: 44s; animation-delay: -8s; }
+.aura i:nth-child(3) { background: var(--aura-3); left: 18vmax; bottom: -30vmax; animation-duration: 52s; animation-delay: -16s; }
+.aura i:nth-child(4) { background: var(--aura-4); right: -8vmax; bottom: -26vmax; width: 48vmax; height: 48vmax; animation-duration: 40s; animation-delay: -4s; }
+.aura i:nth-child(5) { background: var(--aura-5); left: 34vmax; top: 18vmax; width: 30vmax; height: 30vmax; opacity: calc(var(--aura-opacity) * .55); animation-duration: 60s; }
+.aura::after {
+  /* 细颗粒，消除大面积渐变的色带 */
+  content: ""; position: absolute; inset: 0; opacity: .035; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@keyframes aura-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6vmax, 4vmax, 0) scale(1.08); }
+  100% { transform: translate3d(-4vmax, 7vmax, 0) scale(.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

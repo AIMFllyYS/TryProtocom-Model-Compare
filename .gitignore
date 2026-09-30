@@ -1,5 +1,6 @@
 # ---- 评测方私有材料：隐藏测试、参考实现、意图表（bench-grader 规则 1，绝不公开）----
 skills/bench-grader/tasks/*/hidden/
+.agents/skills/*/tasks/*/hidden/
 
 # ---- 工作台构建与运行时 ----
 workbench/node_modules/

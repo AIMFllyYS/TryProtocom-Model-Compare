@@ -1,0 +1,155 @@
+id: T06
+name: StudySpot 预约网页（模糊需求）
+short: 口语化、带矛盾的需求做成手机优先的预约网页，考需求理解（该问才问、指出矛盾、写明假设）与功能型 UI/UX
+deliverable_dir: studyspot-web
+dims: {ui: 1.0, req: 1.0, eng: 0.5}
+condition: 有人值守：评测者只按 hidden/intent.md 回答模型的提问，并记录 transcript_notes.json
+materials: []
+time_limit_min: 60
+probes:
+  - type: files
+    opts:
+      required: [index.html, ASSUMPTIONS.md]
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com]
+  - type: claims
+  - type: transcript
+    opts: {key: [K1, K2, K3], contradictions: [C1, C2], inferable: [I1, I2, I3, I4, I5]}
+  - type: browser
+    opts:
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com]
+      hooks: [__bench, __bench.reset, __bench.setNow, __bench.actAs, __bench.book, __bench.cancel, __bench.myBookings]
+      mobile: true
+      axe: true
+      fps: false
+      js_metrics:
+        rules: |
+          const b = window.__bench; const M = '2026-10-09'; const T = '2026-10-08'; const D = '2026-10-10';
+          const ok = (x) => !!(x && x.ok === true); const R = {};
+          const safe = (k, fn) => { try { R[k] = fn(); } catch (e) { R[k] = null; } };
+          b.reset(); b.setNow('2026-10-08T07:00:00+08:00');
+          b.actAs('20260001'); safe('book_ok', () => ok(b.book('A09', M, 10, 12)));
+          b.actAs('20260002'); safe('conflict_blocked', () => R.book_ok && !ok(b.book('A09', M, 11, 12)));
+          safe('back_to_back_ok', () => ok(b.book('A09', M, 12, 13)));
+          b.actAs('20260001'); safe('user_overlap_blocked', () => R.book_ok && !ok(b.book('A10', M, 11, 12)));
+          safe('closed_blocked', () => !ok(b.book('A20', M, 15, 16)));
+          safe('hours_blocked', () => !ok(b.book('A11', M, 7, 9)) && !ok(b.book('A11', M, 21, 23)));
+          safe('isolated', () => { b.actAs('20260002'); return !b.myBookings().some(x => x.seatId === 'A09' && Number(x.startHour) === 10); });
+          b.actAs('20260001'); const target = (b.myBookings() || []).find(x => x.seatId === 'A09');
+          safe('cancel_other_blocked', () => { b.actAs('20260002'); return target ? !ok(b.cancel(target.id)) : false; });
+          safe('cancel_own_ok', () => { b.actAs('20260001'); return target ? ok(b.cancel(target.id)) : false; });
+          safe('rebook_after_cancel', () => { b.actAs('20260003'); return ok(b.book('A09', M, 10, 11)); });
+          b.reset(); b.setNow('2026-10-09T14:30:00+08:00'); b.actAs('20260004');
+          safe('past_blocked', () => !ok(b.book('A12', M, 14, 15)));
+          safe('future_same_day_ok', () => ok(b.book('A12', M, 15, 16)));
+          b.reset(); b.setNow('2026-10-08T07:00:00+08:00'); b.actAs('20260005');
+          safe('today_ok', () => ok(b.book('A13', T, 9, 10)));
+          safe('tomorrow_ok', () => ok(b.book('A13', M, 9, 10)));
+          safe('day_after_blocked', () => !ok(b.book('A13', D, 9, 10)));
+          b.reset(); b.setNow('2026-10-08T07:00:00+08:00'); b.actAs('20260009');
+          const seats = ['A01','A02','A03','A04','A05','A06','A07','A08','A09','A10','A11','A12','A13','A14'];
+          let hours = 0; for (let h = 8; h < 22; h++) { try { if (ok(b.book(seats[h - 8], M, h, h + 1))) hours++; else break; } catch (e) { break; } }
+          R.limit_hours = hours;
+          b.reset(); b.setNow('2026-10-09T07:00:00+08:00'); b.actAs('20260010');
+          b.book('A05', M, 8, 9); b.book('A05', M, 10, 11); b.setNow('2026-10-09T11:20:00+08:00');
+          safe('noshow_marked', () => b.myBookings().some(x => /no.?show|miss|absent|爽约|违约|未签到|expired/i.test(String(x.status || ''))));
+          safe('ban_after_two', () => !ok(b.book('A06', '2026-10-10', 9, 10)));
+          b.reset();
+          return R;
+      sequences:
+        persist:
+          - js: "window.__bench.reset(); window.__bench.setNow('2026-10-08T07:00:00+08:00'); window.__bench.actAs('20260077'); return window.__bench.book('A03', '2026-10-09', 9, 10);"
+          - reload: true
+          - js: "window.__bench.setNow('2026-10-08T07:00:00+08:00'); window.__bench.actAs('20260077'); const n = window.__bench.myBookings().length; window.__bench.reset(); return {kept: n >= 1};"
+gates:
+  - {id: G1, desc: 页面能加载, metric: browser.loaded, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致, metric: claims.honest, rule: {type: bool}}
+items:
+  # ---------------- 前端 UI/UX（功能正确性，自动） ----------------
+  - {id: T06-U01, dim: ui, tier: basic, method: auto, desc: 能成功预约空闲时段, metric: js.rules.book_ok, rule: {type: bool}}
+  - {id: T06-U02, dim: ui, tier: basic, method: auto, desc: 同一座位同一时段不能被两人预约, metric: js.rules.conflict_blocked, rule: {type: bool}}
+  - {id: T06-U03, dim: ui, tier: advanced, method: auto, desc: 首尾相接的时段允许预约（10–12 与 12–13）, metric: js.rules.back_to_back_ok, rule: {type: bool}}
+  - {id: T06-U04, dim: ui, tier: advanced, method: auto, desc: 同一人同一时间不能占两个座位, metric: js.rules.user_overlap_blocked, rule: {type: bool}}
+  - {id: T06-U05, dim: ui, tier: basic, method: auto, desc: A20 维修座位不可预约, metric: js.rules.closed_blocked, rule: {type: bool}}
+  - {id: T06-U06, dim: ui, tier: advanced, method: auto, desc: 开放时间外不可预约, metric: js.rules.hours_blocked, rule: {type: bool}}
+  - {id: T06-U07, dim: ui, tier: advanced, method: auto, desc: 已开始的时段不可预约, metric: js.rules.past_blocked, rule: {type: bool}}
+  - {id: T06-U08, dim: ui, tier: basic, method: auto, desc: 当天稍后的时段可以预约, metric: js.rules.future_same_day_ok, rule: {type: bool}}
+  - {id: T06-U09, dim: ui, tier: basic, method: auto, desc: “我的预约”只显示自己的, metric: js.rules.isolated, rule: {type: bool}}
+  - {id: T06-U10, dim: ui, tier: advanced, method: auto, desc: 不能取消别人的预约, metric: js.rules.cancel_other_blocked, rule: {type: bool}}
+  - {id: T06-U11, dim: ui, tier: basic, method: auto, desc: 可以取消自己的预约, metric: js.rules.cancel_own_ok, rule: {type: bool}}
+  - {id: T06-U12, dim: ui, tier: basic, method: auto, desc: 取消后时段被释放, metric: js.rules.rebook_after_cancel, rule: {type: bool}}
+  - {id: T06-U13, dim: ui, tier: basic, method: auto, desc: 刷新页面后数据仍在（浏览器存储）, metric: seq.persist.kept, rule: {type: bool}}
+  - {id: T06-U14, dim: ui, tier: basic, method: auto, desc: 手机宽度无横向溢出, metric: mobile.overflow_px, rule: {type: max, max: 0, zero: 100}}
+  - {id: T06-U15, dim: ui, tier: advanced, method: auto, desc: 手机端文字出界/重叠数, value_expr: "v['mobile.text_offscreen'] + v['mobile.text_overlaps']", rule: {type: max, max: 0, zero: 6}}
+  - {id: T06-U16, dim: ui, tier: advanced, method: auto, desc: 严重无障碍问题节点数, metric: a11y.serious_nodes, rule: {type: max, max: 0, zero: 15}}
+  # ---------------- 前端 UI/UX（人工走查，390px 手机视口） ----------------
+  - id: T06-H01
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 任务走查 · 预约一个明天 10–12 点带插座的座位（记录点击次数与是否卡住）
+    evidence: 手机视口实际操作
+    anchors: ["无法完成", "完成但卡住或 >8 步", "顺利完成，5–8 步", "顺利完成，≤4 步且信息一目了然"]
+  - id: T06-H02
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 任务走查 · 查看并取消自己的预约
+    evidence: 手机视口实际操作
+    anchors: ["无法完成", "能完成但入口难找", "顺利完成", "顺利完成且有撤销/确认等细节"]
+  - id: T06-H03
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 状态与反馈（空状态、冲突/超限/爽约的错误提示是否说清原因和办法）
+    evidence: 故意触发冲突、超限
+    anchors: ["无提示或只说失败", "有提示但含糊", "提示清楚", "提示清楚且给出下一步建议"]
+  - id: T06-H04
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 信息可视化（座位×时段的空闲状态、插座座位、维修座位是否一眼可见）
+    evidence: 手机截图
+    anchors: ["看不出", "能看出但费劲", "清楚", "非常直观，有图例"]
+  - id: T06-H05
+    dim: ui
+    tier: advanced
+    method: human
+    desc: 视觉设计（层级、间距、触控尺寸、审美）
+    evidence: 手机截图
+    anchors: ["粗糙", "可用", "干净专业", "有设计感"]
+  # ---------------- 需求理解 ----------------
+  - {id: T06-R01, dim: req, tier: advanced, method: auto, desc: 关键模糊点（K1–K3）被问到的数量, metric: tr.k_asked, rule: {type: linear, bad: 0, good: 3}}
+  - {id: T06-R02, dim: req, tier: excellent, method: auto, desc: 自相矛盾（C1–C2）在提问中被指出的数量, metric: tr.c_flagged, rule: {type: linear, bad: 0, good: 2}}
+  - {id: T06-R03, dim: req, tier: clean, method: auto, desc: 没有询问可推断的事项（I1–I5）, metric: tr.i_asked, rule: {type: max, max: 0, zero: 3}}
+  - {id: T06-R04, dim: req, tier: basic, method: auto, desc: 提问集中（≤1 轮、≤6 个问题）, value_expr: "v['tr.rounds'] <= 1 and v['tr.questions'] <= 6", rule: {type: bool}}
+  - {id: T06-R05, dim: req, tier: basic, method: auto, desc: 存在每日时长上限（≤ 8 小时）, value_expr: "v['js.rules.limit_hours'] <= 8", rule: {type: bool}}
+  - {id: T06-R06, dim: req, tier: excellent, method: auto, desc: 每日上限与真实意图一致（4 小时）, metric: js.rules.limit_hours, rule: {type: eq, value: 4}}
+  - {id: T06-R07, dim: req, tier: excellent, method: auto, desc: 预约窗口与真实意图一致（今天、明天可订，后天不可）, value_expr: "v['js.rules.today_ok'] and v['js.rules.tomorrow_ok'] and v['js.rules.day_after_blocked']", rule: {type: bool}}
+  - {id: T06-R08, dim: req, tier: advanced, method: auto, desc: 爽约被记录/标记, metric: js.rules.noshow_marked, rule: {type: bool}}
+  - {id: T06-R09, dim: req, tier: excellent, method: auto, desc: 两次爽约后被限制预约（与真实意图一致）, metric: js.rules.ban_after_two, rule: {type: bool}}
+  - id: T06-S01
+    dim: req
+    tier: advanced
+    method: agent
+    desc: ASSUMPTIONS.md 对没问到的关键点（K1–K3）写明了假设，且相关规则做成了集中可改的常量
+    anchors: ["没有假设说明", "只写了一部分", "K1–K3 都有说明（问过的视为覆盖）", "全部覆盖，且规则集中配置、改一处即可"]
+  - id: T06-S02
+    dim: req
+    tier: excellent
+    method: agent
+    desc: 识别并处理了两处矛盾（C1 一周 vs 明天；C2 不登录 vs 防他人取消），在提问或 ASSUMPTIONS.md 中说明
+    anchors: ["都没发现", "发现一处", "两处都发现", "两处都发现并给出合理方案（如学号+PIN）"]
+  - id: T06-S03
+    dim: req
+    tier: advanced
+    method: agent
+    desc: 身份方案兼顾“越简单越好”与“别人不能帮我取消”
+    anchors: ["无身份概念", "有身份但可随意冒用", "轻量身份验证（如学号+PIN）", "轻量且说明了局限与后端接入方案"]
+  # ---------------- 工程化 ----------------
+  - {id: T06-E01, dim: eng, tier: basic, method: auto, desc: 交付物齐全（index.html、ASSUMPTIONS.md）, metric: files.required_ratio, rule: {type: ratio}}
+  - {id: T06-E02, dim: eng, tier: advanced, method: auto, desc: 控制台零报错, metric: browser.errors_total, rule: {type: max, max: 0, zero: 5}}
+  - {id: T06-E03, dim: eng, tier: basic, method: auto, desc: 评测接口齐全, metric: browser.hooks_ratio, rule: {type: ratio}}
+  - {id: T06-E04, dim: eng, tier: basic, method: auto, desc: 无白名单外外部引用, metric: files.external_refs, rule: {type: max, max: 0, zero: 3}}
+  - {id: T06-E05, dim: eng, tier: clean, method: auto, desc: 无占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}

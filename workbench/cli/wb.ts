@@ -23,7 +23,7 @@ function findRoot(): string {
 }
 
 // ---------- 参数 ----------
-const BOOL = new Set(['json', 'all', 'fast', 'skip-graded', 'wait', 'no-wait', 'errors', 'follow', 'mobile', 'full', 'show', 'register', 'no-grade', 'timed-out', 'open', 'no-inject', 'warnings', 'help']);
+const BOOL = new Set(['json', 'all', 'fast', 'skip-graded', 'wait', 'no-wait', 'errors', 'follow', 'mobile', 'full', 'show', 'register', 'no-grade', 'timed-out', 'open', 'no-inject', 'warnings', 'help', 'refresh']);
 const flags: Record<string, string | boolean> = {};
 const pos: string[] = [];
 for (let i = 0; i < argv.length; i++) {
@@ -130,8 +130,12 @@ async function resolveRef(s: string): Promise<string> {
 const HELP = `wb — Bench Workbench CLI（工作台 http://127.0.0.1:41873）
 
 服务      wb status | wb serve [--open] | wb start | wb stop | wb open [视图]
-题库      wb tasks | wb prompt <T05> [--variant A]
-模型      wb models | wb model add <供应商>/<模型> [--harness "Claude Code"]
+题库      wb tasks | wb prompt <T05> [--for 供应商/模型] [--variant A]   带统一运行约定（工作目录绝对路径、交付文件夹名）
+模型      wb models | wb model add <模型名|供应商/模型> [--vendor X] [--harness "Claude Code"]   只写模型名时自动识别供应商
+Harness   wb harness [--refresh] | wb harness open <id> [--ref 供应商/模型/题号/rN]
+交付      wb detect   各运行的交付清单进度、FINAL_MESSAGE.md 是否出现
+AI 评审   wb ai-prompt [run_id|ref]   给评分 Agent 的提示词（skills 路径 + 步骤）；不带参数 = 全部待评 Agent 项
+Skills    wb skills sync   把 skills/ 镜像到 .agents/skills/（不含 hidden/）
 运行      wb run new <供应商>/<模型> <T05> [--variant A|C] [--harness X]
           wb run list [--model 供应商/模型] [--task T05]
           wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "…"] [--wall-min 30 --cost-usd 1.2 …] [--timed-out] [--register] [--no-grade]
@@ -196,18 +200,42 @@ async function main() {
       return out(rows, () => table([['题号', '名称', '交付目录', '变体', '检查项', '人工', 'agent', '时限'], ...rows.map((r) => [r.id, r.name, r.deliverable + '/', r.variants.join('/') || '—', r.items, r.human, r.agent, (r.time_limit ?? '—') + '′'])]));
     }
     case 'prompt': {
-      if (!sub) die('用法：wb prompt <T05> [--variant A]');
-      const r = await get(`/api/ws/prompt?task=${encodeURIComponent(sub.toUpperCase())}&variant=${encodeURIComponent(str('variant') || '')}`);
-      return out(r, () => { for (const w of r.warnings) console.error('⚠ ' + w); process.stdout.write(r.text); });
+      if (!sub) die('用法：wb prompt <T05> [--for 供应商/模型] [--variant A]');
+      const r = await get(`/api/ws/prompt?task=${encodeURIComponent(sub.toUpperCase())}&variant=${encodeURIComponent(str('variant') || '')}&for=${encodeURIComponent(str('for') || '')}`);
+      return out(r, () => { for (const w of r.warnings) console.error('⚠ ' + w); if (r.workspace) console.error(`· 工作目录 ${r.workspace}${r.exists ? '（复用未开始的运行）' : '（尚未创建，wb run new 会创建）'}`); process.stdout.write(r.text); });
+    }
+    case 'ai-prompt': {
+      const q = !sub ? '' : sub.includes('/') ? `?ref=${encodeURIComponent(sub)}` : `?run_id=${encodeURIComponent(sub)}`;
+      const r = await get(`/api/review-prompt${q}`);
+      return out(r, () => process.stdout.write(r.text));
+    }
+    case 'detect': {
+      const rows = await get<any[]>('/api/ws/detect');
+      return out(rows, () => table([['ref', '交付', 'FINAL_MESSAGE', '结束', '入口'], ...rows.map((r) => [r.ref, r.detect ? `${r.detect.done}/${r.detect.total}` : '—', r.detect?.final ? '✔' : '', r.ended_at ? '✔' : '', r.entry || '—'])]));
+    }
+    case 'harness': {
+      if (sub === 'open') {
+        if (!rest[0]) die('用法：wb harness open <id> [--ref 供应商/模型/题号/rN]');
+        const r = await post('/api/harness/open', { id: rest[0], ref: str('ref') });
+        return out(r, () => console.log('✔ ' + r.how));
+      }
+      const rows = await get<any[]>(`/api/harness${flags.refresh ? '?refresh=1' : ''}`);
+      return out(rows, () => table([['id', '名称', '类型', '已安装', '路径'], ...rows.map((h) => [h.id, h.name, h.kind, h.installed ? '✔' : '', h.path || '—'])]));
+    }
+    case 'skills': {
+      if (sub !== 'sync') die('用法：wb skills sync   （把 skills/ 镜像到 .agents/skills/，不含 hidden/）');
+      const r = await post('/api/skills/sync');
+      return out(r, () => console.log(`✔ 已同步到 ${r.dir}（更新 ${r.copied} 个文件）`));
     }
     case 'models': {
       const st = await get<BenchStore>('/api/store');
       return out(st.models, () => table([['供应商', '模型', '默认 harness', '工作区运行', '已登记'], ...st.models.map((m) => [m.vendor, m.name, m.harness || '—', st.workspaces.filter((w) => w.vendor === m.vendor && w.model === m.name).length, st.runs.filter((r) => r.model === m.name).length])]));
     }
     case 'model': {
-      if (sub !== 'add' || !rest[0]) die('用法：wb model add <供应商>/<模型> [--harness X] [--notes …]');
+      if (sub !== 'add' || !rest[0]) die('用法：wb model add <模型名> 或 <供应商>/<模型> [--harness X] [--notes …]');
+      const hasVendor = rest[0].includes('/');
       const [vendor, ...n] = rest[0].split('/');
-      const m = await post('/api/models', { vendor, name: n.join('/'), harness: str('harness'), notes: str('notes'), family: str('family') });
+      const m = await post('/api/models', hasVendor ? { vendor, name: n.join('/'), harness: str('harness'), notes: str('notes'), family: str('family') } : { input: rest[0], vendor: str('vendor'), harness: str('harness'), notes: str('notes'), family: str('family') });
       return out(m, () => console.log(`✔ 模型 ${m.vendor}/${m.name}\n  工作区 ${path.join(ROOT, 'model', m.vendor, m.name)}`));
     }
     case 'run': return runCmd(sub, rest);
