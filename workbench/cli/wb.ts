@@ -139,7 +139,7 @@ Skills    wb skills sync   把 skills/ 镜像到 .agents/skills/（不含 hidden
 宠物      wb pet | wb pet quit   桌面宠物（屏幕右下角的状态精灵：交付提醒、登记评分、截屏存证）
 运行      wb run new <供应商>/<模型> <T05> [--variant A|C] [--harness X]
           wb run list [--model 供应商/模型] [--task T05]
-          wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "…"] [--wall-min 30 --cost-usd 1.2 …] [--timed-out] [--register] [--no-grade]
+          wb run start <ref> [--at ISO时间] | wb run reopen <ref>（撤销误点的结束，开跑时间不变） | wb run finish <ref> [--final-file f.md|--final "…"] [--wall-min 30 --cost-usd 1.2 …] [--timed-out] [--register] [--no-grade]
           wb run register <ref> [--no-grade] [--fast]
 回收站    wb run stop <ref> [--reason …]   彻底停止并作废（关掉该目录的开发服务器 / 预览；外部 Agent 会话需在 harness 里手动停）
           wb run discard <ref|run_id> [--reason …] | wb run restore <ref|run:run_id> | wb trash
@@ -515,6 +515,11 @@ async function runCmd(sub: string | undefined, rest: string[]) {
       }
       return;
     }
+    case 'reopen': {
+      const ref = await resolveRef(rest[0] || '');
+      const r = await post('/api/ws/patch', { ref, ended_at: null, timed_out: false });
+      return out(r, () => console.log(`✔ ${ref} 已撤销结束，继续计时（开跑 ${r.started_at || '未开始'}）`));
+    }
     case 'stop':
     case 'discard': {
       const arg = rest[0] || '';
@@ -533,7 +538,7 @@ async function runCmd(sub: string | undefined, rest: string[]) {
       const r = await post('/api/runs/restore', { id: isRef(arg) || arg.startsWith('run:') ? arg : /[\\/]/.test(arg) ? await resolveRef(arg) : 'run:' + arg });
       return out(r, () => console.log(`✔ 已恢复 ${r.id}`));
     }
-    default: die('用法：wb run new|list|start|finish|register|stop|discard|restore …');
+    default: die('用法：wb run new|list|start|reopen|finish|register|stop|discard|restore …');
   }
 }
 

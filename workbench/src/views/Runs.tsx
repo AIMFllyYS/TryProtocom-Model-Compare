@@ -248,10 +248,11 @@ function RunDetail({ row }: { row: Row }) {
           <div className="grow" />
           <Btn tone="ghost" icon={<TimerReset size={14} />} onClick={() => void act(() => post('/api/ws/patch', { ref: ws.ref, started_at: null }), '已重置计时')}>重置</Btn>
           <Btn tone="danger" icon={<OctagonX size={14} />} tip="作废本次运行并移入回收站，不参与任何评估；可在回收站恢复" onClick={() => void acts.discard(row, true)}>彻底停止</Btn>
-          <Btn icon={<Square size={14} />} onClick={() => void act(() => post('/api/ws/finish', { ref: ws.ref, timed_out: limitMs > 0 && elapsed > limitMs }), '已结束计时')}>手动结束</Btn>
+          <Btn icon={<Square size={14} />} onClick={() => void acts.endTimer(ws.ref, { timed_out: limitMs > 0 && elapsed > limitMs })}>手动结束</Btn>
         </div></Card>
       )}
-      {ws && stage === 3 && <FinishForm ws={ws} finalText={texts?.text || ''} onDone={() => void wb.refresh(['store', 'jobs'])} />}
+      {ws && stage === 3 && <FinishForm ws={ws} finalText={texts?.text || ''} onDone={() => void wb.refresh(['store', 'jobs'])}
+        onReopen={!ws.detect?.final ? () => void acts.reopen(ws.ref) : undefined} />}
       {ws && stage === 4 && (
         <Card className="mt"><div className="action-row"><div className="grow"><b>已登记，等待自动评分</b><div className="muted small">评分会运行隐藏测试、浏览器探针、ffprobe 等，可能需要几分钟。</div></div>
           <Btn tone="ghost" onClick={() => void wb.runJob({ kind: 'grade', runs: [run!.run_id], fast: true }, '快速评分')}>快速评分</Btn>
@@ -291,7 +292,7 @@ function DeliverPanel({ ws }: { ws: WorkspaceRun }) {
   );
 }
 
-function FinishForm({ ws, finalText, onDone }: { ws: WorkspaceRun; finalText: string; onDone: () => void }) {
+function FinishForm({ ws, finalText, onDone, onReopen }: { ws: WorkspaceRun; finalText: string; onDone: () => void; onReopen?: () => void }) {
   const wb = useWb();
   const prof = wb.store?.models.find((m) => m.vendor === ws.vendor && m.name === ws.model);
   const [final, setFinal] = useState(finalText);
@@ -314,7 +315,8 @@ function FinishForm({ ws, finalText, onDone }: { ws: WorkspaceRun; finalText: st
   };
   const d = ws.detect;
   return (
-    <Card className="mt" title={<span className="row gap-s"><CircleCheck size={16} className="tone-text-ok" />{ws.auto_finished ? '模型已交付（自动检测）' : '运行已结束'}</span>} sub={`墙钟 ${fmt.min(wall)}${d ? ` · 交付 ${d.done}/${d.total}` : ''}`}>
+    <Card className="mt" title={<span className="row gap-s"><CircleCheck size={16} className="tone-text-ok" />{ws.auto_finished ? '模型已交付（自动检测）' : '运行已结束'}</span>} sub={`墙钟 ${fmt.min(wall)}${d ? ` · 交付 ${d.done}/${d.total}` : ''}`}
+      extra={onReopen && <Btn size="sm" tone="ghost" icon={<TimerReset size={13} />} tip="结束点错了、模型其实还在跑：清掉结束时间，开跑时间不变，等 FINAL_MESSAGE.md 自动记结束" onClick={onReopen}>撤销结束，继续计时</Btn>}>
       <div className="stack">
         <Field label="模型最后一条回复" hint={ws.auto_finished ? `已从 ${FINAL_FILE} 导入，可修改` : `也可以让模型写入工作目录下的 ${FINAL_FILE}`}>
           <textarea rows={6} value={final} onChange={(e) => setFinal(e.target.value)} placeholder="粘贴 Agent 的最终汇报…" />

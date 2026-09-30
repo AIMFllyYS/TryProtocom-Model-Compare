@@ -54,12 +54,26 @@ export function useRunActions() {
     } catch (e: any) { toast.error(e.message); }
   };
   const act = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); toast.ok(ok); await wb.refresh(['store', 'jobs']); } catch (e: any) { toast.error(e.message); } };
+  /** 撤销结束：清掉结束时间和超时标记，开跑时间戳保持不变 */
+  const reopen = async (ref: string, quiet = false) => {
+    try { await post('/api/ws/patch', { ref, ended_at: null, timed_out: false }); await wb.refresh(['store']); if (!quiet) toast.ok('已撤销结束，继续计时（开跑时间不变）'); return true; }
+    catch (e: any) { toast.error(e.message); return false; }
+  };
+  const endTimer = async (ref: string, body: Record<string, unknown> = {}) => {
+    try {
+      await post('/api/ws/finish', { ref, ...body });
+      await wb.refresh(['store']);
+      toast.ok('已结束计时', { ttl: 9000, action: { label: '撤销', run: () => void reopen(ref, true).then((ok) => ok && toast.ok('已撤销，继续计时')) } });
+    } catch (e: any) { toast.error(e.message); }
+  };
 
   const items = (r: Row, opts: { detail?: boolean } = {}): MenuItem[] => {
     const w = r.ws, run = r.run;
     const live = isLive(r);
     const delivered = !!w && !run && (!!w.ended_at || !!w.detect?.final);
     const ready = delivered && !!w?.detect && w.detect.done === w.detect.total;
+    // 手动结束了、但模型其实还没交付（没写 FINAL_MESSAGE.md、没登记）：允许撤销结束
+    const reopenable = !!w && !run && !!w.ended_at && !w.detect?.final && !w.grader_run_id;
     return tidy([
       !opts.detail && { label: '打开详情', icon: <PanelRight size={15} />, kbd: 'Enter', onClick: () => go('runs', w ? [w.ref] : [], w ? undefined : { id: run!.run_id }) },
       (!!w?.entry || !!run) && { label: run?.graded ? '预览并打分' : '预览产物', icon: <MonitorPlay size={15} />, onClick: () => go('stage', [], { open: w ? 'ws:' + w.ref : 'run:' + run!.run_id, score: run?.graded ? run.run_id : undefined }) },
@@ -67,7 +81,8 @@ export function useRunActions() {
       !!w && { label: '复制提示词', icon: <Copy size={15} />, onClick: async () => { const t = await get<{ prompt: string }>('/api/ws/final', { ref: w.ref }); if (t.prompt && (await copyText(t.prompt))) toast.ok('已复制提示词'); else toast.warn('没有找到提示词留档'); } },
       !!run && { label: 'AI 评审提示词', icon: <Bot size={15} />, onClick: async () => { const t = await get<{ text: string }>('/api/review-prompt', { run_id: run.run_id }); if (await copyText(t.text)) toast.ok('已复制 AI 评审提示词'); } },
       { sep: true },
-      live && { label: '结束计时', desc: '模型做完了但没写 FINAL_MESSAGE.md · 仍计入评测', icon: <Flag size={15} />, onClick: () => void act(() => post('/api/ws/finish', { ref: w!.ref }), '已结束计时') },
+      live && { label: '结束计时', desc: '模型做完了但没写 FINAL_MESSAGE.md · 仍计入评测', icon: <Flag size={15} />, onClick: () => void endTimer(w!.ref) },
+      reopenable && { label: '撤销结束，继续计时', desc: '点错了结束：清掉结束时间，开跑时间不变', icon: <Undo2 size={15} />, onClick: () => void reopen(w!.ref) },
       ready && { label: '登记并评分', icon: <FileCheck2 size={15} />, onClick: () => void act(() => post('/api/ws/finish', { ref: w!.ref, at: w!.ended_at, register: true, grade: true }), '已提交登记，完成后自动评分') },
       !!run && { label: '重新评分', icon: <RefreshCw size={15} />, onClick: () => void wb.runJob({ kind: 'grade', runs: [run.run_id] }, '重新评分') },
       { sep: true },
@@ -76,7 +91,7 @@ export function useRunActions() {
     ]);
   };
   const open = (at: Parameters<typeof openContextMenu>[0], r: Row, opts?: { detail?: boolean }) => openContextMenu(at, items(r, opts), <span className="ellipsis">{nameOf(r)}</span>);
-  return { items, open, discard, restore, nameOf };
+  return { items, open, discard, restore, reopen, endTimer, nameOf };
 }
 
 /** 卡片 / 列表行共用：右键菜单、Delete 键删除、拖进回收站 */

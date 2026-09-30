@@ -178,7 +178,7 @@ Skills    wb skills sync   \u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF
 \u5BA0\u7269      wb pet | wb pet quit   \u684C\u9762\u5BA0\u7269\uFF08\u5C4F\u5E55\u53F3\u4E0B\u89D2\u7684\u72B6\u6001\u7CBE\u7075\uFF1A\u4EA4\u4ED8\u63D0\u9192\u3001\u767B\u8BB0\u8BC4\u5206\u3001\u622A\u5C4F\u5B58\u8BC1\uFF09
 \u8FD0\u884C      wb run new <\u4F9B\u5E94\u5546>/<\u6A21\u578B> <T05> [--variant A|C] [--harness X]
           wb run list [--model \u4F9B\u5E94\u5546/\u6A21\u578B] [--task T05]
-          wb run start <ref> | wb run finish <ref> [--final-file f.md|--final "\u2026"] [--wall-min 30 --cost-usd 1.2 \u2026] [--timed-out] [--register] [--no-grade]
+          wb run start <ref> [--at ISO\u65F6\u95F4] | wb run reopen <ref>\uFF08\u64A4\u9500\u8BEF\u70B9\u7684\u7ED3\u675F\uFF0C\u5F00\u8DD1\u65F6\u95F4\u4E0D\u53D8\uFF09 | wb run finish <ref> [--final-file f.md|--final "\u2026"] [--wall-min 30 --cost-usd 1.2 \u2026] [--timed-out] [--register] [--no-grade]
           wb run register <ref> [--no-grade] [--fast]
 \u56DE\u6536\u7AD9    wb run stop <ref> [--reason \u2026]   \u5F7B\u5E95\u505C\u6B62\u5E76\u4F5C\u5E9F\uFF08\u5173\u6389\u8BE5\u76EE\u5F55\u7684\u5F00\u53D1\u670D\u52A1\u5668 / \u9884\u89C8\uFF1B\u5916\u90E8 Agent \u4F1A\u8BDD\u9700\u5728 harness \u91CC\u624B\u52A8\u505C\uFF09
           wb run discard <ref|run_id> [--reason \u2026] | wb run restore <ref|run:run_id> | wb trash
@@ -636,6 +636,11 @@ async function runCmd(sub, rest) {
       }
       return;
     }
+    case "reopen": {
+      const ref = await resolveRef(rest[0] || "");
+      const r = await post("/api/ws/patch", { ref, ended_at: null, timed_out: false });
+      return out(r, () => console.log(`\u2714 ${ref} \u5DF2\u64A4\u9500\u7ED3\u675F\uFF0C\u7EE7\u7EED\u8BA1\u65F6\uFF08\u5F00\u8DD1 ${r.started_at || "\u672A\u5F00\u59CB"}\uFF09`));
+    }
     case "stop":
     case "discard": {
       const arg = rest[0] || "";
@@ -655,7 +660,7 @@ async function runCmd(sub, rest) {
       return out(r, () => console.log(`\u2714 \u5DF2\u6062\u590D ${r.id}`));
     }
     default:
-      die("\u7528\u6CD5\uFF1Awb run new|list|start|finish|register|stop|discard|restore \u2026");
+      die("\u7528\u6CD5\uFF1Awb run new|list|start|reopen|finish|register|stop|discard|restore \u2026");
   }
 }
 main().catch((e) => die(e?.message || String(e)));
