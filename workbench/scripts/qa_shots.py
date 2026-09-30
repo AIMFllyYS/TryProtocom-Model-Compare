@@ -96,6 +96,7 @@ def api(path, q):
     if path == '/api/ws/claim':
         w = dict(workspaces[0]); w['started_at'] = iso(time.time()); w['index'] = 2; w['ref'] = 'OpenAI/GPT-6.1-Sol/T05/r2'
         return {'run': w, 'text': prompt_head, 'opened': '已启动 DeepSeek Harness'}
+    if path == '/api/shots': return {'path': 'model/OpenAI/GPT-6.1-Sol/T01/r1.shots/2026-10-01T08-30-00-screen.png'}
     if path == '/api/pet/feed':
         live = [w for w in workspaces if not w['grader_run_id']]
         brief = lambda w: {'ref': w['ref'], 'tkey': w['tkey'], 'index': w['index'], 'name': w['task'], 'vendor': w['vendor'], 'model': w['model'], 'harness': w['harness'], 'started_at': w['started_at'], 'ended_at': w['ended_at'], 'detect': {'done': w['detect']['done'], 'total': w['detect']['total'], 'final': w['detect']['final']}}
@@ -278,6 +279,50 @@ with sync_playwright() as pw:
             pp.locator('.pp-h .pp-x').last.click(); pp.wait_for_timeout(700)
             pp.screenshot(path=str(OUT / f'{theme}-petjobs-orb.png'), clip={'x': 300, 'y': 500, 'width': 160, 'height': 160})
             errors.append(f"[{theme}] pet-orb working={pp.locator('.orb.working').count()} dot={pp.locator('.orb-dot').count()} prog={pp.locator('.orb-prog').get_attribute('style')}")
+            pc.close()
+        if ONLY and 'petfx' in ONLY:
+            # 假的主进程桥：记录尺寸请求，截屏返回一张渐变图（不碰真实屏幕）
+            fake = """window.__sizes = []; const c = document.createElement('canvas'); c.width = 640; c.height = 400; const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 640, 400); gr.addColorStop(0, '#6a5cff'); gr.addColorStop(1, '#ff8fb4'); g.fillStyle = gr; g.fillRect(0, 0, 640, 400); g.fillStyle = '#fff'; g.font = '48px sans-serif'; g.fillText('screen', 220, 220);
+              window.wbPet = { setSize: (w, h) => window.__sizes.push([w, h]), dragStart() {}, resizeStart() {}, gestureEnd: async () => ({ w: 420, h: 600 }), capture: async () => c.toDataURL(), open() {}, quit() {} };"""
+            # 1) 真实的球窗口尺寸：光晕不应被窗口边缘截断
+            oc = b.new_context(viewport={'width': 176, 'height': 176}, device_scale_factor=2, color_scheme=theme)
+            oc.add_init_script(fake); oc.route('http://wb.local/**', handle)
+            op = oc.new_page(); op.on('pageerror', lambda e: errors.append(f'[{theme}/orb] pageerror: {e}'))
+            op.goto('http://wb.local/pet.html', timeout=20000); op.wait_for_timeout(1200)
+            op.screenshot(path=str(OUT / f'{theme}-fx-orbwin.png'))
+            oc.close()
+            # 2) 面板里的各个交互动效
+            pc = b.new_context(viewport={'width': 468, 'height': 690}, device_scale_factor=2, color_scheme=theme)
+            pc.add_init_script(fake); pc.route('http://wb.local/**', handle)
+            pp = pc.new_page()
+            pp.on('console', lambda m: errors.append(f'[{theme}/fx] console.{m.type}: {m.text}') if m.type in ('error', 'warning') else None)
+            pp.on('pageerror', lambda e: errors.append(f'[{theme}/fx] pageerror: {e}'))
+            pp.goto('http://wb.local/pet.html#jobs', timeout=20000); pp.wait_for_timeout(1200)
+            pp.mouse.move(10, 300); pp.wait_for_timeout(300)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-resize-hover.png'))
+            ob = pp.locator('.orb').bounding_box()
+            cx, cy = ob['x'] + ob['width'] / 2, ob['y'] + ob['height'] / 2
+            pp.mouse.move(cx, cy); pp.mouse.down()
+            for k in range(1, 8): pp.mouse.move(cx - k * 9, cy - k * 2); pp.wait_for_timeout(16)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-drag.png'), clip={'x': 268, 'y': 490, 'width': 200, 'height': 200})
+            pp.mouse.up(); pp.wait_for_timeout(140)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-land.png'), clip={'x': 268, 'y': 490, 'width': 200, 'height': 200})
+            errors.append(f"[{theme}] fx after-drag panel-open={pp.locator('.pet-panel').count()} sizes={pp.evaluate('window.__sizes')}")
+            pp.wait_for_timeout(800)
+            pp.get_by_role('button', name='截屏存证').click(); pp.wait_for_timeout(200)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-cheese.png'), clip={'x': 268, 'y': 490, 'width': 200, 'height': 200})
+            pp.wait_for_timeout(330)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-flash.png'))
+            pp.wait_for_timeout(450)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-fly.png'))
+            pp.wait_for_timeout(900)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-saved.png'))
+            pp.get_by_role('button', name='打开工作台').click(); pp.wait_for_timeout(330)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-launch.png'), clip={'x': 228, 'y': 430, 'width': 240, 'height': 260})
+            pp.wait_for_timeout(900)
+            pp.locator('.orb').click(); pp.wait_for_timeout(900)
+            pp.screenshot(path=str(OUT / f'{theme}-fx-collapsed.png'))
+            errors.append(f"[{theme}] fx sizes-final={pp.evaluate('window.__sizes')[-3:]}")
             pc.close()
         ctx.close()
     b.close()

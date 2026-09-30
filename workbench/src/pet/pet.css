@@ -18,22 +18,32 @@ button { font: inherit; color: inherit; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .pet-root { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 8px; padding: 10px 12px 12px; }
+/* 滚动条完全隐藏（仍可滚轮 / 触控板滚动） */
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
-/* ---------- 精灵 ---------- */
-.orb { position: relative; width: 104px; height: 104px; flex: none; cursor: grab; touch-action: none; }
-.orb:active { cursor: grabbing; }
-.orb-glow { position: absolute; inset: 12px; border-radius: 50%; filter: blur(16px); opacity: .7; background: conic-gradient(from 200deg, #8b7bff, #ff8fb4, #ffc56b, #6fe0c2, #6fb6ff, #8b7bff); animation: hue 9s linear infinite; }
-@keyframes hue { to { filter: blur(16px) hue-rotate(360deg); } }
+/* ---------- 精灵 ----------
+   结构：.orb（固定盒子，接收拖动）> .orb-float（常驻浮动 / 蹦跳）> .orb-react（一次性反应，Web Animations 播放）> 光晕、环、身体、角标。
+   光晕、进度环、身体、角标都在同一个浮动层里一起动，不会错位；.orb 右下留出外边距，窗口边缘不截断光晕。 */
+.orb { position: relative; width: 104px; height: 104px; flex: none; margin: 0 16px 16px 0; cursor: grab; touch-action: none; --lx: 0; --ly: 0; --tilt: 0deg; }
+.orb.dragging { cursor: grabbing; }
+.orb-float, .orb-react { position: absolute; inset: 0; }
+.orb-float { animation: float 4.2s ease-in-out infinite; }
+.orb-react { transform-origin: 50% 88%; }
+@keyframes float { 50% { transform: translateY(-5px); } }
+.orb-glow { position: absolute; inset: 16px; border-radius: 50%; filter: blur(14px); opacity: .7; background: conic-gradient(from 200deg, #8b7bff, #ff8fb4, #ffc56b, #6fe0c2, #6fb6ff, #8b7bff); animation: hue 9s linear infinite; }
+@keyframes hue { to { filter: blur(14px) hue-rotate(360deg); } }
 .orb-body {
-  position: absolute; inset: 14px; border-radius: 50%; overflow: hidden;
+  position: absolute; inset: 14px; border-radius: 50%; overflow: hidden; transition: transform .25s cubic-bezier(.34, 1.5, .64, 1);
   background: radial-gradient(120% 120% at 30% 20%, rgb(255 255 255 / .95), rgb(255 255 255 / .45) 38%, transparent 62%),
     conic-gradient(from 220deg, #b3a9ff, #ffb3cd, #ffe0a3, #aef0dc, #aad4ff, #b3a9ff);
   box-shadow: inset 0 -8px 18px rgb(80 60 180 / .28), inset 0 2px 1px rgb(255 255 255 / .9), 0 10px 24px -8px rgb(70 50 160 / .5), 0 0 0 .5px rgb(255 255 255 / .6);
-  animation: float 4.2s ease-in-out infinite;
 }
-@keyframes float { 50% { transform: translateY(-5px) scale(1.015); } }
+.orb:hover .orb-body { transform: scale(1.04); }
+.orb.pressing .orb-body { transform: scale(.92, .9); transition-duration: .12s; }
+.orb:hover .cheek { background: rgb(255 110 150 / .7); }
 .orb-sheen { position: absolute; left: 14%; top: 8%; width: 46%; height: 30%; border-radius: 50%; background: linear-gradient(180deg, rgb(255 255 255 / .95), rgb(255 255 255 / 0)); transform: rotate(-18deg); }
-.orb-face { position: absolute; inset: 0; }
+.orb-face { position: absolute; inset: 0; transform: translate(calc(var(--lx) * 4px), calc(var(--ly) * 3px)); transition: transform .22s ease-out; }
 .eye { position: absolute; top: 44%; width: 9px; height: 12px; border-radius: 6px; background: #252333; animation: blink 5.5s infinite; }
 .eye.l { left: 33%; } .eye.r { right: 33%; }
 .eye::after { content: ""; position: absolute; left: 2px; top: 2px; width: 3px; height: 3px; border-radius: 50%; background: #fff; }
@@ -41,17 +51,20 @@ button { font: inherit; color: inherit; }
 .mouth { position: absolute; left: 50%; top: 62%; width: 12px; height: 6px; margin-left: -6px; border: 2px solid #252333; border-top: 0; border-radius: 0 0 8px 8px; }
 .cheek { position: absolute; top: 58%; width: 10px; height: 6px; border-radius: 50%; background: rgb(255 120 160 / .45); }
 .cheek.l { left: 22%; } .cheek.r { right: 22%; }
-.orb-ring { position: absolute; inset: 6px; border-radius: 50%; border: 2px solid transparent; opacity: 0; transition: opacity .3s; }
+/* 忙碌环：对称的彗尾圆环（不是只有两条边上色的边框），以球心旋转 */
+.orb-ring { position: absolute; inset: 5px; border-radius: 50%; opacity: 0; transition: opacity .3s;
+  background: conic-gradient(from 0deg, transparent 0 58%, rgb(255 143 180 / .7) 80%, #6a5cff);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); }
 .orb-badge { position: absolute; right: 8px; top: 8px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; display: grid; place-items: center; font-weight: 800; font-size: 12px; color: #fff; background: linear-gradient(180deg, #ff6b8b, #e0453c); box-shadow: 0 4px 10px -2px rgb(224 69 60 / .6), 0 0 0 2px rgb(255 255 255 / .9); animation: pop .5s cubic-bezier(.34, 1.6, .64, 1); }
 @keyframes pop { from { transform: scale(0); } }
 .orb-zz { position: absolute; right: 4px; top: 0; font-weight: 800; color: var(--t3); animation: zz 2.4s ease-in-out infinite; }
 @keyframes zz { 50% { transform: translate(4px, -6px); opacity: .4; } }
 
 /* 情绪 */
-.mood-busy .orb-ring { opacity: 1; border-top-color: #6a5cff; border-right-color: #ff8fb4; animation: spin 1.6s linear infinite; }
+.mood-busy .orb-ring { opacity: 1; animation: spin 1.6s linear infinite; }
 .mood-busy .eye { animation: look 3s ease-in-out infinite; }
 @keyframes look { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-2px); } 70% { transform: translateX(2px); } }
-.mood-alert .orb-body { animation: bounce 1.1s cubic-bezier(.34, 1.4, .64, 1) infinite; }
+.mood-alert .orb-float { animation: bounce 1.1s cubic-bezier(.34, 1.4, .64, 1) infinite; }
 @keyframes bounce { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-10px) scale(1.04, .97); } 60% { transform: translateY(0) scale(.98, 1.03); } }
 .mood-alert .mouth { width: 12px; height: 9px; border-radius: 0 0 10px 10px; background: #252333; }
 .mood-happy .eye { height: 6px; top: 46%; border-radius: 6px 6px 0 0; background: transparent; border: 2.5px solid #252333; border-bottom: 0; animation: none; }
@@ -71,7 +84,7 @@ button { font: inherit; color: inherit; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.96); } }
 .pet-bubble { padding: 14px 14px 12px; }
-.pet-bubble::after { content: ""; position: absolute; right: 44px; bottom: -7px; width: 14px; height: 14px; background: var(--g); transform: rotate(45deg); border-radius: 3px; box-shadow: 2px 2px 3px -1px rgb(20 24 60 / .12); }
+.pet-bubble::after { content: ""; position: absolute; right: 61px; bottom: -7px; width: 14px; height: 14px; background: var(--g); transform: rotate(45deg); border-radius: 3px; box-shadow: 2px 2px 3px -1px rgb(20 24 60 / .12); }
 .pb-x { position: absolute; right: 8px; top: 8px; border: 0; background: transparent; cursor: pointer; color: var(--t3); }
 .pb-t { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; font-weight: 600; padding-right: 16px; }
 .pb-ic { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; flex: none; background: var(--ok); color: #fff; }
@@ -101,7 +114,6 @@ button { font: inherit; color: inherit; }
 .pp-stats button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px; border: 0; border-radius: 10px; background: var(--g); cursor: pointer; text-align: left; box-shadow: 0 0 0 .5px var(--hair); }
 .pp-stats b { font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .pp-stats span { font-size: 10.5px; color: var(--t3); }
-.pp-job { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 10px; border-radius: 10px; background: var(--fill); color: var(--t2); font-size: 11.5px; }
 .pp-top { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 12px; }
 .pp-top .mono { width: 20px; color: var(--t3); }
 .pp-f { display: flex; align-items: center; gap: 6px; padding: 10px 12px 12px; border-top: 1px solid var(--hair); }
@@ -110,6 +122,30 @@ button { font: inherit; color: inherit; }
 .pp-btn:disabled { opacity: .5; cursor: default; }
 .pp-btn.primary { color: #fff; background: linear-gradient(180deg, #34363f, #15161b); box-shadow: inset 0 1px 0 rgb(255 255 255 / .25), 0 4px 12px -4px rgb(0 0 0 / .4); }
 .pp-btn.ghost { background: transparent; box-shadow: none; color: var(--t3); }
+.pp-btn, .pp-x, .pp-stats button, .pp-job { transition: transform .18s cubic-bezier(.34, 1.6, .64, 1), filter .15s; }
+.pp-btn:active:not(:disabled), .pp-x:active, .pp-stats button:active, .pp-job:active { transform: scale(.94); transition-duration: .08s; }
+.pp-stats button:hover { transform: translateY(-1px); }
+
+/* ---------- 面板拖边改尺寸（右下角固定）：左边、上边、左上角 ---------- */
+.rz { position: absolute; z-index: 5; }
+.rz-l { left: 0; top: 18px; bottom: 18px; width: 8px; cursor: ew-resize; }
+.rz-t { top: 0; left: 18px; right: 18px; height: 8px; cursor: ns-resize; }
+.rz-tl { left: 0; top: 0; width: 18px; height: 18px; cursor: nwse-resize; }
+.rz::after { content: ""; position: absolute; border-radius: 2px; background: var(--acc); opacity: 0; transition: opacity .2s; }
+.rz-l::after { left: 2px; top: 50%; width: 3px; height: 38px; margin-top: -19px; }
+.rz-t::after { top: 2px; left: 50%; height: 3px; width: 38px; margin-left: -19px; }
+.rz-tl::after { left: 5px; top: 5px; width: 8px; height: 8px; border-radius: 50%; }
+.rz:hover::after, body.rz-l .rz-l::after, body.rz-t .rz-t::after, body.rz-tl .rz-tl::after { opacity: .55; }
+body.resizing, body.resizing * { user-select: none !important; }
+body.rz-l, body.rz-l * { cursor: ew-resize !important; } body.rz-t, body.rz-t * { cursor: ns-resize !important; } body.rz-tl, body.rz-tl * { cursor: nwse-resize !important; }
+
+/* ---------- 面板里的短提示（截图已保存、已复制、出错） ---------- */
+.pet-toast { position: absolute; left: 50%; top: 18px; z-index: 6; max-width: calc(100% - 60px); display: flex; align-items: center; gap: 7px; padding: 7px 12px 7px 8px; border-radius: 999px;
+  transform: translateX(-50%); background: var(--g); font-size: 12px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 0 0 .5px var(--hair), 0 10px 24px -10px rgb(20 24 60 / .45); animation: toast-in .45s cubic-bezier(.34, 1.5, .64, 1) both; }
+.pet-toast .pb-ic { width: 18px; height: 18px; }
+.pet-toast.bad .pb-ic { background: var(--bad); }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -14px) scale(.9); } }
 .muted { color: var(--t3); }
 .stack0 { display: flex; flex-direction: column; gap: 3px; }
 

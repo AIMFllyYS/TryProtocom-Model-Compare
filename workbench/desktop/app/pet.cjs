@@ -27,22 +27,32 @@ var import_electron = require("electron");
 var import_node_path = __toESM(require("node:path"), 1);
 var BASE = process.env.WB_URL || `http://127.0.0.1:${process.env.WB_PORT || 41873}`;
 var win = null;
+var want = { w: 176, h: 176 };
 if (!import_electron.app.requestSingleInstanceLock()) import_electron.app.quit();
 import_electron.app.on("second-instance", () => {
   win?.showInactive();
 });
 import_electron.app.commandLine.appendSwitch("disable-renderer-backgrounding");
+var areaAt = (p) => import_electron.screen.getDisplayNearestPoint(p).workArea;
+var clampTo = (wa, w, h) => ({ w: Math.max(120, Math.min(Math.round(w), wa.width)), h: Math.max(120, Math.min(Math.round(h), wa.height)) });
 function anchorBounds(w, h, keep) {
-  const wa = import_electron.screen.getDisplayMatching(keep || import_electron.screen.getPrimaryDisplay().bounds).workArea;
-  const right = keep ? keep.x + keep.width : wa.x + wa.width - 16;
-  const bottom = keep ? keep.y + keep.height : wa.y + wa.height - 16;
-  const x = Math.max(wa.x, Math.min(right - w, wa.x + wa.width - w));
-  const y = Math.max(wa.y, Math.min(bottom - h, wa.y + wa.height - h));
-  return { x: Math.round(x), y: Math.round(y), width: w, height: h };
+  const wa = keep ? areaAt({ x: keep.x + keep.width / 2, y: keep.y + keep.height / 2 }) : import_electron.screen.getPrimaryDisplay().workArea;
+  const s = clampTo(wa, w, h);
+  const right = keep ? keep.x + keep.width : wa.x + wa.width - 8;
+  const bottom = keep ? keep.y + keep.height : wa.y + wa.height - 8;
+  const x = Math.max(wa.x, Math.min(right - s.w, wa.x + wa.width - s.w));
+  const y = Math.max(wa.y, Math.min(bottom - s.h, wa.y + wa.height - s.h));
+  return { x: Math.round(x), y: Math.round(y), width: s.w, height: s.h };
+}
+function place(b) {
+  if (!win) return;
+  want.w = b.width;
+  want.h = b.height;
+  win.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: b.width, height: b.height }, false);
 }
 async function create() {
   win = new import_electron.BrowserWindow({
-    ...anchorBounds(150, 150),
+    ...anchorBounds(want.w, want.h),
     transparent: true,
     frame: false,
     resizable: false,
@@ -69,15 +79,49 @@ async function create() {
   await win.loadURL(`${BASE}/pet.html${hash}`).catch(() => win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<body style="margin:0;background:transparent;font:13px system-ui;color:#999;display:grid;place-items:end;height:100vh">\u5DE5\u4F5C\u53F0\u672A\u8FD0\u884C</body>')}`));
 }
 import_electron.ipcMain.on("pet:size", (_e, w, h) => {
-  if (!win) return;
-  const W = Math.max(120, Math.min(480, Math.round(w))), H = Math.max(120, Math.min(720, Math.round(h)));
-  win.setBounds(anchorBounds(W, H, win.getBounds()), true);
+  if (!win || gesture) return;
+  place(anchorBounds(Number(w) || want.w, Number(h) || want.h, win.getBounds()));
 });
-import_electron.ipcMain.on("pet:move", (_e, dx, dy) => {
+var gesture = null;
+function endGesture() {
+  if (!gesture) return null;
+  clearInterval(gesture.timer);
+  gesture = null;
+  return win ? { w: want.w, h: want.h } : null;
+}
+function startGesture(edge, min) {
   if (!win) return;
-  const b = win.getBounds();
-  win.setPosition(Math.round(b.x + dx), Math.round(b.y + dy));
+  endGesture();
+  const b0 = { ...win.getBounds(), width: want.w, height: want.h };
+  const c0 = import_electron.screen.getCursorScreenPoint();
+  const g = { edge, c0, b0, until: Date.now() + 3e4, min: { w: Math.max(260, min?.w || 320), h: Math.max(300, min?.h || 380) }, timer: void 0 };
+  g.timer = setInterval(() => {
+    if (!win || !gesture || Date.now() > gesture.until) {
+      endGesture();
+      return;
+    }
+    const c = import_electron.screen.getCursorScreenPoint();
+    const dx = c.x - g.c0.x, dy = c.y - g.c0.y;
+    if (g.edge === "move") {
+      const wa2 = areaAt(c);
+      const x = Math.max(wa2.x - g.b0.width + 60, Math.min(g.b0.x + dx, wa2.x + wa2.width - 60));
+      const y = Math.max(wa2.y, Math.min(g.b0.y + dy, wa2.y + wa2.height - 60));
+      place({ x, y, width: g.b0.width, height: g.b0.height });
+      return;
+    }
+    const wa = areaAt({ x: g.b0.x + g.b0.width, y: g.b0.y + g.b0.height });
+    const right = g.b0.x + g.b0.width, bottom = g.b0.y + g.b0.height;
+    const w = g.edge === "t" ? g.b0.width : Math.max(g.min.w, Math.min(g.b0.width - dx, right - wa.x));
+    const h = g.edge === "l" ? g.b0.height : Math.max(g.min.h, Math.min(g.b0.height - dy, bottom - wa.y));
+    place({ x: right - w, y: bottom - h, width: Math.round(w), height: Math.round(h) });
+  }, 16);
+  gesture = g;
+}
+import_electron.ipcMain.on("pet:drag-start", () => startGesture("move"));
+import_electron.ipcMain.on("pet:resize-start", (_e, edge, minW, minH) => {
+  if (edge === "l" || edge === "t" || edge === "tl") startGesture(edge, { w: Number(minW) || 0, h: Number(minH) || 0 });
 });
+import_electron.ipcMain.handle("pet:gesture-end", () => endGesture());
 import_electron.ipcMain.handle("pet:capture", async () => {
   if (!win) return null;
   const b = win.getBounds();
