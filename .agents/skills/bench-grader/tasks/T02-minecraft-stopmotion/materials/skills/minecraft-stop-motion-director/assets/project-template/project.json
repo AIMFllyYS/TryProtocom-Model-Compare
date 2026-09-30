@@ -1,0 +1,49 @@
+{
+  "title": "PROJECT_TITLE",
+  "theme": "PROJECT_THEME",
+  "logline": "",
+  "duration_seconds": 60,
+  "output_fps": 24,
+  "animation_fps": 12,
+  "resolution": [1920, 1080],
+  "story": {
+    "central_emotion": "",
+    "protagonist": "Steve",
+    "goal": "",
+    "obstacle_or_change": "",
+    "hero_prop": "",
+    "ending_feeling": ""
+  },
+  "world": {
+    "biome": "",
+    "weather": "",
+    "time_of_day": "",
+    "block_palette": [],
+    "architecture": "",
+    "practical_lights": []
+  },
+  "visual_style": {
+    "texture_resolution": "32x32",
+    "dominant_palette": "",
+    "contrast_palette": "",
+    "fog": "",
+    "particles": "",
+    "lighting_strategy": ""
+  },
+  "cameras": [
+    {"id": "CAM_A", "role": "Establishing"},
+    {"id": "CAM_B", "role": "Character"},
+    {"id": "CAM_C", "role": "Action"},
+    {"id": "CAM_D", "role": "Detail"},
+    {"id": "CAM_E", "role": "Hero"},
+    {"id": "CAM_F", "role": "Emotional"},
+    {"id": "CAM_G", "role": "Ending"}
+  ],
+  "audio": {
+    "ambience": [],
+    "foley_palette": [],
+    "music_direction": "",
+    "climax_strategy": "",
+    "ending_strategy": ""
+  }
+}

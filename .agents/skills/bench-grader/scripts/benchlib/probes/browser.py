@@ -6,8 +6,8 @@ import time
 from pathlib import Path
 
 from ..common import RunContext
-from .jslib import (FPS_JS, INIT_SCRIPT, SCENE_JS, TEXT_LAYOUT_JS, browser_session, distinct_count, thumb,
-                    wrap_async)
+from .jslib import (FPS_JS, INIT_SCRIPT, LAST_RENDERER, SCENE_JS, TEXT_LAYOUT_JS, browser_session, distinct_count,
+                    thumb, wrap_async)
 
 
 def _flatten(prefix: str, val, out: dict) -> None:
@@ -67,6 +67,8 @@ def browser_probe(ctx: RunContext, opts: dict) -> None:
     vw, vh = opts.get("viewport", [1920, 1080])
     headless = (ctx.cfg.get("browser") or {}).get("headless", True)
     with browser_session(headless) as browser:
+        m.set("browser.gl", LAST_RENDERER.get("gl"))
+        m.set("browser.gl_renderer", LAST_RENDERER.get("renderer"))
         c = browser.new_context(viewport={"width": vw, "height": vh})
         c.add_init_script(INIT_SCRIPT)
         t_load = time.time()
@@ -117,6 +119,22 @@ def browser_probe(ctx: RunContext, opts: dict) -> None:
                     page.wait_for_timeout(1200)
                 except Exception as e:  # noqa: BLE001
                     m.notes.append(f"scene setup failed: {e}")
+            # 3D 库常在切到 3D 时才从 CDN 动态加载并建场景：固定等 1.2 秒会在加载稍慢时误判“没有场景”，
+            # 所以轮询到场景出现为止（默认最多 15 秒），并记录实际就绪耗时。
+            path_js = "(p) => { const v = p.split('.').reduce((o,k)=>o==null?undefined:o[k], window); return !!(v && typeof v.traverse === 'function'); }"
+            t_sc, limit = time.time(), float(sc.get("wait_s", 15))
+            ready = False
+            while time.time() - t_sc < limit:
+                try:
+                    if page.evaluate(path_js, sc.get("path", "__scene")):
+                        ready = True
+                        break
+                except Exception:  # noqa: BLE001
+                    pass
+                page.wait_for_timeout(200)
+            if ready:
+                m.set("scene.ready_s", round(time.time() - t_sc, 2))
+                page.wait_for_timeout(600)  # 让首帧渲染完、renderer.info 有数据
             info = page.evaluate(SCENE_JS, {"scene": sc.get("path", "__scene"), "renderer": sc.get("renderer", "__renderer"), "prefixes": sc.get("prefixes", [])})
             if info is None:
                 m.set("scene.available", False)
