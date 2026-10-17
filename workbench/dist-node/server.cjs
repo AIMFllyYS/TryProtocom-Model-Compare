@@ -1955,6 +1955,7 @@ function listReports(reportsDir) {
 // server/store.ts
 var import_node_fs7 = __toESM(require("node:fs"), 1);
 var import_node_path6 = __toESM(require("node:path"), 1);
+var import_node_crypto2 = require("node:crypto");
 function emptyStore() {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   return { schema: "bench-store/1", created_at: now, updated_at: now, machine: machineName(), benchmark: {}, settings: {}, models: [], runs: [], workspaces: [], notes: [], history: [], spec: null, trash: [] };
@@ -2010,9 +2011,26 @@ var StoreFile = class {
     this.data.updated_at = (/* @__PURE__ */ new Date()).toISOString();
     this.data.machine = machineName();
     import_node_fs7.default.mkdirSync(import_node_path6.default.dirname(this.file), { recursive: true });
-    const tmp = this.file + ".tmp";
-    import_node_fs7.default.writeFileSync(tmp, JSON.stringify(this.data, (_k, v) => v === Infinity ? "inf" : v, 1) + "\n", "utf8");
-    import_node_fs7.default.renameSync(tmp, this.file);
+    const tmp = `${this.file}.${process.pid}.${(0, import_node_crypto2.randomUUID)()}.tmp`;
+    try {
+      import_node_fs7.default.writeFileSync(tmp, JSON.stringify(this.data, (_k, v) => v === Infinity ? "inf" : v, 1) + "\n", "utf8");
+      const sleeper = new Int32Array(new SharedArrayBuffer(4));
+      for (let attempt = 0; ; attempt++) {
+        try {
+          import_node_fs7.default.renameSync(tmp, this.file);
+          break;
+        } catch (e) {
+          const code = e.code;
+          if (!["EPERM", "EACCES", "EBUSY"].includes(code || "") || attempt >= 99) throw e;
+          Atomics.wait(sleeper, 0, 0, 20);
+        }
+      }
+    } finally {
+      try {
+        if (import_node_fs7.default.existsSync(tmp)) import_node_fs7.default.unlinkSync(tmp);
+      } catch {
+      }
+    }
   }
   log(action, detail) {
     this.data.history.unshift({ at: (/* @__PURE__ */ new Date()).toISOString(), action, detail });
@@ -2766,6 +2784,8 @@ async function startServer(over = {}) {
     console.error("[wb] skills \u955C\u50CF\u5931\u8D25\uFF1A", e.message);
   }
   const fp = /* @__PURE__ */ new Map();
+  let detectRefreshPending = false;
+  let detectRefreshAttempts = 0;
   const detectTick = () => {
     let changed = false;
     for (const w of store.data.workspaces) {
@@ -2781,7 +2801,20 @@ async function startServer(over = {}) {
         changed = true;
       }
     }
-    if (changed) refreshWorkspaces();
+    if (changed) {
+      detectRefreshPending = true;
+      detectRefreshAttempts = 0;
+    }
+    if (detectRefreshPending && detectRefreshAttempts < 3) {
+      try {
+        refreshWorkspaces();
+        detectRefreshPending = false;
+        detectRefreshAttempts = 0;
+      } catch (e) {
+        detectRefreshAttempts++;
+        console.error(`[wb] \u4EA4\u4ED8\u626B\u63CF\u5B58\u50A8\u66F4\u65B0\u5931\u8D25 (${detectRefreshAttempts}/3)\uFF1A`, e.message);
+      }
+    }
   };
   const detectTimer = setInterval(detectTick, 3e3);
   detectTimer.unref();
@@ -3449,6 +3482,7 @@ async function startServer(over = {}) {
   import_node_fs9.default.writeFileSync(import_node_path8.default.join(cfg.runtimeDir, "runtime.json"), JSON.stringify({ url, port: cfg.port, token: cfg.token, pid: process.pid, started_at: startedAt, version: VERSION }, null, 2));
   void loadSpec().then(() => sync()).catch((e) => console.error("[wb] \u521D\u6B21\u540C\u6B65\u5931\u8D25\uFF1A", e.message));
   async function close() {
+    clearInterval(detectTimer);
     procs.stopAll();
     previews.closeAll();
     for (const c of hub.clients) c.end();

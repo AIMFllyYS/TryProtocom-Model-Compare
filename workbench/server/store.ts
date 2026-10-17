@@ -2,6 +2,7 @@
 // 复制这一个文件到另一台电脑，工作台即可恢复全部对比数据（产物文件可选）。
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { BenchStore, DiscardInfo, ModelProfile, SpecData, StoreRun, TrashEntry, WorkspaceRun, WsStatus } from '../shared/types';
 import { entrantOf } from '../shared/aggregate';
 import { machineName } from './config';
@@ -49,9 +50,23 @@ export class StoreFile {
     this.data.updated_at = new Date().toISOString();
     this.data.machine = machineName();
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = this.file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(this.data, (_k, v) => (v === Infinity ? 'inf' : v), 1) + '\n', 'utf8');
-    fs.renameSync(tmp, this.file);
+    // A Windows reader/AV scan can briefly deny rename sharing. Keep the old
+    // complete snapshot until publication succeeds; do not share a .tmp name.
+    const tmp = `${this.file}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(this.data, (_k, v) => (v === Infinity ? 'inf' : v), 1) + '\n', 'utf8');
+      const sleeper = new Int32Array(new SharedArrayBuffer(4));
+      for (let attempt = 0; ; attempt++) {
+        try { fs.renameSync(tmp, this.file); break; }
+        catch (e) {
+          const code = (e as NodeJS.ErrnoException).code;
+          if (!['EPERM', 'EACCES', 'EBUSY'].includes(code || '') || attempt >= 99) throw e;
+          Atomics.wait(sleeper, 0, 0, 20);
+        }
+      }
+    } finally {
+      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* preserve original error */ }
+    }
   }
   log(action: string, detail?: string) {
     this.data.history.unshift({ at: new Date().toISOString(), action, detail });

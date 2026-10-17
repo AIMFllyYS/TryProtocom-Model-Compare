@@ -275,6 +275,8 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
 
   // ---------- 交付检测：轮询未登记运行的工作目录 ----------
   const fp = new Map<string, string>();
+  let detectRefreshPending = false;
+  let detectRefreshAttempts = 0;
   const detectTick = () => {
     let changed = false;
     for (const w of store.data.workspaces) {
@@ -288,7 +290,14 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
         fp.set(w.ref, key);
       } catch { /* 目录被删 */ changed = true; }
     }
-    if (changed) refreshWorkspaces();
+    if (changed) { detectRefreshPending = true; detectRefreshAttempts = 0; }
+    if (detectRefreshPending && detectRefreshAttempts < 3) {
+      try { refreshWorkspaces(); detectRefreshPending = false; detectRefreshAttempts = 0; }
+      catch (e) {
+        detectRefreshAttempts++;
+        console.error(`[wb] 交付扫描存储更新失败 (${detectRefreshAttempts}/3)：`, (e as Error).message);
+      }
+    }
   };
   const detectTimer = setInterval(detectTick, 3000);
   detectTimer.unref();
@@ -915,6 +924,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   void loadSpec().then(() => sync()).catch((e) => console.error('[wb] 初次同步失败：', e.message));
 
   async function close() {
+    clearInterval(detectTimer);
     procs.stopAll();
     previews.closeAll();
     for (const c of hub.clients) c.end();

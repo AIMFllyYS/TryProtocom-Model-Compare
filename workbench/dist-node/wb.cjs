@@ -111,9 +111,7 @@ async function api(method, p, body) {
 var get = (p) => api("GET", p);
 var post = (p, b = {}) => api("POST", p, b);
 function die(msg) {
-  if (JSON_OUT) console.log(JSON.stringify({ ok: false, error: msg }));
-  else console.error("\u2718 " + msg);
-  process.exit(1);
+  throw new Error(msg);
 }
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function out(data, human) {
@@ -663,4 +661,9 @@ async function runCmd(sub, rest) {
       die("\u7528\u6CD5\uFF1Awb run new|list|start|reopen|finish|register|stop|discard|restore \u2026");
   }
 }
-main().catch((e) => die(e?.message || String(e)));
+main().catch((e) => {
+  const msg = e?.message || String(e);
+  if (JSON_OUT) console.log(JSON.stringify({ ok: false, error: msg }));
+  else console.error("\u2718 " + msg);
+  process.exitCode = 1;
+});

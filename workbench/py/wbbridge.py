@@ -134,20 +134,21 @@ def cmd_rescore(a):
 
 
 def cmd_set_manual(a):
-    from benchlib.common import dump_json, load_json
+    from benchlib.common import dump_json, load_json, file_lock
     data = Path(a.data)
     rd = data / "runs" / a.run
     if not (rd / "meta.json").exists():
         return out(error=f"运行不存在：{a.run}")
-    ms = load_json(rd / "manual_scores.json", {}) or {}
-    if a.score in (None, ""):
-        ms.pop(a.item, None)
-    else:
-        s = max(0.0, min(3.0, float(a.score)))
-        ms[a.item] = {"score": s, "note": a.note or "", "by": a.by or "human", "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
-    dump_json(rd / "manual_scores.json", ms)
-    root = Path(a.root).resolve() if a.root else data.resolve().parent
-    out(_clean(_run_record(rd, root)))
+    with file_lock(rd / '.manual-scores.lock'):
+        ms = load_json(rd / "manual_scores.json", {}) or {}
+        if a.score in (None, ""):
+            ms.pop(a.item, None)
+        else:
+            s = max(0.0, min(3.0, float(a.score)))
+            ms[a.item] = {"score": s, "note": a.note or "", "by": a.by or "human", "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+        dump_json(rd / "manual_scores.json", ms)
+        root = Path(a.root).resolve() if a.root else data.resolve().parent
+        out(_clean(_run_record(rd, root)))
 
 
 def cmd_probe_page(a):

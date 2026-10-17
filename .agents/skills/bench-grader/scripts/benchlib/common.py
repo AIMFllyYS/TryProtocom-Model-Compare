@@ -7,6 +7,8 @@ import shutil
 import socket
 import subprocess
 import time
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -33,7 +35,51 @@ def load_json(path: Path, default=None):
 def dump_json(path: Path, data) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    # Readers must see either the old or new complete JSON, never a partial write.
+    fd, tmp = tempfile.mkstemp(prefix=path.name+'.', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        for attempt in range(100):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 99:
+                    raise
+                time.sleep(.02)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@contextmanager
+def file_lock(path: Path):
+    """Serialize a read-modify-write across independent evaluator processes."""
+    path = Path(path)
+    with path.open('a+b') as f:
+        if os.name == 'nt':
+            import msvcrt
+            deadline = time.monotonic() + 120
+            while True:
+                try:
+                    f.seek(0); msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f'Evaluator score lock busy: {path}')
+                    time.sleep(.02)
+            try:
+                yield
+            finally:
+                f.seek(0); msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 def bench_config() -> dict:

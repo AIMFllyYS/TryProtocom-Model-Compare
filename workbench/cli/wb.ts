@@ -78,7 +78,7 @@ const get = <T = any>(p: string) => api<T>('GET', p);
 const post = <T = any>(p: string, b: unknown = {}) => api<T>('POST', p, b);
 
 // ---------- 输出 ----------
-function die(msg: string): never { if (JSON_OUT) console.log(JSON.stringify({ ok: false, error: msg })); else console.error('✘ ' + msg); process.exit(1); }
+function die(msg: string): never { throw new Error(msg); }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function out(data: unknown, human?: () => void) { if (JSON_OUT || !human) console.log(JSON.stringify(data, (_k, v) => (v === Infinity ? 'inf' : v), 2)); else human(); }
 const fmt = (v: number | null | undefined, d = 1) => (v == null ? '—' : v === Infinity ? '∞' : Number(v).toFixed(d));
@@ -542,4 +542,10 @@ async function runCmd(sub: string | undefined, rest: string[]) {
   }
 }
 
-main().catch((e) => die(e?.message || String(e)));
+main().catch((e) => {
+  const msg = e?.message || String(e);
+  if (JSON_OUT) console.log(JSON.stringify({ ok: false, error: msg }));
+  else console.error('✘ ' + msg);
+  // Let pending stdio and fetch handles close normally on Windows.
+  process.exitCode = 1;
+});
