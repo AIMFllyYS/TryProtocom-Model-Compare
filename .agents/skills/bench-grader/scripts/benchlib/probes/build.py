@@ -2,15 +2,42 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
 
-from ..common import RunContext, run_cmd, which
+from ..common import RunContext, run_cmd
+
+
+def node_tools(cfg: dict) -> tuple[dict[str, list[str]], dict]:
+    """Use the evaluator's Node and bundled CLI JS, avoiding Windows .cmd launchers."""
+    configured = (cfg.get("external") or {}).get("build_node") or (cfg.get("external") or {}).get("api_node")
+    node = Path(configured or shutil.which("node") or "")
+    if not node.is_file():
+        raise FileNotFoundError("评测 Node 不存在")
+    node = node.resolve()
+    env = os.environ.copy()
+    env["PATH"] = str(node.parent) + os.pathsep + env.get("PATH", "")
+    tools = {"node": [str(node)]}
+    for name in ("npm", "npx"):
+        cli = node.parent / "node_modules" / "npm" / "bin" / f"{name}-cli.js"
+        if cli.is_file():
+            tools[name] = [str(node), str(cli)]
+        elif os.name != "nt" and not configured and shutil.which(name):
+            tools[name] = [shutil.which(name)]
+        else:
+            raise FileNotFoundError(f"评测 Node 缺少配套 {name} CLI")
+    return tools, env
 
 
 def build_probe(ctx: RunContext, opts: dict) -> None:
     m = ctx.metrics
+    # A partial regrade must not preserve stale success/failure from an earlier environment.
+    for bucket in (m.values, m.na):
+        for key in list(bucket):
+            if key.startswith("build."):
+                del bucket[key]
     root = ctx.project_root()
     pkg = root / "package.json"
     if not pkg.exists():
@@ -48,17 +75,24 @@ def build_probe(ctx: RunContext, opts: dict) -> None:
     if idx.exists():
         m.set("build.dist_mb", round(idx.stat().st_size / 1024 / 1024, 2))
 
-    if not which("npm"):
-        m.mark_na("build.install_ok", "评测机没有 npm")
-        m.mark_na("build.rebuild_ok", "评测机没有 npm")
-        m.mark_na("build.tsc_errors", "评测机没有 npm")
+    try:
+        tools, env = node_tools(ctx.cfg)
+    except FileNotFoundError as error:
+        for key in ("build.install_ok", "build.rebuild_ok", "build.tsc_errors"):
+            m.mark_na(key, str(error))
         return
+    code, version, _ = run_cmd(tools["node"] + ["--version"], timeout=15, env=env)
+    if code:
+        raise RuntimeError("评测 Node 无法启动: " + version)
+    m.set("build.runtime_node", version.strip())
     wd = ctx.work_dir / "rebuild"
+    if wd.resolve().parent != ctx.work_dir.resolve() or not wd.resolve().is_relative_to(ctx.run_dir.resolve()):
+        raise ValueError("rebuild 不在本运行评分目录中")
     if wd.exists():
         shutil.rmtree(wd)
     shutil.copytree(root, wd, ignore=shutil.ignore_patterns("node_modules", "dist", ".git"))
-    cmd = ["npm", "ci", "--no-audit", "--no-fund"] if (wd / "package-lock.json").exists() else ["npm", "install", "--no-audit", "--no-fund"]
-    code, out, secs = run_cmd(cmd, cwd=wd, timeout=900)
+    cmd = tools["npm"] + (["ci", "--no-audit", "--no-fund"] if (wd / "package-lock.json").exists() else ["install", "--no-audit", "--no-fund"])
+    code, out, secs = run_cmd(cmd, cwd=wd, timeout=900, env=env)
     (ctx.work_dir / "npm_install.log").write_text(out, encoding="utf-8")
     if code != 0 and re.search(r"ENOTFOUND|EAI_AGAIN|ECONNREFUSED|network|403 Forbidden", out, re.I):
         m.mark_na("build.install_ok", "评测机无法访问 npm registry")
@@ -66,11 +100,11 @@ def build_probe(ctx: RunContext, opts: dict) -> None:
         m.mark_na("build.tsc_errors", "评测机无法访问 npm registry")
         return
     m.set("build.install_ok", code == 0)
-    code, out, secs = run_cmd(["npm", "run", "build"], cwd=wd, timeout=900)
+    code, out, secs = run_cmd(tools["npm"] + ["run", "build"], cwd=wd, timeout=900, env=env)
     (ctx.work_dir / "npm_build.log").write_text(out, encoding="utf-8")
     m.set("build.rebuild_ok", code == 0 and (wd / opts.get("dist", "dist") / "index.html").exists())
     m.set("build.build_s", round(secs, 1))
-    code, out, _ = run_cmd(["npx", "--no-install", "tsc", "--noEmit", "-p", "."], cwd=wd, timeout=600)
+    code, out, _ = run_cmd(tools["npx"] + ["--no-install", "tsc", "--noEmit", "-p", "."], cwd=wd, timeout=600, env=env)
     (ctx.work_dir / "tsc.log").write_text(out, encoding="utf-8")
     errs = len(re.findall(r"error TS\d+", out))
     m.set("build.tsc_errors", errs if (errs or code == 0) else 99)

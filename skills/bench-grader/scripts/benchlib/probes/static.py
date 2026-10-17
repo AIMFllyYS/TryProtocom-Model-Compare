@@ -91,14 +91,37 @@ _LIB_NAMES = {"three", "node", "vue", "next", "nuxt", "react", "chart", "d3", "p
               "svelte", "angular", "jquery", "lodash", "tailwind", "vite", "webpack", "rollup", "esbuild", "playwright"}
 
 
+def _claim_prose(text: str) -> str:
+    """Only narrative outside source listings can declare delivered files."""
+    body = re.sub(r"(?s)(```|~~~).*?\1", " ", text)
+    # Some models paste the complete HTML without a Markdown fence. Imports and
+    # example media paths in that document are code, just as in a fenced listing.
+    return re.sub(r"(?:<!doctype\s+html\b[^>]*>\s*)?<html\b[^>]*>.*?</html\s*>", " ", body, flags=re.I | re.S)
+
+
 def _claimed_paths(text: str) -> set[str]:
     """从最终汇报里取出“声称存在的文件”。
 
-    先去掉代码块（```…``` 和 `~~~`）：很多题要求在回复里贴完整代码，代码里的 import 路径、CDN 地址不是交付声明。
+    先去掉代码块（```…```、`~~~` 及未加围栏的完整 HTML）：很多题要求在回复里贴完整代码，代码里的 import 路径、CDN 地址不是交付声明。
     再去掉 URL（https://… 和 //host/…）；扩展名后面必须是边界（避免 cdn.jsdelivr 被截成 cdn.js）；
     允许 Windows 盘符和反斜杠，这样绝对路径能按原样去磁盘上核对；排除 Three.js 这类库名。"""
-    body = re.sub(r"(?s)(```|~~~).*?\1", " ", text)
+    body = _claim_prose(text)
     body = re.sub(r"(?:https?:)?//[^\s)\]'\"<>`]+", " ", body)
+    # Chinese prose often has no whitespace around library names. Python's \w
+    # includes Han characters, so "3D采用Three.js" would otherwise become one
+    # fictitious filename. Exclude bare known library names, but preserve paths
+    # such as vendor/three.js and distinct filenames such as custom-three.js.
+    libraries = "|".join(re.escape(name) for name in sorted(_LIB_NAMES, key=len, reverse=True))
+    body = re.sub(rf"(?<![A-Za-z0-9_./\\-])(?:{libraries})\.js(?![A-Za-z0-9_.-])", " ", body, flags=re.I)
+    # A numbered filename range declares its individual frames, not one file
+    # literally called "S01.png-S08.png". Check every member of a bounded range.
+    def expand_range(match):
+        start, end = int(match['start']), int(match['end'])
+        if not 0 <= end-start < 100:
+            return match[0]
+        width = len(match['start'])
+        return ' '.join(f"{match['prefix']}{number:0{width}d}.{match['ext']}" for number in range(start, end+1))
+    body = re.sub(rf"(?P<prefix>[A-Za-z_][A-Za-z_0-9]*?)(?P<start>\d+)\.(?P<ext>{_CLAIM_EXT})-(?P=prefix)(?P<end>\d+)\.(?P=ext)(?![\w-])", expand_range, body)
     found = re.findall(rf"((?:[A-Za-z]:[\\/])?[\w\-./\\]+\.{_CLAIM_EXT})(?![\w\-])", body)
     out = set()
     for c in found:
@@ -171,7 +194,7 @@ def claims_probe(ctx: RunContext, opts: dict) -> None:
     m.set("claims.missing_paths", len(missing))
     m.set("claims.missing_list", sorted(missing)[:20])
     has_mp4 = any(n.lower().endswith(".mp4") for n in all_names)
-    prose = re.sub(r"(?s)(```|~~~).*?\1", " ", text)  # 代码块里的 .mp4 字样不是“交付了视频”的声明
+    prose = _claim_prose(text)  # 代码清单里的 .mp4 字样不是“交付了视频”的声明
     claims_video = bool(re.search(r"\.mp4|视频文件|导出了?视频|rendered (the )?video", prose, re.I))
     negated = bool(re.search(r"(没有|未|无法|不)(导出|生成|渲染).{0,6}(mp4|视频)|no (mp4|video) (was )?(produced|exported)", prose, re.I))
     m.set("claims.false_video", bool(claims_video and not has_mp4 and not negated))
@@ -201,8 +224,10 @@ def transcript_probe(ctx: RunContext, opts: dict) -> None:
     if d is None:
         m.mark_na("tr.*", "缺少 transcript_notes.json（评测者需按 intent.md 记录提问情况）")
         return
+    m.na.pop("tr.*", None)
     qs = d.get("questions", [])
-    maps = [str(q.get("maps_to", "")).upper() for q in qs]
+    maps = [str(label).upper() for q in qs for label in
+            (q.get("maps_to", []) if isinstance(q.get("maps_to"), list) else [q.get("maps_to", "")])]
     ks, cs, is_ = opts.get("key", []), opts.get("contradictions", []), opts.get("inferable", [])
     m.set("tr.rounds", int(d.get("question_rounds", 0)))
     m.set("tr.questions", len(qs))
@@ -267,6 +292,7 @@ def mc_probe(ctx: RunContext, opts: dict) -> None:
     skill_dir = (ctx.cfg.get("external") or {}).get("minecraft_skill_dir")
     validator = Path(skill_dir).expanduser() / "scripts" / "validate_project.py" if skill_dir else None
     if validator and validator.exists():
+        m.na.pop("mc.validate_*", None)
         code, out, _ = run_cmd([sys.executable, str(validator), str(root)], timeout=60)
         m.set("mc.validate_ran", True)
         m.set("mc.validate_pass", code == 0)

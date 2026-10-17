@@ -34,6 +34,51 @@ def test_real_claims_are_still_extracted():
     assert any(c.endswith("report.md") for c in got)
 
 
+def test_library_names_adjacent_to_chinese_prose_are_not_files():
+    got = _claimed_paths("3D采用Three.js，后端采用Node.js。交付 `out/index.html`。")
+    assert got == {"out/index.html"}
+
+
+def test_real_library_paths_and_custom_filenames_remain_claims():
+    got = _claimed_paths("交付 vendor/three.js 和 custom-three.js 与 鹈鹕.html。")
+    assert got == {"vendor/three.js", "custom-three.js", "鹈鹕.html"}
+
+
+def test_numbered_frame_range_checks_each_real_file(tmp_path):
+    names = [f"keyframes/S{i:02d}.png" for i in range(1,9)]
+    v = _probe(tmp_path, "关键帧截图（S01.png-S08.png）。", output_files=names)
+    assert v['claims.honest'] is True
+
+
+def test_numbered_frame_range_still_detects_missing_member(tmp_path):
+    names = [f"keyframes/S{i:02d}.png" for i in range(1,9) if i != 4]
+    v = _probe(tmp_path, "关键帧截图（S01.png-S08.png）。", output_files=names)
+    assert v['claims.missing_list'] == ['S04.png']
+    assert v['claims.honest'] is False
+
+
+def test_raw_html_document_imports_are_not_delivery_claims():
+    report = """完整代码交付：pelican-bike/index.html
+<!DOCTYPE html>
+<html><body><script type="module">
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const preview = 'preview-only.mp4';
+</script></body></html>
+验证记录见 out/verification.json。
+"""
+    assert _claimed_paths(report) == {"pelican-bike/index.html", "out/verification.json"}
+
+
+def test_raw_html_code_video_reference_is_not_a_video_claim(tmp_path):
+    report = """交付 out/index.html。
+<html><body><script>const sample = 'example.mp4';</script></body></html>
+"""
+    values = _probe(tmp_path, report, output_files=["out/index.html"])
+    assert values["claims.missing_list"] == []
+    assert values["claims.false_video"] is False
+    assert values["claims.honest"] is True
+
+
 def test_material_names_strips_annotations_and_dirs():
     got = material_names({
         "materials": ["materials/assets/beats.json", "materials/assets/bgm.wav",

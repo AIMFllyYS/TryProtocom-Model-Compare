@@ -17,6 +17,24 @@ from pathlib import Path
 from ..common import RunContext, env_with, free_port, load_json, run_cmd
 
 SOURCE_EXT = {".py", ".js", ".ts", ".mjs", ".cjs", ".go", ".md", ".rs", ".java", ".lock", ".toml", ".yaml", ".yml"}
+EVALUATOR_PYTHON_PACKAGES = {'pytest': '8.4.2', 'requests': '2.32.5', 'tzdata': '2025.2'}
+
+
+def _own_tests_passed(output: str) -> int:
+    tap = re.search(r"^\s*# pass (\d+)\s*$", output, re.M)
+    if tap:return int(tap.group(1))
+    jest = re.search(r"^\s*Tests:\s*(?:\d+ failed,\s*)?(\d+) passed", output, re.M)
+    if jest:return int(jest.group(1))
+    passed = sum(int(x) for x in re.findall(r"(\d+) passed", output))
+    if passed:
+        return passed
+    # unittest writes a Ran/OK summary rather than pytest's "N passed".
+    ran = re.search(r"\bRan (\d+) tests? in [^\n]+", output)
+    summary = re.search(r"^OK(?: \(([^\n]+)\))?\s*$", output, re.M)
+    if ran and summary:
+        excluded = sum(int(n) for n in re.findall(r"(?:skipped|expected failures)=(\d+)", summary.group(1) or ""))
+        return max(0, int(ran.group(1)) - excluded)
+    return 0
 
 
 class Server:
@@ -26,12 +44,19 @@ class Server:
 
     def start(self):
         self.fh = open(self.log, "a", encoding="utf-8")
-        self.proc = subprocess.Popen(self.cmd, cwd=self.cwd, env=self.env, shell=True, stdout=self.fh, stderr=subprocess.STDOUT, start_new_session=True)
+        self.proc = subprocess.Popen(self.cmd, cwd=self.cwd, env=self.env, shell=True, stdout=self.fh, stderr=subprocess.STDOUT,
+                                     start_new_session=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
             try:
-                os.killpg(self.proc.pid, signal.SIGTERM)
+                if os.name == 'nt':
+                    # shell=True owns a cmd.exe plus its server child. Terminating
+                    # just the shell leaks the Python/Node server on Windows.
+                    subprocess.run(['taskkill', '/PID', str(self.proc.pid), '/T', '/F'],
+                                   capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    os.killpg(self.proc.pid, signal.SIGTERM)
                 self.proc.wait(10)
             except Exception:  # noqa: BLE001
                 try:
@@ -65,26 +90,68 @@ def _junit(path: Path) -> dict[str, bool]:
     return res
 
 
+def _api_runtime_env(ctx: RunContext) -> dict:
+    """Use target-compatible runtimes and isolate Python dependencies per run."""
+    env=env_with()
+    external=ctx.cfg.get('external') or {}
+    py=external.get('api_python');node=external.get('api_node');prefix=[]
+    if py:
+        runtime=(ctx.work_dir/'api-python311').resolve()
+        if runtime != ctx.run_dir.resolve()/'_grading/api-python311':
+            raise RuntimeError('API runtime directory resolves outside its intended scratch location')
+        exe=runtime/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+        ready=runtime/'evaluator-ready.json'
+        if not exe.exists():
+            code,out,_=run_cmd([str(py),'-m','venv',str(runtime)],timeout=120)
+            (ctx.work_dir/'api-runtime-setup.log').write_text(out,encoding='utf-8')
+            if code:raise RuntimeError('Could not create isolated target Python environment')
+        # Windows has no system IANA database. Supply the same timezone data
+        # available to zoneinfo on Linux, without changing the model artifact.
+        if load_json(ready,{}) != EVALUATOR_PYTHON_PACKAGES:
+            packages=[f'{name}=={version}' for name,version in EVALUATOR_PYTHON_PACKAGES.items()]
+            code,out,_=run_cmd([str(exe),'-m','pip','install',*packages],timeout=300)
+            with (ctx.work_dir/'api-runtime-setup.log').open('a',encoding='utf-8') as log:log.write(out)
+            if code:raise RuntimeError('Could not install evaluator test tools in target Python environment')
+            ready.write_text(json.dumps(EVALUATOR_PYTHON_PACKAGES),encoding='utf-8')
+        env['VIRTUAL_ENV']=str(runtime);prefix.append(str(exe.parent))
+        _,version,_=run_cmd([str(exe),'--version'],timeout=15)
+        ctx.metrics.set('api.runtime_python',version.strip())
+    if node:
+        prefix.append(str(Path(node).parent))
+        _,version,_=run_cmd([str(node),'--version'],timeout=15)
+        ctx.metrics.set('api.runtime_node',version.strip())
+    if prefix:env['PATH']=os.pathsep.join(prefix+[env.get('PATH','')])
+    return env
+
+
 def api_probe(ctx: RunContext, opts: dict) -> None:
     m = ctx.metrics
+    # A failed re-run must not display a previous run's test/persistence results.
+    for bucket in (m.values,m.na):
+        for key in list(bucket):
+            if key.startswith('api.'):
+                del bucket[key]
     root = ctx.project_root()
     bj = load_json(root / "bench.json")
     m.set("api.bench_json", bool(bj and bj.get("start")))
     if not bj or not bj.get("start"):
         return
-    wd = ctx.work_dir / "api_project"
+    wd = (ctx.work_dir / "api_project").resolve()
+    if wd != ctx.run_dir.resolve()/'_grading/api_project':
+        raise RuntimeError('API scratch directory resolves outside its intended location')
     if wd.exists():
         shutil.rmtree(wd)
     shutil.copytree(root, wd, ignore=shutil.ignore_patterns("node_modules", ".git", "__pycache__", "*.db", "*.sqlite", "*.sqlite3", ".venv", "venv"))
     log = ctx.work_dir / "server.log"
     log.write_text("", encoding="utf-8")
+    runtime_env=_api_runtime_env(ctx)
     if bj.get("setup"):
-        code, out, _ = run_cmd(bj["setup"], cwd=wd, timeout=900, shell=True)
+        code, out, _ = run_cmd(bj["setup"], cwd=wd, timeout=900, shell=True,env=runtime_env)
         (ctx.work_dir / "setup.log").write_text(out, encoding="utf-8")
         m.set("api.setup_ok", code == 0)
     port = free_port()
     db_path = wd / "bench-data.db"
-    env = env_with(PORT=port, BENCH_MODE="1", DB_PATH=db_path, NODE_ENV="production")
+    env = dict(runtime_env,PORT=str(port),BENCH_MODE='1',DB_PATH=str(db_path),NODE_ENV='production')
     base = f"http://127.0.0.1:{port}"
     srv = Server(bj["start"], wd, env, log)
     srv.start()
@@ -136,11 +203,10 @@ def api_probe(ctx: RunContext, opts: dict) -> None:
         m.set("api.load_error_rate", round(errs / max(perf.get("requests", 200), 1), 3))
 
     if bj.get("test") and opts.get("own_tests", True):
-        code, out, secs = run_cmd(bj["test"], cwd=wd, timeout=900, shell=True, env=env_with(BASE_URL=base, PORT=port, BENCH_MODE="1"))
+        code, out, secs = run_cmd(bj["test"], cwd=wd, timeout=900, shell=True, env=dict(env,BASE_URL=base))
         (ctx.work_dir / "own_tests.log").write_text(out, encoding="utf-8")
         m.set("api.own_tests_ok", code == 0)
-        passed = sum(int(x) for x in re.findall(r"(\d+) passed", out)) or sum(int(x) for x in re.findall(r"Tests:\s+(\d+) passed", out))
-        m.set("api.own_tests_passed", passed)
+        m.set("api.own_tests_passed", _own_tests_passed(out))
 
     if opts.get("persist_test"):
         st = ctx.work_dir / "persist_state.json"

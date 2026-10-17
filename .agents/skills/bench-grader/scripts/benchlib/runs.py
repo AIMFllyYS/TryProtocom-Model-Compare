@@ -54,6 +54,9 @@ def all_meta(data: Path) -> list[dict]:
 
 
 def grade_run(run_dir: Path, fast: bool = False, only: list[str] | None = None) -> dict:
+    # Subprocesses use different cwd values; all runtime/database/JUnit paths
+    # derived from the run must remain absolute when the CLI input is relative.
+    run_dir = Path(run_dir).resolve()
     meta = load_json(run_dir / "meta.json")
     rubric = load_rubric(meta["task"])
     cfg = bench_config()
