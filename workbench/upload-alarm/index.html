@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self'; connect-src 'none'; object-src 'none'">
+<title>上传提醒</title>
+<style>
+:root{color-scheme:light;--paper:#fff9ed;--ink:#29251e;--amber:#ed9b13;--muted:#817465}
+*{box-sizing:border-box}body{margin:0;padding:23px 25px 22px;background:var(--paper);color:var(--ink);font-family:'Microsoft YaHei UI','Microsoft YaHei',sans-serif;font-size:13px}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:21px}.label{font:700 11px Georgia,serif;letter-spacing:2.7px;color:#8e7553}.status{display:flex;gap:7px;align-items:center;font-size:11px;color:#9a6519}.dot{height:7px;width:7px;border-radius:50%;background:var(--amber)}
+.hero{display:flex;gap:17px;align-items:center;margin-bottom:18px}.icon{flex:none;width:59px;height:59px;display:grid;place-items:center;border:1px solid #e6ae46;background:#ffedc5;border-radius:18px}.icon svg{width:29px;height:29px;stroke:#a36508;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+h1{font-size:27px;letter-spacing:-1px;font-weight:750;margin:0 0 6px;line-height:1.3}.subtitle{color:var(--muted);margin:0;font-size:12px}.file{border:1px solid #dfd4c1;border-radius:12px;padding:13px 14px;background:#fffdf8;margin-bottom:15px}.meta{display:flex;gap:7px;align-items:center;color:#a16b26;font-size:10px;letter-spacing:.6px;margin-bottom:7px}.filename{font-size:14px;font-weight:650;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin-bottom:6px}.path{margin:0;color:#7d756a;font:11px/1.55 Consolas,monospace;word-break:break-all;max-height:54px;overflow:auto;user-select:text}
+.tools{display:flex;gap:8px;margin:10px 0 17px}button{font:inherit;cursor:pointer;border:0;border-radius:9px;transition:background .15s,transform .15s}button:active{transform:translateY(1px)}button:focus-visible{outline:3px solid #c98f28;outline-offset:3px}.tool{flex:1;background:#eee5d5;padding:9px;color:#5d5140;font-size:12px}.tool:hover{background:#e5d7be}.primary{width:100%;background:#29251e;color:#fffdf4;padding:13px 15px;font-size:15px;font-weight:650;border-radius:11px}.primary:hover{background:#51412b}.primary:disabled,.tool:disabled{opacity:.4;cursor:default}.foot{text-align:center;margin:11px 0 0;font-size:10px;color:#918372;letter-spacing:.3px}.active .dot{animation:pulse 1.7s ease-in-out infinite}.active .icon{animation:glow 1.7s ease-in-out infinite}.stopped .status{color:#58745b}.stopped .dot{background:#7c9a76}.stopped .icon{background:#eef0e7;border-color:#c8d4bf}.stopped .icon svg{stroke:#607458}
+@keyframes pulse{50%{opacity:.35}}@keyframes glow{50%{box-shadow:0 0 0 7px #ed9b1312}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body class="stopped">
+<header><span class="label">UPLOAD / 提醒</span><span class="status"><i class="dot"></i><span id="status">等待任务</span></span></header>
+<section class="hero"><div class="icon"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 22h18M10 22V13a6 6 0 0 1 12 0v9M5 25h22M14 28h4M16 4V2"/><path d="M5 9 3 7M27 9l2-2"/></svg></div><div><h1 id="heading">上传提醒</h1><p class="subtitle" id="subtitle">需要你上传文件时，我会提醒你。</p></div></section>
+<section class="file"><div class="meta"><span id="task">等待上传任务</span><span>·</span><span id="size">ZIP 文件</span></div><div class="filename" id="filename">尚无待上传文件</div><p class="path" id="path">文件路径会显示在这里</p></section>
+<div class="tools"><button class="tool" id="copy" disabled>复制路径</button><button class="tool" id="folder" disabled>打开文件夹</button></div>
+<button class="primary" id="toggle" disabled>等待任务</button>
+<p class="foot" id="foot">声音会持续重复，直到你停止提醒。</p>
+<audio id="voice" preload="auto" loop src="assets/upload-needed.wav"></audio>
+<script src="renderer.js"></script>
+</body></html>
