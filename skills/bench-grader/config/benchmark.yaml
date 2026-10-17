@@ -3,7 +3,7 @@ name: Coding Bench
 version: v1.0
 frozen_date: null          # 正式开跑当天填写，例如 2026-10-08
 
-runs_per_task: 3           # 每个模型每题至少跑 3 次
+runs_per_task: 1           # 默认首轮每模型每题/条件一次；全模型首轮完成或用户明确指定后才补至三次
 pass_threshold: 60         # 单次运行题目总分 ≥ 60 视为“达标”，用于达标率和期望成本
 low_confidence_na_ratio: 0.2   # 某次运行中 N/A（评测环境原因无法检查）项权重占比超过 20% 时标记“低可信”
 
@@ -38,7 +38,9 @@ browser:
 
 # 外部依赖路径（评测机上）
 external:
-  minecraft_skill_dir: null   # minecraft-stop-motion-director 目录，用于运行其 validate_project.py
+  api_python: null            # optional evaluator Python 3.11; empty uses the current interpreter
+  api_node: null              # optional evaluator Node; empty uses node on PATH
+  minecraft_skill_dir: null   # minecraft-stop-motion-director directory, used to run validate_project.py
   axe_core_js: null           # axe-core 的 axe.min.js 路径（npm i axe-core 后在 node_modules/axe-core/axe.min.js）
   log_roots:                  # 用时/成本日志搜索根目录；留空用默认位置
     claude_code: ~/.claude/projects
