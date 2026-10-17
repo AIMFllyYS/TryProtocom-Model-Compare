@@ -1,58 +1,36 @@
 // “打开产物”对话框：运行产物 / 仓库内文件 / 开发服务器（自动识别 package.json 脚本并接入代理）/ 地址。
-import { useEffect, useMemo, useState } from 'react';
-import { Package, Play, Search, TriangleAlert } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Package, Play, TriangleAlert } from 'lucide-react';
 import type { PreviewSession, ProcInfo } from '../../shared/types';
 import { get, post } from '../api';
 import { useWb } from '../state';
 import { isVideo } from '../lib/format';
-import { Badge, Btn, CheckBox, Empty, Field, Modal, Select, Spinner, Tabs } from '../ui/kit';
+import { Badge, Btn, Field, Modal, Select, Spinner, Tabs } from '../ui/kit';
 import { toast } from '../ui/toast';
 import { FileBrowser } from '../components/Files';
-import { Score, WsBadge, useNamer } from '../components/common';
+import { useNamer } from '../components/common';
 import { ProcOutput } from './DevTools';
+import { ArtifactTree } from './ArtifactTree';
 
 type T = 'runs' | 'files' | 'dev' | 'url';
 interface Scripts { packages: { dir: string; scripts: Record<string, string>; has_modules: boolean }[]; python: string[]; bench_json: any }
 
 export function OpenDialog({ onClose, onOpenSession, onOpenVideo, onOpenRef }: { onClose: () => void; onOpenSession: (s: PreviewSession, replace?: boolean) => void; onOpenVideo: (path: string, label: string) => void; onOpenRef: (x: string) => void }) {
-  const wb = useWb();
-  const nm = useNamer();
   const [tab, setTab] = useState<T>('runs');
-  const [q, setQ] = useState('');
+  const [filesVisited, setFilesVisited] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const ws = wb.store?.workspaces || [];
-  const orphan = (wb.store?.runs || []).filter((r) => !ws.some((w) => w.grader_run_id === r.run_id));
-  const list = useMemo(() => [
-    ...ws.map((w) => ({ key: 'ws:' + w.ref, title: nm.ref(w.ref), sub: w.harness, entry: w.entry, run: wb.store?.runs.find((r) => r.run_id === w.grader_run_id), w })),
-    ...orphan.map((r) => ({ key: 'run:' + r.run_id, title: nm.run(r), sub: r.harness, entry: null as string | null, run: r, w: undefined })),
-  ].filter((x) => !q || (x.title + ' ' + x.sub).toLowerCase().includes(q.toLowerCase())), [ws, orphan, q, nm, wb.store]);
-  const togglePick = (k: string) => { const s = new Set(picked); if (s.has(k)) s.delete(k); else if (s.size < 4) s.add(k); setPicked(s); };
+  const togglePick = (k: string) => { const s = new Set(picked); if (s.has(k)) s.delete(k); else if (s.size < 4) s.add(k); else toast.info('最多同时打开 4 个产物，请先取消一个选择'); setPicked(s); };
 
   return (
     <Modal open onClose={onClose} title="打开产物" width={980} className="open-dlg"
-      footer={tab === 'runs' ? <><span className="muted small grow">可多选（最多 4 个）并排对比</span><Btn tone="ghost" onClick={onClose}>取消</Btn><Btn tone="primary" disabled={!picked.size} onClick={() => { [...picked].forEach(onOpenRef); onClose(); }}>打开 {picked.size || ''} 个</Btn></> : undefined}>
-      <Tabs value={tab} onChange={setTab} tabs={[{ value: 'runs', label: '运行产物' }, { value: 'files', label: '仓库文件' }, { value: 'dev', label: '开发服务器' }, { value: 'url', label: '地址' }]} />
-      {tab === 'runs' && (
-        <div className="stack">
-          <div className="search-in"><Search size={14} /><input autoFocus placeholder="搜索 供应商/模型/题号/rN" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-          <div className="pick-list">
-            {!list.length && <Empty title="没有运行">先在“运行”页新建运行。</Empty>}
-            {list.map((x) => (
-              <label key={x.key} className="pick-i">
-                <CheckBox checked={picked.has(x.key)} onChange={() => togglePick(x.key)} label="选择" />
-                <span className="mono grow ellipsis">{x.title}</span>
-                <span className="muted small">{x.sub}</span>
-                <span className="mono xs muted ellipsis" style={{ maxWidth: 200 }}>{x.entry || (x.w ? '未发现入口' : '存储运行')}</span>
-                {x.run?.score ? <Score v={x.run.score.total} /> : x.w ? <WsBadge w={x.w} /> : null}
-                <Btn size="xs" tone="ghost" onClick={(e) => { e.preventDefault(); onOpenRef(x.key); onClose(); }}>打开</Btn>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-      {tab === 'files' && (
-        <FileBrowser root="model" title="model" height={460} onOpenHtml={(p) => void post<PreviewSession>('/api/preview', { path: p }).then((s) => { onOpenSession(s); onClose(); }, (e) => toast.error(e.message))} />
-      )}
+      footer={tab === 'runs' ? <><span className="muted small grow">{picked.size ? `已选择 ${picked.size} / 4 个产物` : '勾选产物可批量打开，最多同时显示 4 个'}</span>{picked.size > 0 && <Btn size="sm" tone="ghost" onClick={() => setPicked(new Set())}>清空选择</Btn>}<Btn tone="ghost" onClick={onClose}>取消</Btn><Btn tone="primary" disabled={!picked.size} onClick={() => { [...picked].forEach(onOpenRef); onClose(); }}>{picked.size ? `打开所选（${picked.size}）` : '打开所选'}</Btn></> : undefined}>
+      <Tabs value={tab} onChange={(value) => { setTab(value); if (value === 'files') setFilesVisited(true); }} tabs={[{ value: 'runs', label: '运行产物' }, { value: 'files', label: '仓库文件' }, { value: 'dev', label: '开发服务器' }, { value: 'url', label: '地址' }]} />
+      <div style={{ display: tab === 'runs' ? undefined : 'none' }}>
+        <ArtifactTree picked={picked} onPick={togglePick} onOpen={(ref) => { onOpenRef(ref); onClose(); }} />
+      </div>
+      {filesVisited && <div style={{ display: tab === 'files' ? undefined : 'none' }}>
+        <FileBrowser active={tab === 'files'} root="" title="仓库文件" height={460} onOpenVideo={(path, label) => { onOpenVideo(path, label); onClose(); }} onOpenHtml={(p) => void post<PreviewSession>('/api/preview', { path: p }).then((s) => { onOpenSession(s); onClose(); }, (e) => toast.error(e.message))} />
+      </div>}
       {tab === 'files' && (
         <div className="row gap-s mt-s">
           <span className="muted small grow">也可以预览整个目录（自动使用 index.html 或列出目录）或视频文件：</span>

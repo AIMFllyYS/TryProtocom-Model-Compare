@@ -1,6 +1,6 @@
 // 模型与 harness 选择器 + 智能新增模型（只输入名字：自动识别供应商、目录与推荐 harness）。
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, FolderPlus, Plus, Sparkles, Wand2 } from 'lucide-react';
+import { ChevronRight, FolderPlus, Layers, Plus, Sparkles, Wand2 } from 'lucide-react';
 import type { ModelProfile } from '../../shared/types';
 import { HARNESSES, harnessById, harnessByName, VENDORS, vendorById } from '../../shared/vendors';
 import { get, post } from '../api';
@@ -12,18 +12,26 @@ import { toast } from '../ui/toast';
 
 export const modelKey = (m: { vendor: string; name: string }) => `${m.vendor}/${m.name}`;
 
-export function ModelPicker({ value, onChange, size, glassy = true, block, placeholder = '选择测评模型', allowAdd = true, className }: { value: string; onChange: (k: string) => void; size?: 'xs' | 'sm' | 'lg'; glassy?: boolean; block?: boolean; placeholder?: string; allowAdd?: boolean; className?: string }) {
+/** 「全部模型」的图标：叠层示意，与品牌头像同尺寸同质感 */
+const AllIcon = ({ size = 'xs' }: { size?: 'xs' | 'sm' }) => (
+  <span className={cls('avatar lettered', size)} style={{ ['--c' as string]: '#8a8fa3' }} aria-hidden><Layers size={size === 'sm' ? 14 : 12} /></span>
+);
+
+export function ModelPicker({ value, onChange, size, glassy = true, block, placeholder = '选择测评模型', allowAdd = true, allowAll = false, allLabel = '全部模型', className }: { value: string; onChange: (k: string) => void; size?: 'xs' | 'sm' | 'lg'; glassy?: boolean; block?: boolean; placeholder?: string; allowAdd?: boolean; allowAll?: boolean; allLabel?: string; className?: string }) {
   const { store, blind } = useWb();
   const [add, setAdd] = useState(false);
-  const opts: Opt[] = (store?.models || []).map((m) => ({
+  // 「全部」用空串表示：与筛选器默认值一致，选中即不筛选模型
+  const all: Opt[] = allowAll ? [{ value: '', text: '全部模型', group: '全部', label: allLabel, desc: '不筛选模型', icon: <AllIcon size="sm" /> }] : [];
+  const opts: Opt[] = [...all, ...(store?.models || []).map((m) => ({
     value: modelKey(m), text: `${m.vendor} ${m.name} ${m.display || ''}`, group: vendorById(m.vendor)?.name || m.vendor,
     label: m.display || m.name, desc: m.harness ? `${m.vendor} · ${m.harness}` : m.vendor,
     icon: <ModelAvatar vendor={m.vendor} model={m.name} size="sm" blind={blind} />,
-  }));
+  }))];
   return (
     <>
       <Select value={value} onChange={onChange} options={opts} placeholder={placeholder} size={size} glassy={glassy} block={block} searchable={opts.length > 6} label="测评模型" className={cls('model-pick', className)}
         render={(o) => {
+          if (allowAll && !value) return <><AllIcon /><span className="ellipsis">{allLabel}</span></>;
           const m = store?.models.find((x) => modelKey(x) === o?.value);
           return m ? <><ModelAvatar vendor={m.vendor} model={m.name} size="xs" blind={blind} /><span className="ellipsis">{blind ? '当前模型' : m.display || m.name}</span></> : <span className="sel-ph">{placeholder}</span>;
         }}

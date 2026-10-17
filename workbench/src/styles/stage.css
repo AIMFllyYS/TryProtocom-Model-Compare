@@ -133,3 +133,77 @@
 .pick-i { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-m); cursor: pointer; }
 .pick-i:hover { background: var(--fill-1); }
 .pkg { padding: 10px 12px; border-radius: var(--r-m); background: var(--fill-1); }
+
+/* Resource explorer: shared single-line geometry for artifacts and repository files. */
+.artifact-browser { display: flex; flex-direction: column; gap: 0; min-height: 0; }
+.explorer-toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 0 10px; flex-wrap: wrap; }
+.explorer-toolbar .search-in { flex: 1; min-width: 160px; }
+.explorer-caption { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; color: var(--text-3); font-size: 11px; border-bottom: 1px solid var(--hair); }
+.explorer-caption span[aria-hidden] { margin: 0 6px; color: var(--text-4); }
+.explorer-tree { min-height: 0; overflow: auto; padding: 4px; outline: none; scrollbar-gutter: stable; }
+.artifact-tree { max-height: 400px; min-height: 280px; background: var(--fill-1); border-radius: 0 0 var(--r-m) var(--r-m); }
+.explorer-row { display: flex; flex-direction: row; align-items: center; gap: 6px; height: 34px; min-width: 0; padding-right: 8px; border-radius: 5px; color: var(--text-2); font-size: 12.5px; cursor: pointer; user-select: none; white-space: nowrap; border: 1px solid transparent; }
+.explorer-row:hover { background: var(--fill-2); color: var(--text); }
+.explorer-row.selected { background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--text); }
+.explorer-row:focus-visible { outline: none; border-color: var(--accent); background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.explorer-row.branch { font-weight: 550; }
+.explorer-chevron, .explorer-icon { flex: 0 0 16px; width: 16px; height: 18px; display: inline-flex; align-items: center; justify-content: center; }
+.explorer-chevron { color: var(--text-3); }
+.explorer-chevron svg { transition: transform 100ms ease; }
+.explorer-chevron .expanded { transform: rotate(90deg); }
+.explorer-icon { color: var(--accent); }
+.explorer-name { display: block; flex: 1; min-width: 36px; overflow: hidden; text-overflow: ellipsis; }
+.explorer-meta { display: inline-flex; flex: none; gap: 6px; align-items: center; color: var(--text-3); font-size: 11px; font-weight: 400; }
+.explorer-action { display: inline-flex; flex: none; }
+.explorer-row input[type="checkbox"] { margin: 0 2px; width: 13px; height: 13px; flex: none; accent-color: var(--accent); }
+.repository-explorer { grid-template-columns: minmax(270px, 40%) minmax(0, 1fr); }
+.repository-explorer .explorer-tree { flex: 1; }
+.repository-explorer .files-bar { padding: 6px; }
+.file-tree-footer { flex: none; border-top: 1px solid var(--hair); border-bottom: 0; min-height: 30px; }
+.file-preview-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-3); font-size: 12px; text-align: center; padding: 20px; }
+.file-preview-empty b { color: var(--text-2); font-size: 14px; font-weight: 550; margin-top: 6px; }
+.stage-tab-menu > details > summary { cursor: pointer; padding: 9px 10px; border-radius: var(--r-s); font-size: 13px; }
+.stage-tab-menu > details > summary:hover { background: var(--fill-1); }
+.stage-tab-menu { position: fixed; z-index: 1000; width: min(420px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 8px; border-radius: var(--r-l); box-shadow: var(--sh-2); }
+.stage-tab-menu .artifact-browser { padding: 8px; }
+.stage-tab-menu .artifact-tree { max-height: 340px; min-height: 0; }
+.stage-tab-menu .explorer-caption { flex-wrap: wrap; gap: 4px; }
+.stage-tab-menu .explorer-toolbar .search-in { flex-basis: 100%; }
+.stage-tab-menu .opt { width: 100%; }
+.stage-tab-list { max-height: 200px; overflow: auto; padding-left: 12px; }
+.stage-tab-list .opt { overflow-wrap: anywhere; }
+.stage-tab-list [aria-current] { color: var(--accent); background: var(--fill-1); }
+.stage-tab { flex-shrink: 0; }
+.score-sheet { max-width: calc(100% - 16px); animation: none; }
+.ss-drag { cursor: grab; touch-action: none; user-select: none; }
+.score-sheet.dragging { animation: none; cursor: grabbing; box-shadow: var(--sh-3); }
+.score-sheet.dragging .ss-drag { cursor: grabbing; }
+
+/* 两模型、全题平铺：固定栏宽保持题目对齐，只有近屏预览执行。 */
+.cmp-side-picker { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.artifact-compare-tools { display: flex; gap: 16px; align-items: center; padding: 16px; border-radius: var(--r-l); }
+.artifact-compare-tools p { margin: 6px 0 0; }
+.artifact-pair-head, .artifact-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.artifact-pair-head { padding: 16px 12px 8px; font-size: 13px; }
+.artifact-pair-head b { overflow-wrap: anywhere; }
+.artifact-task { margin-top: 20px; }
+.artifact-task > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 4px 10px; }
+.artifact-task h2 { font-size: 15px; font-weight: 650; }
+.artifact-tile { display: flex; flex-direction: column; height: 490px; min-width: 0; border-radius: var(--r-xl); background: var(--g-thin); box-shadow: 0 0 0 .5px var(--edge); overflow: hidden; }
+.artifact-tile-meta { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 12px; font-size: 12px; flex-wrap: wrap; }
+.artifact-tile-meta > .ellipsis { flex: 1; min-width: 60px; }
+.artifact-tile-body { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.artifact-tile-body > .pane { flex: 1; border-radius: 0; }
+.artifact-tile-body > .empty { width: 100%; align-self: center; }
+.artifact-placeholder { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+.artifact-pair.enlarged .artifact-tile { height: min(76vh, 1000px); }
+.artifact-compare-modal .modal-b { padding: 10px; }
+@media (max-width: 780px) {
+  .cmp-side-picker { flex: 1 1 100%; }
+  .artifact-compare-tools { flex-wrap: wrap; }
+  .artifact-pair { gap: 8px; }
+  .artifact-tile { height: 420px; }
+  .artifact-tile .addr { min-width: 0; }
+}
+
+@media (max-width: 680px) { .repository-explorer { grid-template-columns: minmax(160px, 42%) minmax(0, 1fr); } .explorer-caption { flex-wrap: wrap; gap: 4px; } .explorer-meta { max-width: 110px; overflow: hidden; text-overflow: ellipsis; } }

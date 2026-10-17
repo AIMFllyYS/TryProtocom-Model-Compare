@@ -14,6 +14,8 @@ import { ScoreSheet } from '../components/ScoreSheet';
 import { Pane, type PaneState } from '../stage/Pane';
 import { OpenDialog } from '../stage/OpenDialog';
 import { ProcOutput } from '../stage/DevTools';
+import { StageTabMenu } from '../stage/StageTabMenu';
+import { workspaceForRun } from '../../shared/artifact-selection';
 
 type Layout = '1' | 'cols' | 'rows' | 'grid';
 const newId = () => Math.random().toString(36).slice(2, 9);
@@ -30,17 +32,23 @@ export default function Stage() {
   const [showProcs, setShowProcs] = useState(false);
   const [scoreRun, setScoreRun] = useLocal<string | null>('stage.score', null);
   const handled = useRef('');
+  const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const activeId = panes.some((p) => p.id === focus) ? focus : panes[0]?.id;
 
   const addPane = (p: Omit<PaneState, 'id' | 'device' | 'zoom' | 'rotate' | 'devtools'> & Partial<PaneState>, replaceFocused = false) => {
     const base = panes.find((x) => x.id === focus) || panes[0];
     const np: PaneState = { id: newId(), device: sync && base ? base.device : 'fill', zoom: 'fit', rotate: false, devtools: false, ...p };
     setPanes((ps) => {
       if (replaceFocused && ps.length) return ps.map((x) => (x.id === (focus || ps[0].id) ? { ...np, device: x.device, zoom: x.zoom, devtools: x.devtools } : x));
-      return [...ps, np].slice(-4);
+      return [...ps, np];
     });
     setFocus(np.id);
   };
-  const openSession = (s: PreviewSession, replace = false) => addPane({ src: { type: 'session', sid: s.id } }, replace);
+  const openSession = (s: PreviewSession, replace = false) => {
+    const existing = panes.find((p) => p.src.type === 'session' && p.src.sid === s.id);
+    if (existing && !replace) setFocus(existing.id);
+    else addPane({ src: { type: 'session', sid: s.id } }, replace);
+  };
 
   // 深链：?session= / ?path= / ?url= / ?open=ws:<ref>,run:<id>
   useEffect(() => {
@@ -74,7 +82,7 @@ export default function Stage() {
     const ws = x.startsWith('ws:') ? store.workspaces.find((w) => w.ref === x.slice(3)) : undefined;
     const run = x.startsWith('run:') ? store.runs.find((r) => r.run_id === x.slice(4)) : ws?.grader_run_id ? store.runs.find((r) => r.run_id === ws.grader_run_id) : undefined;
     const label = ws ? nm.ref(ws.ref) : run ? nm.run(run) : x;
-    const a = resolveArtifact(ws, run, label);
+    const a = resolveArtifact(ws || (run ? workspaceForRun(run, store.workspaces) : undefined), run, label);
     if (a.kind === 'video') addPane({ src: { type: 'video', path: a.path, label } });
     else if (a.kind === 'static') openSession(await post<PreviewSession>('/api/preview', a.body));
     else toast.warn(`${label}：${a.reason}`);
@@ -95,7 +103,10 @@ export default function Stage() {
   // 清理引用了已关闭会话的窗格：保留，显示“已关闭”，由用户关闭
 
   const running = wb.procs.filter((p) => p.status === 'running');
-  const shown = layout === '1' ? panes.filter((p) => p.id === (focus || panes[0]?.id)).slice(0, 1) : panes;
+  const visible = panes.slice(0, 4);
+  if (activeId && !visible.some((p) => p.id === activeId)) visible[visible.length - 1] = panes.find((p) => p.id === activeId)!;
+  const shown = layout === '1' ? panes.filter((p) => p.id === activeId).slice(0, 1) : visible;
+  const paneLabel = (p: PaneState) => p.src.type === 'video' ? p.src.label : wb.previews.find((s) => p.src.type === 'session' && s.id === p.src.sid)?.label || '已关闭';
   const unusedSessions = wb.previews.filter((s) => !panes.some((p) => p.src.type === 'session' && p.src.sid === s.id));
 
   return (
@@ -113,7 +124,8 @@ export default function Stage() {
           {panes.map((p) => {
             const s = p.src.type === 'session' ? wb.previews.find((x) => x.id === (p.src as { sid: string }).sid) : undefined;
             const label = p.src.type === 'video' ? p.src.label : s?.label || '已关闭';
-            return <button key={p.id} className={cls('stage-tab', (focus || panes[0]?.id) === p.id && 'on')} onClick={() => setFocus(p.id)} title={label}>{p.src.type === 'video' ? '▶ ' : ''}<span className="ellipsis">{label}</span>{s && s.counts.error > 0 && <span className="err-badge">{s.counts.error}</span>}</button>;
+            return <button key={p.id} id={"stage-tab-" + p.id} className={cls('stage-tab', activeId === p.id && 'on')} onClick={() => setFocus(p.id)} onContextMenu={(e) => { e.preventDefault(); setFocus(p.id); setTabMenu({ id: p.id, x: e.clientX, y: e.clientY }); }}
+              onKeyDown={(e) => { if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setTabMenu({ id: p.id, x: r.left, y: r.bottom }); } }} title={label}>{p.src.type === 'video' ? '▶ ' : ''}<span className="ellipsis">{label}</span>{s && s.counts.error > 0 && <span className="err-badge">{s.counts.error}</span>}</button>;
           })}
         </div>
         <div className="grow" />
@@ -143,10 +155,14 @@ export default function Stage() {
         <div className={cls('stage-grid', `lay-${layout}`, `n-${shown.length}`)}>
           {shown.map((p) => (
             <Pane key={p.id} pane={p} session={p.src.type === 'session' ? wb.previews.find((s) => s.id === (p.src as { sid: string }).sid) : undefined}
-              focused={(focus || panes[0]?.id) === p.id} onFocus={() => act.current.setFocus(p.id)} onChange={(patch) => act.current.update(p.id, patch)} onClose={() => act.current.close(p.id)} dtHeight={shown.length > 2 ? 200 : 280} />
+              focused={activeId === p.id} onFocus={() => act.current.setFocus(p.id)} onChange={(patch) => act.current.update(p.id, patch)} onClose={() => act.current.close(p.id)} dtHeight={shown.length > 2 ? 200 : 280} />
           ))}
         </div>
       )}
+      {tabMenu && <StageTabMenu x={tabMenu.x} y={tabMenu.y} selected={tabMenu.id} tabs={panes.map((p) => ({ id: p.id, label: paneLabel(p) }))}
+        onDismiss={() => { document.getElementById('stage-tab-' + tabMenu.id)?.focus({ preventScroll: true }); setTabMenu(null); }} onSelect={setFocus} onCloseTab={() => close(tabMenu.id)}
+        onCloseOthers={() => { setPanes((ps) => ps.filter((p) => p.id === tabMenu.id)); setFocus(tabMenu.id); }}
+        onOpen={(ref) => void openRef(ref).catch((e) => toast.error(e.message))} />}
       {openDlg && <OpenDialog onClose={() => setOpenDlg(false)} onOpenSession={(s, rep) => openSession(s, rep)} onOpenVideo={(path, label) => addPane({ src: { type: 'video', path, label } })} onOpenRef={(x) => void openRef(x).catch((e) => toast.error(e.message))} />}
       {scoreRun && <ScoreSheet runId={scoreRun} onClose={() => setScoreRun(null)} />}
     </div>

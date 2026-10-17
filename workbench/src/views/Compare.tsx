@@ -1,16 +1,17 @@
-// 对比：选 2–6 个参赛者，叠加雷达、逐题分组柱、维度差值与胜负、效率散点；整页图表一键打包导出。
+// 对比：选 2 个参赛者，叠加雷达、逐题分组柱、维度差值与胜负、效率散点；整页图表一键打包导出。
 import { useMemo, useRef, useState } from 'react';
-import { Download, GitCompareArrows, Plus, X } from 'lucide-react';
+import { Download, GitCompareArrows } from 'lucide-react';
 import { useWb } from '../state';
 import { go, useRoute } from '../lib/router';
 import { cls, fmt, splitEntrant } from '../lib/format';
 import { exportAllCharts } from '../lib/exporter';
-import { Btn, Card, Empty, Select } from '../ui/kit';
+import { Btn, Card, Empty, Select, Seg } from '../ui/kit';
 import { Bars, ChartCard, Legend, Pareto, Radar, seriesColor } from '../ui/charts';
-import { ModelAvatar } from '../ui/brand';
 import { toast } from '../ui/toast';
 import { Score, useNamer } from '../components/common';
 import { frontier } from './Board';
+import { ArtifactCompare } from '../stage/ArtifactCompare';
+import { useLocal } from '../lib/router';
 
 export default function Compare() {
   const wb = useWb();
@@ -22,7 +23,9 @@ export default function Compare() {
   const fromUrl = (route.query.get('e') || '').split(/[|,]/).map((s) => s.trim()).filter(Boolean);
   const initial = fromUrl.filter((e) => all.some((b) => b.entrant === e || b.entrant.toLowerCase().includes(e.toLowerCase())))
     .map((e) => all.find((b) => b.entrant === e)?.entrant || all.find((b) => b.entrant.toLowerCase().includes(e.toLowerCase()))!.entrant);
-  const [picked, setPicked] = useState<string[]>(initial.length ? initial : all.slice(0, Math.min(3, all.length)).map((b) => b.entrant));
+  const [selection, setPicked] = useState<string[]>(initial.slice(0, 2));
+  const picked = [...new Set([...selection.filter((e) => all.some((b) => b.entrant === e)), ...initial, ...all.map((b) => b.entrant)])].slice(0, 2);
+  const [mode, setMode] = useLocal<'charts' | 'artifacts'>('compare.mode', 'artifacts');
   const [hover, setHover] = useState<string | null>(null);
   const setP = (p: string[]) => { setPicked(p); go('compare', [], { e: p.join('|') }, true); };
   const rows = picked.map((e) => all.find((b) => b.entrant === e)!).filter(Boolean);
@@ -41,33 +44,25 @@ export default function Compare() {
 
   if (!agg) return <div className="page"><div className="skel" style={{ height: 400 }} /></div>;
   if (all.length < 2) return <div className="page"><Head /><Card><Empty icon={<GitCompareArrows size={30} />} title="至少需要 2 个有评分的参赛者" action={<Btn onClick={() => go('board')}>查看排行榜</Btn>}>完成更多模型的评分后即可对比。</Empty></Card></div>;
-  const add = all.filter((b) => !picked.includes(b.entrant));
   const exportAll = async () => { const n = await exportAllCharts(box.current!, `compare-${rows.map((r) => splitEntrant(r.entrant).model).join('-vs-').slice(0, 80)}.zip`); toast.ok(`已打包 ${n} 张图表`); };
   const lead = (d: string) => { const vs = rows.map((r) => r.dims[d]).filter((v): v is number => v != null); return vs.length ? Math.max(...vs) : null; };
 
   return (
     <div className="page" ref={box}>
-      <Head onExport={() => void exportAll()} />
+      <Head onExport={mode === 'charts' ? () => void exportAll() : undefined} />
       <div className="cmp-pick glass-thin">
-        {rows.map((r) => {
-          const { model, harness } = splitEntrant(r.entrant);
-          return (
-            <span key={r.entrant} className="cmp-chip" style={{ ['--c' as string]: color(r.entrant) }}>
-              <ModelAvatar vendor={nm.vendorOf(r.entrant)} model={model} size="sm" blind={nm.blind} dot={color(r.entrant)} />
-              <span className="who-t"><b>{nm.blind ? nm.entrant(r.entrant) : model}</b><span>{harness} · #{r.rank} · {fmt.n(r.quality)}</span></span>
-              <button className="icon-btn xs" aria-label="移除" onClick={() => setP(picked.filter((x) => x !== r.entrant))}><X size={12} /></button>
-            </span>
-          );
-        })}
-        {add.length > 0 && picked.length < 6 && (
-          <Select value="" onChange={(e) => setP([...picked, e])} placeholder="添加参赛者" size="sm" searchable render={() => <span className="row gap-s"><Plus size={14} />添加参赛者</span>}
-            options={add.map((b) => ({ value: b.entrant, label: nm.entrant(b.entrant), desc: `#${b.rank} · ${fmt.n(b.quality)}`, icon: <ModelAvatar vendor={nm.vendorOf(b.entrant)} model={splitEntrant(b.entrant).model} size="xs" blind={nm.blind} /> }))} />
-        )}
+        {[0, 1].map((side) => <label className="cmp-side-picker" key={side}><span className="muted small">{side === 0 ? '左侧模型' : '右侧模型'}</span>
+          <Select value={picked[side] || ''} onChange={(e) => setP(side === 0 ? [e, picked[1]] : [picked[0], e])} searchable label={side === 0 ? '左侧模型' : '右侧模型'}
+            options={all.filter((b) => b.entrant !== picked[1 - side]).map((b) => ({ value: b.entrant, label: nm.entrant(b.entrant), desc: `#${b.rank} · ${fmt.n(b.quality)}` }))} />
+        </label>)}
+        <Btn size="sm" onClick={() => setP([picked[1], picked[0]])}>交换左右</Btn>
+        <div className="grow" />
+        <Seg label="对比模式" value={mode} onChange={setMode} options={[{ value: 'artifacts', label: '产物平铺' }, { value: 'charts', label: '图表数据' }]} />
       </div>
 
-      {rows.length < 2 ? <Card className="mt"><Empty title="再选一个参赛者" /></Card> : (
+      {rows.length < 2 ? <Card className="mt"><Empty title="再选一个参赛者" /></Card> : mode === 'artifacts' ? <ArtifactCompare entrants={rows.map((r) => r.entrant)} /> : (
         <>
-          <div className="grid g-4 mt-l">
+          <div className="grid g-2 mt-l">
             {rows.map((r) => (
               <div key={r.entrant} className="cmp-kpi glass" style={{ ['--c' as string]: color(r.entrant) }}>
                 <div className="row gap-s"><i className="cmp-bar" /><b className="ellipsis">{nm.entrant(r.entrant)}</b></div>
@@ -128,7 +123,7 @@ function Head({ onExport }: { onExport?: () => void }) {
     <div className="page-head">
       <div className="page-head-t">
         <h1 className="page-title">对比</h1>
-        <p className="page-sub">选择 2–6 个参赛者（模型 @ harness），逐维度、逐题查看差异。在排行榜勾选后点「对比所选」也会来到这里。</p>
+        <p className="page-sub">选择两个参赛者（模型 @ harness），左右平铺查看全部题目的最高分产物，或切换图表查看评分差异。</p>
       </div>
       {onExport && <div className="page-x"><Btn icon={<Download size={15} />} onClick={onExport}>打包导出全部图表</Btn></div>}
     </div>

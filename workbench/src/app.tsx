@@ -58,7 +58,7 @@ export function App() {
         <header className="toolbar glass-thin">
           <Crumbs route={route} />
           <div className="grow" />
-          <div className="tb-model"><span className="tb-model-l">测评中</span><ModelPicker value={wb.current} onChange={wb.setCurrent} size="sm" /></div>
+          <div className="tb-model"><span className="tb-model-l">测评中</span><ModelPicker value={wb.current} onChange={wb.setCurrent} size="sm" allowAll allLabel="全部模型" /></div>
           <button className="search-btn" onClick={() => setPalette(true)}><Command size={14} aria-hidden /><span>搜索或执行命令</span><kbd>Ctrl K</kbd></button>
           <JobsTray />
           <IconBtn label="召唤桌面宠物（右下角状态精灵：交付提醒、登记评分、截屏存证）" tipPlace="bottom" onClick={() => void post<{ already?: boolean }>('/api/pet', { action: 'start' }).then((r) => toast.ok(r.already ? '桌面宠物已经在右下角了' : '已召唤桌面宠物，看看屏幕右下角'), (e) => toast.error(e.message))}><PawPrint size={16} /></IconBtn>

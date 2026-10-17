@@ -7,6 +7,27 @@ import { DELIVERABLES, evalDeliverable } from '../shared/deliverables';
 import { settleQuota, unitPrice } from '../shared/quota';
 import { activityOf, activityOfJob, isBusy, FAIL_WINDOW, parseProgress, petJobs } from '../shared/activity';
 import type { JobInfo } from '../shared/types';
+import type { StoreRun, WorkspaceRun, SpecTask } from '../shared/types';
+import { bestArtifactRun, artifactTaskKeys, artifactChoices, workspaceForRun } from '../shared/artifact-selection';
+
+test('产物对比：最高分、同分较早轮次、零分、未评分与 harness/变体隔离', () => {
+  const run = (id: string, total: number | null, index: number, extra: Partial<StoreRun> = {}) => ({ run_id: id, entrant: 'M @ H', tkey: 'T03A', run_index: index, score: total == null ? null : { total }, ...extra } as StoreRun);
+  const runs = [run('r3', 90, 3), run('r1', 70, 1), run('r2', 90, 2), run('other-harness', 100, 1, { entrant: 'M @ Other' }), run('variant-c', 100, 1, { tkey: 'T03C' })];
+  assert.equal(bestArtifactRun(runs, 'M @ H', 'T03A')?.run_id, 'r2');
+  assert.equal(bestArtifactRun([run('ungraded', null, 1), run('zero', 0, 2)], 'M @ H', 'T03A')?.run_id, 'zero');
+  assert.equal(bestArtifactRun([run('ungraded', null, 1), run('invalid', NaN, 2)], 'M @ H', 'T03A'), undefined);
+  assert.deepEqual(runs.map((r) => r.run_id), ['r3', 'r1', 'r2', 'other-harness', 'variant-c']);
+});
+
+test('产物目录：全部题目顺序、变体分行、工作区关联去重、作废排除', () => {
+  const tasks = [{ id: 'T03', variants: { C: {}, A: {} } }, { id: 'T02', variants: {} }, { id: 'T01', variants: {} }] as SpecTask[];
+  assert.deepEqual(artifactTaskKeys(tasks, ['T08', 'T02']), ['T01', 'T02', 'T03A', 'T03C', 'T08']);
+  const ws = [{ ref: 'V/M/T01/r1', grader_run_id: 'one' }, { ref: 'V/M/T02/r1', grader_run_id: null }, { ref: 'discarded', discarded: { at: 'today' } }] as WorkspaceRun[];
+  const runs = [{ run_id: 'one', ws_ref: null }, { run_id: 'two', ws_ref: 'V/M/T02/r1' }, { run_id: 'orphan' }] as StoreRun[];
+  assert.equal(workspaceForRun(runs[0], ws), ws[0]);
+  assert.equal(workspaceForRun(runs[1], ws), ws[1]);
+  assert.deepEqual(artifactChoices(ws, runs).map((e) => e.key), ['ws:V/M/T01/r1', 'ws:V/M/T02/r1', 'run:orphan']);
+});
 
 test('供应商推断', () => {
   const cases: [string, string | null][] = [['GPT-6.1-Sol', 'OpenAI'], ['o4-mini', 'OpenAI'], ['claude-opus-5.5', 'Anthropic'], ['Gemini-3.5-Pro', 'Google'], ['DeepSeek-V4', 'DeepSeek'],

@@ -1,6 +1,6 @@
 // 运行：看板（进行中 → 已交付待登记 → 待评分 → 已完成），详情含实时交付清单、登记评分、得分明细、预览打分与 AI 评审提示词。
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
+import { Bot, ChevronDown, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
 import type { ItemScore, SpecItem, StoreRun, Usage, WorkspaceRun } from '../../shared/types';
 import { FINAL_FILE } from '../../shared/deliverables';
 import { get, post } from '../api';
@@ -21,6 +21,8 @@ import { ActivityBanner, ActivityStrip, activityOf, isBusy, useRunActivity } fro
 
 export interface Row { key: string; ws?: WorkspaceRun; run?: StoreRun }
 type Col = 'running' | 'delivered' | 'grading' | 'done';
+/** 看板每栏首批渲染的卡片数；超出后收进「加载更多」，避免一次挂载几百张卡片 */
+const BOARD_PAGE = 20;
 
 export function useRows(): Row[] {
   const { store } = useWb();
@@ -71,8 +73,11 @@ function RunBoard({ rows }: { rows: Row[] }) {
   const [view, setView] = useLocal<'board' | 'list'>('runs.view', 'board');
   const [fModel, setFModel] = useLocal('runs.model', '');
   const [fTask, setFTask] = useLocal('runs.task', '');
+  // 性能：每栏先渲染 PAGE 张卡片，其余按批「加载更多」（避免一次挂载几百张卡片，卡住首帧）
+  const [shown, setShown] = useState<Record<string, number>>({});
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { setShown({}); }, [fModel, fTask]);
   const list = rows.filter((r) => {
     const m = r.ws ? `${r.ws.vendor}/${r.ws.model}` : `${r.run!.vendor || ''}/${r.run!.model}`;
     return (!fModel || m === fModel) && (!fTask || (r.ws?.task || r.run!.task) === fTask);
@@ -104,7 +109,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
         </div>
       </div>
       <div className="toolbar-row">
-        <ModelPicker value={fModel} onChange={setFModel} size="sm" placeholder="全部模型" allowAdd={false} />
+        <ModelPicker value={fModel} onChange={setFModel} size="sm" placeholder="全部模型" allowAdd={false} allowAll />
         {fModel && <Btn size="sm" tone="ghost" icon={<X size={13} />} onClick={() => setFModel('')}>清除</Btn>}
         <Select size="sm" value={fTask} onChange={setFTask} placeholder="全部题目" options={[{ value: '', label: '全部题目' }, ...(wb.spec?.tasks || []).map((t) => ({ value: t.id, label: `${t.id} ${t.name}` }))]} />
         <span className="grow" />
@@ -117,11 +122,20 @@ function RunBoard({ rows }: { rows: Row[] }) {
         <div className="kanban">
           {COLS.map((c) => {
             const items = list.filter((r) => colOf(r) === c.id);
+            const cap = shown[c.id] ?? BOARD_PAGE;
+            const head = items.slice(0, cap);
+            const rest = items.length - head.length;
             return (
               <div key={c.id} className="kan-col">
                 <div className="kan-h"><c.icon size={15} /><b>{c.label}</b><span className="badge">{items.length}</span></div>
                 <div className="kan-hint muted xs">{c.hint}</div>
-                <div className="kan-list">{items.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}{!items.length && <div className="kan-empty">空</div>}</div>
+                <div className="kan-list">{head.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}{!items.length && <div className="kan-empty">空</div>}</div>
+                {rest > 0 && (
+                  <button type="button" className="kan-more" onClick={() => setShown((s) => ({ ...s, [c.id]: head.length + BOARD_PAGE }))}>
+                    <ChevronDown size={14} aria-hidden />加载更多<span className="kan-more-n">剩余 {rest}</span>
+                  </button>
+                )}
+                {rest <= 0 && items.length > BOARD_PAGE && <div className="kan-more-end muted xs">已显示全部 {items.length} 条</div>}
               </div>
             );
           })}

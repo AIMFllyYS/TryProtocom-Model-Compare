@@ -14,6 +14,7 @@ import { cls, copyText } from '../lib/format';
 import { Badge, Btn, IconBtn, Kbd } from '../ui/kit';
 import { toast } from '../ui/toast';
 import { DimChip, Score, useNamer } from './common';
+import { useDraggableSheet } from '../stage/useDraggableSheet';
 
 type Answer = { score: number | null; note: string; draft?: boolean };
 const ADVANCE_MS = 240; // 让选中态先被看见，再跳下一题
@@ -22,6 +23,7 @@ export function ScoreSheet({ runId, onClose }: { runId: string; onClose: () => v
   const wb = useWb();
   const nm = useNamer();
   const run: StoreRun | undefined = wb.store?.runs.find((r) => r.run_id === runId);
+  const drag = useDraggableSheet(!!run);
   const task = wb.spec?.tasks.find((t) => t.id === run?.task);
   const human = useMemo(() => (run?.score?.items || []).filter((i) => i.method === 'human'), [run?.score]);
   const agentPending = useMemo(() => (run?.score?.items || []).filter((i) => i.method === 'agent' && i.status === 'pending').length, [run?.score]);
@@ -131,8 +133,8 @@ export function ScoreSheet({ runId, onClose }: { runId: string; onClose: () => v
   const anchors = spec?.anchors.length ? spec.anchors : ['0 分', '1 分', '2 分', '3 分'];
 
   return (
-    <aside className={cls('score-sheet glass-thick', min && 'min')} aria-label="评分面板">
-      <header className="ss-h">
+    <aside ref={drag.ref} style={drag.style} className={cls('score-sheet glass-thick', min && 'min', drag.dragging && 'dragging')} aria-label="评分面板">
+      <header className="ss-h ss-drag" {...drag.handle} title="长按标题拖动 · 双击恢复位置">
         <div className="grow">
           <div className="row gap-s"><b>{task?.id}{run.variant || ''} · {nm.blind ? run.alias || '匿名' : run.model}</b>{run.score && <Score v={run.score.total} />}</div>
           <div className="muted xs row gap-xs">
