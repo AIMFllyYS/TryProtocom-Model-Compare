@@ -1,0 +1,104 @@
+{
+  "version": "v1.1-errata",
+  "generated_at": "2026-10-18T09:24:21.810962+00:00",
+  "note": "原始分保持冻结；勘误分只在榜单“历史版”以 v1.1 附注显示。",
+  "runs": [
+    {
+      "run_id": "T03A-0c88dc70",
+      "task": "T03",
+      "variant": "A",
+      "model": "gemini-3.8-flash-high",
+      "harness": "Antigravity CLI",
+      "run_index": 4,
+      "reason": "G3",
+      "reason_text": "T03A G3 门槛把注释和 window.__hf 的说明文字当成“使用了视频框架”（评分器缺陷，已改为只统计真实依赖）",
+      "original": {
+        "total": 0.0,
+        "gate_pass": false,
+        "gate_fail": [
+          "G3"
+        ],
+        "dims": {
+          "anim": 0.0,
+          "eng": 0.0
+        }
+      },
+      "corrected": {
+        "total": 69.64,
+        "gate_pass": true,
+        "gate_fail": [],
+        "dims": {
+          "anim": 67.17,
+          "eng": 90.0
+        },
+        "pending": 0,
+        "na_ratio": 0.0
+      }
+    },
+    {
+      "run_id": "T03A-268cad78",
+      "task": "T03",
+      "variant": "A",
+      "model": "gemini-3.6-flash-high",
+      "harness": "Antigravity CLI",
+      "run_index": 3,
+      "reason": "G3",
+      "reason_text": "T03A G3 门槛把注释和 window.__hf 的说明文字当成“使用了视频框架”（评分器缺陷，已改为只统计真实依赖）",
+      "original": {
+        "total": 0.0,
+        "gate_pass": false,
+        "gate_fail": [
+          "G3"
+        ],
+        "dims": {
+          "anim": 0.0,
+          "eng": 0.0
+        }
+      },
+      "corrected": {
+        "total": 64.71,
+        "gate_pass": true,
+        "gate_fail": [],
+        "dims": {
+          "anim": 61.65,
+          "eng": 90.0
+        },
+        "pending": 0,
+        "na_ratio": 0.0
+      }
+    },
+    {
+      "run_id": "T03A-d0de04cf",
+      "task": "T03",
+      "variant": "A",
+      "model": "gemini-3.1-pro-high",
+      "harness": "Antigravity CLI",
+      "run_index": 1,
+      "reason": "G3",
+      "reason_text": "T03A G3 门槛把注释和 window.__hf 的说明文字当成“使用了视频框架”（评分器缺陷，已改为只统计真实依赖）",
+      "original": {
+        "total": 0.0,
+        "gate_pass": false,
+        "gate_fail": [
+          "G3"
+        ],
+        "dims": {
+          "anim": 0.0,
+          "eng": 0.0
+        }
+      },
+      "corrected": {
+        "total": 60.36,
+        "gate_pass": true,
+        "gate_fail": [],
+        "dims": {
+          "anim": 55.56,
+          "eng": 100.0
+        },
+        "pending": 0,
+        "na_ratio": 0.0
+      }
+    }
+  ],
+  "already_corrected": []
+}
