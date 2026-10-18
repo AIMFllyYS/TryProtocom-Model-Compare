@@ -17,6 +17,57 @@ URL_RE = re.compile(r"""(?:src|href)\s*=\s*["'](https?://[^"']+)["']|import\s+[^
 VERSION_IN_URL = re.compile(r"(@\d+\.\d+|/\d+\.\d+\.\d+/|/r\d{2,3}/|@\^?\d|/v?\d+\.\d+(\.\d+)?/)")
 
 
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/|<!--.*?-->", re.S)
+_LINE_COMMENT_RE = re.compile(r"(?<![:\"'\w\\])//[^\n]*")
+_HASH_COMMENT_RE = re.compile(r"(?m)^\s*#[^\n]*")
+_USAGE_CONTEXT_RES = (
+    # <script src="…"> / <link href="…"> / url(...)
+    re.compile(r"""(?:src|href)\s*=\s*["']([^"']+)["']""", re.I),
+    # import x from "…" / import "…" / require("…") / import("…")
+    re.compile(r"""\bimport\s+(?:[^;\n]*?\sfrom\s+)?["']([^"']+)["']|\brequire\(\s*["']([^"']+)["']\s*\)|\bimport\(\s*["']([^"']+)["']\s*\)""", re.I),
+    # npx / npm / pnpm / yarn commands
+    re.compile(r"""\b(?:npx|npm|pnpm|yarn|bunx)\s+[^\n]*""", re.I),
+)
+
+
+def strip_comments(text: str, suffix: str = ".html") -> str:
+    """Remove block / line comments so that prose in comments never counts as usage."""
+    text = _BLOCK_COMMENT_RE.sub(" ", text)
+    if suffix in {".html", ".htm", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".css"}:
+        text = _LINE_COMMENT_RE.sub("", text)
+    elif suffix in {".py", ".yaml", ".yml"}:
+        text = _HASH_COMMENT_RE.sub("", text)
+    return text
+
+
+def usage_hits(text: str, pattern: str, suffix: str = ".html") -> int:
+    """Count references to `pattern` that are real usage, not mentions.
+
+    Only dependency-shaped contexts count: script/link URLs, import/require
+    specifiers, and package-manager commands. Comments, identifiers such as
+    `window.__hf`, and prose never do.  package.json dependency keys count too.
+    """
+    rx = re.compile(pattern, re.I)
+    clean = strip_comments(text, suffix)
+    hits = 0
+    for ctx_rx in _USAGE_CONTEXT_RES:
+        for m in ctx_rx.finditer(clean):
+            chunk = next((g for g in m.groups() if g), m.group(0)) if m.groups() else m.group(0)
+            if rx.search(chunk):
+                hits += 1
+    if suffix == ".json":
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+                deps = data.get(key)
+                if isinstance(deps, dict):
+                    hits += sum(1 for name in deps if rx.search(name))
+    return hits
+
+
 def _iter_files(root: Path, skip_dirs=("node_modules", ".git", "_grading", "dist-cache")):
     for p in root.rglob("*"):
         if p.is_file() and not any(part in skip_dirs for part in p.parts):
@@ -73,6 +124,14 @@ def files_probe(ctx: RunContext, opts: dict) -> None:
             if p.suffix.lower() in TEXT_EXT:
                 hits += len(rx.findall(p.read_text(encoding="utf-8", errors="replace")))
         m.set(f"files.grep.{gname}", hits)
+    # `grep_usage`: like `grep`, but counts only dependency-shaped usage (imports, script
+    # URLs, package-manager commands, package.json deps); comments and prose never match.
+    for gname, pattern in (opts.get("grep_usage") or {}).items():
+        hits = 0
+        for p in _iter_files(root):
+            if p.suffix.lower() in TEXT_EXT and p.suffix.lower() != ".md":
+                hits += usage_hits(p.read_text(encoding="utf-8", errors="replace"), pattern, p.suffix.lower())
+        m.set(f"files.grep_usage.{gname}", hits)
     entry = opts.get("entry")
     if entry:
         ep = root / entry

@@ -120,6 +120,12 @@ def main() -> None:
     rumble = np.convolve(RNG.standard_normal(r), np.ones(200) / 200, mode="same") * 4 * np.minimum(np.arange(r) / (0.5 * SR), 1)
     write_wav(t4 / "sfx" / "rumble.wav", rumble)
     (t4 / "aether9-facts.md").write_text(FACTS_T04, encoding="utf-8")
+    # v2 重写题（V07 / V08）使用与 v1 相同的输入素材：逐字节复制，保证 v1 / v2 可比、也不另存一份生成逻辑
+    import shutil
+    for src, dst_name in ((t3, "V07-tempo-motion"), (t4, "V08-aether9-promo")):
+        dst = ROOT / dst_name / "materials" / "assets"
+        if (ROOT / dst_name).exists():
+            shutil.copytree(src, dst, dirs_exist_ok=True)
     print("materials written")
 
 

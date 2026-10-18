@@ -99,11 +99,25 @@ def score_run(rubric: dict, metrics: Metrics, manual: dict, variant: str | None 
         s = apply_rule(g.get("rule", {"type": "bool"}), v) if st == "scored" else 0.0
         if s < 1:
             gate_fail.append({"id": g["id"], "desc": g["desc"], "value": v})
+    # Tier0（可用性，v2）：页面能加载、不崩溃、非空白、核心交互不抛错……与门槛不同，失败不清零，
+    # 而是把该次运行的总分与各维度分封顶到 v2.tier0_cap，同时记 tier0_pass=False（稳定性的“可用率”据此统计）。
+    tier0_fail = []
+    for g in rubric.get("tier0", []):
+        if g.get("variants") and variant not in g["variants"]:
+            continue
+        v, st = _value(g, metrics)
+        if st == "na":
+            continue
+        s = apply_rule(g.get("rule", {"type": "bool"}), v) if st == "scored" else 0.0
+        if s < 1:
+            tier0_fail.append({"id": g["id"], "desc": g["desc"], "value": v})
+    has_tier0 = bool(rubric.get("tier0"))
     for it in rubric.get("items", []):
         if it.get("variants") and variant not in it["variants"]:
             continue
         rec = {"id": it["id"], "dim": it["dim"], "tier": it.get("tier", "basic"), "method": it.get("method", "auto"),
-               "weight": item_weight(it), "desc": it["desc"]}
+               "weight": item_weight(it), "desc": it["desc"],
+               "edition": it.get("edition", "base"), "module": it.get("module"), "judge": it.get("judge")}
         if rec["method"] in ("human", "agent"):
             ms = manual.get(it["id"])
             if ms is None or ms.get("score") in (None, ""):
@@ -134,6 +148,20 @@ def score_run(rubric: dict, metrics: Metrics, manual: dict, variant: str | None 
     if not gate_pass:
         dims = {d: 0.0 for d in dims}
         total = 0.0
+    elif tier0_fail:
+        cap = float((cfg.get("v2") or {}).get("tier0_cap", 40))
+        dims = {d: (min(v, cap) if v is not None else None) for d, v in dims.items()}
+        total = min(total, cap)
+    # 版次（基础 / 细节）与细节模块的得分，只作展示与分析，不改变总分公式
+    editions, modules = {}, {}
+    for ed in sorted({r["edition"] for r in counted}):
+        rs = [r for r in counted if r["edition"] == ed]
+        w = sum(r["weight"] for r in rs)
+        editions[ed] = round(100 * sum(r["weight"] * r["s"] for r in rs) / w, 1) if w else None
+    for mod in sorted({r["module"] for r in counted if r["module"]}):
+        rs = [r for r in counted if r["module"] == mod]
+        w = sum(r["weight"] for r in rs)
+        modules[mod] = {"score": round(100 * sum(r["weight"] * r["s"] for r in rs) / w, 1) if w else None, "items": [r["id"] for r in rs]}
     all_w = sum(r["weight"] for r in items_out)
     na_w = sum(r["weight"] for r in items_out if r["status"] == "na")
     pend = [r["id"] for r in items_out if r["status"] == "pending"]
@@ -147,7 +175,9 @@ def score_run(rubric: dict, metrics: Metrics, manual: dict, variant: str | None 
         "tiers": tiers, "items": items_out, "na_ratio": round(na_w / all_w, 3) if all_w else 0,
         "low_confidence": (na_w / all_w if all_w else 0) > cfg.get("low_confidence_na_ratio", 0.2),
         "pending": pend, "complete": not pend,
-        "passed": gate_pass and total >= cfg.get("pass_threshold", 60),
+        "passed": gate_pass and not tier0_fail and total >= cfg.get("pass_threshold", 60),
+        "tier0_pass": (not tier0_fail) if has_tier0 else None, "tier0_fail": tier0_fail,
+        "editions": editions, "modules": modules,
     }
 
 

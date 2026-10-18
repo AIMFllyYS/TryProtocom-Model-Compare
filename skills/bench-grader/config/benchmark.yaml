@@ -38,11 +38,25 @@ browser:
 
 # 外部依赖路径（评测机上）
 external:
-  api_python: null            # optional evaluator Python 3.11; empty uses the current interpreter
-  api_node: null              # optional evaluator Node; empty uses node on PATH
-  minecraft_skill_dir: null   # minecraft-stop-motion-director directory, used to run validate_project.py
+  api_python: C:/Users/AIMFl/AppData/Roaming/uv/python/cpython-3.11.15-windows-x86_64-none/python.exe
+  api_node: D:/projects/Model-Compare/My-BenchMark/workbench/.runtime/benchmark-api-runtime/node-v22.23.3-win-x64/node.exe
+  minecraft_skill_dir: D:/projects/Model-Compare/My-BenchMark/skills/bench-grader/tasks/T02-minecraft-stopmotion/materials/skills/minecraft-stop-motion-director
   axe_core_js: null           # axe-core 的 axe.min.js 路径（npm i axe-core 后在 node_modules/axe-core/axe.min.js）
   log_roots:                  # 用时/成本日志搜索根目录；留空用默认位置
     claude_code: ~/.claude/projects
     codex: ~/.codex/sessions
     gemini_cli: ~/.gemini/tmp
+
+# ---- v2.0：另起的题库与榜单（v1.0 冻结为“历史版”，不迁移、不重算）----
+v2:
+  version: v2.0-draft
+  frozen_date: null
+  tier0_cap: 40              # Tier0（可用性）不通过时，该次运行总分与各维度分的上限；不直接清零，便于看出“能跑但崩”和“根本没交付”的差别
+  full_runs: 3               # 完整版：每个参赛者每道题必须测满的次数
+  stability:                 # 稳定性（仅完整版，雷达轴，不进质量总分）
+    availability_weight: 0.5 # 可用率 = Tier0 通过的运行占比
+    consistency_weight: 0.5  # 一致性 = 100 − k × 各题运行分标准差的均值
+    consistency_k: 2.0
+  incident_kinds: [tier0, harness, interrupted, other]
+  environment:               # 评测机固定：同一台机器、同一渲染器；帧率类指标只在同一渲染器下可比
+    require_same_gl_renderer: true

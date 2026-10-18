@@ -47,7 +47,7 @@ def rule_text(it: dict) -> str:
 
 def collect() -> dict:
     cfg = bench_config()
-    dims = dimensions()
+    dims = dimensions(all_dims=True)
     tasks = []
     for tid, d in task_dirs().items():
         r = load_rubric(tid)
@@ -57,14 +57,17 @@ def collect() -> dict:
             items.append({"id": it["id"], "dim": it["dim"], "tier": it.get("tier", "basic"), "tier_label": TIER_LABEL.get(it.get("tier", "basic")),
                           "method": it.get("method", "auto"), "method_label": METHOD_LABEL[it.get("method", "auto")], "weight": item_weight(it),
                           "desc": it["desc"], "metric": it.get("metric") or it.get("value_expr", ""), "rule": rule_text(it),
-                          "anchors": it.get("anchors", []), "evidence": it.get("evidence", ""), "variants": it.get("variants", [])})
+                          "anchors": it.get("anchors", []), "evidence": it.get("evidence", ""), "variants": it.get("variants", []),
+                          "edition": it.get("edition", "base"), "module": it.get("module"), "judge": it.get("judge")})
         gates = [{"id": g["id"], "desc": g["desc"], "variants": g.get("variants", [])} for g in r.get("gates", [])]
+        tier0 = [{"id": g["id"], "desc": g["desc"], "variants": g.get("variants", [])} for g in r.get("tier0", [])]
         hidden = sorted(p.relative_to(d).as_posix() for p in (d / "hidden").rglob("*") if p.is_file()) if (d / "hidden").exists() else []
         tasks.append({"id": tid, "name": r["name"], "short": r.get("short", ""), "dims": r.get("dims", {}), "variants": r.get("variants") or {},
                       "condition": r.get("condition", ""), "materials": r.get("materials", []), "time_limit": r.get("time_limit_min"),
                       "deliverable": r.get("deliverable_dir", ""), "probes": [p["type"] for p in r.get("probes", [])],
-                      "prompt": prompt, "items": items, "gates": gates, "hidden": hidden, "bugs": r.get("bugs")})
-    return {"cfg": {k: cfg.get(k) for k in ("name", "version", "frozen_date", "runs_per_task", "pass_threshold", "efficiency", "low_confidence_na_ratio")},
+                      "prompt": prompt, "items": items, "gates": gates, "hidden": hidden, "bugs": r.get("bugs"),
+                      "suite": str(r.get("suite") or "v1"), "tier0": tier0})
+    return {"cfg": {k: cfg.get(k) for k in ("name", "version", "frozen_date", "runs_per_task", "pass_threshold", "efficiency", "low_confidence_na_ratio", "v2")},
             "dims": dims, "tasks": tasks, "relations": RELATIONS}
 
 

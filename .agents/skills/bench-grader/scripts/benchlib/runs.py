@@ -8,6 +8,7 @@ import uuid
 from datetime import date
 from pathlib import Path
 
+from . import v2 as v2lib
 from .common import Metrics, RunContext, bench_config, dump_json, load_json, load_rubric
 from .probes import REGISTRY
 from .scoring import load_manual, score_run
@@ -34,7 +35,10 @@ def init_run(data: Path, task: str, model: str, harness: str, src: Path, variant
         run_index = 1 + sum(1 for m in all_meta(data) if m["task"] == task and m.get("variant") == variant and m["model"] == model and m["harness"] == harness)
     meta = {"run_id": rid, "task": task, "variant": variant, "model": model, "harness": harness, "run_index": run_index,
             "date": date.today().isoformat(), "workspace": workspace, "started_at": started_at, "ended_at": ended_at,
-            "usage": {}, "failure_tag": None, "notes": ""}
+            "usage": {}, "failure_tag": None, "notes": "",
+            # v2：题库版本由 rubric.suite 决定（v1 题一律 v1.0，不会被误计入 v2 榜单）；incident 见 bench.py mark-incident
+            "benchmark_version": (bench_config().get("v2") or {}).get("version", "v2.0") if v2lib.suite_of(task) == "v2" else v2lib.V1_VERSION,
+            "incident": None}
     meta.update(extra or {})
     dump_json(rd / "meta.json", meta)
     return rd

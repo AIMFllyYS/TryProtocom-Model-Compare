@@ -17,14 +17,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from benchlib import aggregate, export, review, runs, spec  # noqa: E402
-from benchlib.common import load_json, load_rubric, task_dirs  # noqa: E402
+from benchlib.common import bench_config, dump_json, load_json, load_rubric, task_dirs  # noqa: E402
 
 
 def cmd_doctor(a):
@@ -93,19 +95,94 @@ def cmd_ingest_scores(a):
     print("导入", review.ingest_scores(Path(a.data), Path(a.csv), a.by), "条评分")
 
 
+def cmd_ingest_pairwise(a):
+    from benchlib import pairwise
+    r = pairwise.ingest(Path(a.data), Path(a.file), a.by)
+    print(f"写入 {r['written']} 条评分（跳过 {r['skipped']} 行无效比较）")
+    for k, v in r["groups"].items():
+        print(f"  {k}: {v['comparisons']} 次比较 → {v['runs']} 个作品")
+
+
+def cmd_ingest_exploration(a):
+    from benchlib import agent_accept
+    r = agent_accept.ingest_exploration(Path(a.data), Path(a.dir) if a.dir else None)
+    print(f"导入 {len(r['imported'])} 份探索报告")
+    for s in r["skipped"]:
+        print("  跳过", s)
+
+
+def cmd_agent_sample(a):
+    from benchlib import agent_accept
+    rows = agent_accept.audit_sample(Path(a.data), a.rate)
+    print(f"抽出 {len(rows)} 条 Agent 打分请人工复核 → review/agent_audit_sample.csv（填 score 列后用 ingest-scores --by human 导入）")
+
+
+def cmd_agent_calibration(a):
+    from benchlib import agent_accept
+    agent_accept.print_calibration(agent_accept.calibration(Path(a.data), a.min_pairs))
+
+
+def cmd_backend_check(a):
+    """后端题出题质检：参考实现自测 / 变异检验 / 初始缺陷仓库校验。失败时退出码非 0。"""
+    from benchlib import backend_check as bc
+    ok = True
+    for t in a.tasks:
+        if a.mutation:
+            r = bc.mutation(t, a.limit)
+            print(bc.format_report(f"{t} 变异检验", r))
+            ok = ok and r.get("score") is not None and not r.get("valid_failures") and r["score"] >= a.min_kill
+        if a.defect:
+            r = bc.defect(t)
+            print(bc.format_report(f"{t} 初始缺陷仓库", r))
+            ok = ok and (r.get("ok", True))
+        if not a.mutation and not a.defect:
+            r = bc.selftest(t)
+            print(bc.format_report(f"{t} 参考实现自测", r))
+            ok = ok and r["ok"]
+    sys.exit(0 if ok else 1)
+
+
 def cmd_ingest_usage(a):
     print("导入", review.ingest_usage(Path(a.data), Path(a.csv)), "条用量")
 
 
 def cmd_aggregate(a):
-    agg = aggregate.collect(Path(a.data))
+    agg = aggregate.collect(Path(a.data), a.view)
     for b in agg["board"]:
-        print(f"{b['rank']:>4}  {b['entrant']:<40} 质量 {b['quality']}  CI [{b['ci_low']}, {b['ci_high']}]")
+        extra = ""
+        if a.view == "simple":
+            extra = f"  n={b.get('n_min')}–{b.get('n_max')}{'*' if b.get('star') else ''}"
+        elif a.view == "full":
+            extra = f"  稳定性 {b['dims'].get('stability')}（可用 {b.get('availability')} / 一致 {b.get('consistency')}）"
+        print(f"{b['rank']:>4}  {b['entrant']:<40} 质量 {b['quality']}  CI [{b['ci_low']}, {b['ci_high']}]{extra}")
+    for x in agg.get("excluded", []):
+        print(f"  未入榜 {x['entrant']}：{'、'.join(x['missing'])}")
+
+
+def cmd_mark_incident(a):
+    """给一次运行打“事故”标记（环境/Harness/中断等非模型能力原因）。事故不改分，只允许在简化版里重测、并在榜单标注；
+    完整版里不剔除，计入稳定性。--clear 取消标记。"""
+    rd = runs.runs_dir(Path(a.data)) / a.run
+    meta = load_json(rd / "meta.json")
+    if not meta:
+        print(f"找不到运行 {a.run}")
+        return 1
+    if a.clear:
+        meta["incident"] = None
+    else:
+        kinds = (bench_config().get("v2") or {}).get("incident_kinds", [])
+        if kinds and a.kind not in kinds:
+            print(f"kind 必须是 {kinds}")
+            return 1
+        meta["incident"] = {"kind": a.kind, "reason": a.reason or "", "date": date.today().isoformat()}
+    dump_json(rd / "meta.json", meta)
+    print(a.run, "incident =", meta["incident"])
 
 
 def cmd_export(a):
     data = Path(a.data)
-    agg = load_json(data / "results" / "aggregate.json") or aggregate.collect(data)
+    fname = "aggregate.json" if a.view == "history" else f"aggregate-{a.view}.json"
+    agg = load_json(data / "results" / fname) or aggregate.collect(data, a.view)
     files = export.export_all(agg, Path(a.out) if a.out else data / "exports", set(a.formats.split(",")))
     for f in files:
         print(f)
@@ -132,8 +209,59 @@ def cmd_validate(a):
     for tid in task_dirs():
         r = load_rubric(tid)
         ids = set()
-        for it in r.get("gates", []) + r.get("items", []):
+        if str(r.get("suite") or "v1") not in ("v1", "v2"):
+            print(f"{tid}: suite 只能是 v1 / v2")
+            bad += 1
+        # v2 题：提示词分“契约 / 愿望”两层（后端题只有契约）；命名视角与部件树采集配置合法
+        if str(r.get("suite") or "v1") == "v2":
+            pm = Path(r["_dir"]) / "prompt.md"
+            ptxt = pm.read_text(encoding="utf-8") if pm.exists() else ""
+            need = ["## 契约"] if r.get("kind") == "backend" else ["## 契约", "## 愿望"]
+            for h in need:
+                if h not in ptxt:
+                    print(f"{tid}: prompt.md 缺少 “{h}” 小节")
+                    bad += 1
+            if r.get("kind") not in ("creative", "backend", "motion"):
+                print(f"{tid}: v2 题必须声明 kind（creative / backend / motion）")
+                bad += 1
+        cap = r.get("capture") or {}
+        vids = [v.get("id") for v in cap.get("views", []) if isinstance(v, dict)]
+        if cap.get("views") and (len(vids) != len(cap["views"]) or len(set(vids)) != len(vids) or not all(vids)):
+            print(f"{tid}: capture.views 每项需要唯一的 id")
+            bad += 1
+        if cap.get("parts") and not isinstance(cap["parts"].get("min_parts", 0), int):
+            print(f"{tid}: capture.parts.min_parts 必须是整数")
+            bad += 1
+        from benchlib.probes import REGISTRY
+        for p in r.get("probes", []):
+            if p.get("type") not in REGISTRY:
+                print(f"{tid}: 未注册的探针类型 {p.get('type')}")
+                bad += 1
+        mo = cap.get("motion") or {}
+        if mo and not (mo.get("samples") or (mo.get("seek") and mo.get("times"))):
+            print(f"{tid}: capture.motion 需要 samples，或同时给出 seek 与 times")
+            bad += 1
+        for c in cap.get("contacts") or []:
+            if not (c.get("a") and c.get("b")):
+                print(f"{tid}: capture.contacts 每项需要 a / b")
+                bad += 1
+        for e in cap.get("expected_parts") or []:
+            try:
+                re.compile(e.get("re", ""))
+            except re.error as ex:
+                print(f"{tid}: expected_parts {e.get('id')} 的正则无效：{ex}")
+                bad += 1
+        for it in r.get("gates", []) + r.get("tier0", []) + r.get("items", []):
             problems = []
+            if it in r.get("tier0", []) and not (("metric" in it or "value_expr" in it) and "rule" in it):
+                problems.append("Tier0 项缺 metric/rule")
+            if it in r.get("items", []):
+                if it.get("edition", "base") not in ("base", "detail"):
+                    problems.append("edition 只能是 base / detail")
+                if it.get("module") is not None and not isinstance(it["module"], str):
+                    problems.append("module 必须是字符串")
+                if it.get("judge") not in (None, "absolute", "pairwise"):
+                    problems.append("judge 只能是 absolute / pairwise")
             if it["id"] in ids:
                 problems.append("id 重复")
             ids.add(it["id"])
@@ -192,11 +320,41 @@ def main():
     p.add_argument("csv")
     p.add_argument("--by", choices=["human", "agent"])
     p.set_defaults(fn=cmd_ingest_scores)
+    p = sub.add_parser("ingest-pairwise", help="导入两两比较结果（CSV/JSON：task,item_id,a,b,winner），Bradley–Terry 折算为 0–3 分")
+    p.add_argument("file")
+    p.add_argument("--by", default="pairwise")
+    p.set_defaults(fn=cmd_ingest_pairwise)
+    p = sub.add_parser("ingest-exploration", help="导入 Agent 探索测试结果（review/exploration/<别名>.json）→ explore.json")
+    p.add_argument("--dir")
+    p.set_defaults(fn=cmd_ingest_exploration)
+    p = sub.add_parser("agent-sample", help="抽样请人工复核 Agent 的打分（确定性哈希，可复现）")
+    p.add_argument("--rate", type=float, default=0.2)
+    p.set_defaults(fn=cmd_agent_sample)
+    p = sub.add_parser("agent-calibration", help="统计 Agent 分与人工复核分的一致性（准确率 / 偏差 / 加权 kappa）")
+    p.add_argument("--min-pairs", type=int, default=20)
+    p.set_defaults(fn=cmd_agent_calibration)
+    p = sub.add_parser("backend-check", help="后端题出题质检：默认=参考实现自测；--mutation 变异检验；--defect 初始缺陷仓库校验")
+    p.add_argument("tasks", nargs="+")
+    p.add_argument("--mutation", action="store_true")
+    p.add_argument("--defect", action="store_true")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--min-kill", type=float, default=0.9)
+    p.set_defaults(fn=cmd_backend_check)
     p = sub.add_parser("ingest-usage")
     p.add_argument("csv")
     p.set_defaults(fn=cmd_ingest_usage)
-    sub.add_parser("aggregate").set_defaults(fn=cmd_aggregate)
+    p = sub.add_parser("aggregate")
+    p.add_argument("--view", choices=["history", "simple", "full"], default="history",
+                   help="history=v1.0 冻结口径；simple=v2 取最高；full=v2 测满 3 次 + 稳定性")
+    p.set_defaults(fn=cmd_aggregate)
+    p = sub.add_parser("mark-incident")
+    p.add_argument("run")
+    p.add_argument("--kind", default="other", help="tier0 / harness / interrupted / other")
+    p.add_argument("--reason")
+    p.add_argument("--clear", action="store_true")
+    p.set_defaults(fn=cmd_mark_incident)
     p = sub.add_parser("export")
+    p.add_argument("--view", choices=["history", "simple", "full"], default="history")
     p.add_argument("--formats", default="csv,md,xlsx,png,html")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_export)

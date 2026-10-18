@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import atexit
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -15,6 +17,13 @@ from pathlib import Path
 from .common import CONFIG_DIR, load_yaml
 
 USER_FIELDS = ["wall_min", "active_min", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "cost_usd"]
+
+# 日志只追加：允许的时钟余量（与下面的 mtime 下限保持一致）
+_CLOCK_MARGIN = timedelta(minutes=10)
+# 判断一个文件是否可能含窗口内条目时，头/尾/中采样的字节数（有界读取，不做全文解析）
+_EDGE_BYTES = 65536
+_MID_BYTES = 32768
+_TS_BYTES = re.compile(rb'"timestamp"\s*:\s*"([^"]+)"')
 
 
 def _ts(s) -> datetime | None:
@@ -184,6 +193,131 @@ def _merge(parts: list[dict]) -> dict:
     return out
 
 
+def _probe_edges(path: Path) -> tuple[datetime | None, datetime | None, datetime | None]:
+    """有界读取文件头/尾/中部的 timestamp，返回 (first, mid, last)。
+
+    会话日志是追加写的，因此 first≈最小时间、last≈最大时间。只读固定的几段字节，
+    不解析 JSON、不遍历全文——用来在解析几 GB 日志之前先判断“这个文件根本不可能命中窗口”。
+    取中部样本是因为极端情况下某个文件可能只有一段倒序写入，单靠首尾会误判。
+    """
+    try:
+        with path.open("rb") as f:
+            head = f.read(_EDGE_BYTES)
+            size = f.seek(0, 2)
+            f.seek(max(0, size - _EDGE_BYTES))
+            tail = f.read(_EDGE_BYTES)
+            mid = b""
+            if size > _EDGE_BYTES * 2 + _MID_BYTES:
+                f.seek(size // 2)
+                mid = f.read(_MID_BYTES)
+    except OSError:
+        return None, None, None
+
+    def pick(buf: bytes, last: bool) -> datetime | None:
+        ms = _TS_BYTES.findall(buf)
+        return _ts(ms[-1 if last else 0].decode("utf-8", "replace")) if ms else None
+
+    return pick(head, False), pick(mid, False), pick(tail, True)
+
+
+def _may_hit_window(path: Path, start, end) -> bool:
+    """能否断言该文件一定不含窗口内条目。拿不准时返回 True（宁可多解析，不能漏算）。"""
+    if not (start or end):
+        return True
+    first, mid, last = _probe_edges(path)
+    lo = (start - _CLOCK_MARGIN) if start else None
+    hi = (end + _CLOCK_MARGIN) if end else None
+    # first/last 分别是全局最小/最大时间；只有两者都取到才敢下结论。
+    # mid 只用来加宽 [min,max]（更保守），单独缺失不影响正确性。
+    if hi is not None and first is not None:
+        others = [t for t in (mid, last) if t is not None]
+        if min([first, *others]) > hi:
+            return False  # 最小时间都晚于窗口结束
+    if lo is not None and last is not None:
+        others = [t for t in (first, mid) if t is not None]
+        if max([last, *others]) < lo:
+            return False  # 最大时间都早于窗口开始
+    return True
+
+
+# ---------------- 解析结果缓存 ----------------
+# 同一份日志会被多个 run 反复匹配（140 个 run 只有几十个候选文件），而 snapshot 会为每个 run
+# 重新解析一遍。按 (文件, 窗口, 工作区) 记忆解析结果：进程内 lru_cache 之外再落一份磁盘缓存，
+# 让跨进程的下一次 snapshot 也不必重读几 GB。
+_CACHE_VERSION = 1
+
+
+def _cache_path() -> Path:
+    """缓存放在系统临时目录：属于可再生的性能产物，不应污染 skill 目录或 git 工作区。"""
+    import tempfile
+    root = Path(tempfile.gettempdir()) / "bench-grader-cache"
+    # 用 skill 根路径做隔离，避免多份 checkout 互相串用
+    tag = hashlib.sha1(str(CONFIG_DIR.parent).lower().encode("utf-8")).hexdigest()[:12]
+    return root / f"usage_parse_{tag}.json"
+
+
+def _file_sig(path: Path) -> str:
+    st = path.stat()
+    return f"{st.st_size}:{int(st.st_mtime)}"
+
+
+def _cache_key(parser_name: str, path: Path, ws, start, end) -> str:
+    raw = "|".join([parser_name, str(path), _file_sig(path), str(ws or ""),
+                    start.isoformat() if start else "", end.isoformat() if end else ""])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _load_cache() -> dict:
+    global _CACHE_DISK
+    if _CACHE_DISK is None:
+        try:
+            _CACHE_DISK = json.loads(_cache_path().read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            _CACHE_DISK = {}
+    return _CACHE_DISK
+
+
+_CACHE_DISK: dict | None = None
+_CACHE_DIRTY = False
+
+
+def _cached_parse(parser, path: Path, ws, start, end, name: str) -> dict | None:
+    global _CACHE_DIRTY
+    try:
+        key = _cache_key(name, path, ws, start, end)
+    except OSError:
+        return parser(path, ws, start, end)
+    cache = _load_cache()
+    hit = cache.get(key)
+    if isinstance(hit, dict) and hit.get("v") == _CACHE_VERSION:
+        return hit.get("r")
+    res = parser(path, ws, start, end)
+    cache[key] = {"v": _CACHE_VERSION, "r": res}
+    _CACHE_DIRTY = True
+    return res
+
+
+def save_cache() -> None:
+    """把本进程新增的解析结果落盘（失败不影响评分，只是下次慢一点）。"""
+    global _CACHE_DISK, _CACHE_DIRTY
+    if not _CACHE_DIRTY or _CACHE_DISK is None:
+        return
+    try:
+        p = _cache_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if len(_CACHE_DISK) > 5000:  # 防止无限增长
+            _CACHE_DISK = dict(sorted(_CACHE_DISK.items())[-2500:])
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_CACHE_DISK, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(p)
+        _CACHE_DIRTY = False
+    except OSError:
+        pass
+
+
+atexit.register(save_cache)
+
+
 def scan_logs(meta: dict, cfg: dict) -> dict | None:
     roots = (cfg.get("external") or {}).get("log_roots") or {}
     ws = meta.get("workspace")
@@ -196,7 +330,7 @@ def scan_logs(meta: dict, cfg: dict) -> dict | None:
             files = [p] if p.is_file() else list(p.rglob("*.json*"))
             for f in files:
                 parser = parse_codex_file if "rollout" in f.name else parse_gemini_file if f.suffix == ".json" else parse_claude_file
-                r = parser(f, None, start, end)
+                r = _cached_parse(parser, f, None, start, end, parser.__name__)
                 if r:
                     candidates.append(r)
         return _merge(candidates) if candidates else None
@@ -213,7 +347,7 @@ def scan_logs(meta: dict, cfg: dict) -> dict | None:
             continue
         # 日志只追加：最后修改早于运行开始（留 10 分钟时钟余量）的文件不可能含窗口内条目，直接跳过，
         # 避免每次计分都把几 GB 的历史会话日志全部读一遍。
-        floor = (start - timedelta(minutes=10)).timestamp() if start else None
+        floor = (start - _CLOCK_MARGIN).timestamp() if start else None
         for f in root.rglob(pattern):
             if floor is not None:
                 try:
@@ -221,7 +355,11 @@ def scan_logs(meta: dict, cfg: dict) -> dict | None:
                         continue
                 except OSError:
                     continue
-            r = parser(f, ws, start, end)
+            # 第二道闸：mtime 会被杀毒/备份等触碰而失真（曾观察到几天前的会话文件 mtime 变成今天），
+            # 所以再用有界首/中/尾采样确认该文件是否可能命中窗口，然后才做全文解析。
+            if not _may_hit_window(f, start, end):
+                continue
+            r = _cached_parse(parser, f, ws, start, end, parser.__name__)
             if r:
                 candidates.append(r)
         if candidates:

@@ -7,6 +7,7 @@ import statistics as st
 from collections import defaultdict
 from pathlib import Path
 
+from . import v2 as v2lib
 from .common import bench_config, dimensions, dump_json, load_json, load_rubric, task_dirs
 from .runs import all_meta, rescore
 from .usage import resolve_usage
@@ -40,9 +41,10 @@ def _log_score(value: float | None, best: float, worst: float) -> float | None:
     return round(100 * max(0.0, min(1.0, s)), 1)
 
 
-def collect(data: Path) -> dict:
+def collect(data: Path, view: str = "history") -> dict:
+    """view: history（v1.0 冻结口径，默认）/ simple（v2 取最高）/ full（v2 测满 3 次 + 稳定性）。"""
     cfg = bench_config()
-    dims = dimensions()
+    dims = dimensions(view=view)
     qdims = [d for d in dims if d["kind"] == "quality"]
     runs = []
     for meta in all_meta(data):
@@ -50,6 +52,8 @@ def collect(data: Path) -> dict:
         sc = rescore(rd)
         u = resolve_usage(meta, cfg)
         runs.append({"meta": meta, "score": sc, "usage": u, "entrant": entrant(meta), "tkey": task_key(meta)})
+    runs, vinfo = v2lib.apply_view(runs, view, cfg)
+    suite = "v1" if view == "history" else "v2"
 
     by_et = defaultdict(list)
     for r in runs:
@@ -66,7 +70,7 @@ def collect(data: Path) -> dict:
         pr = sum(passed) / len(passed)
         mc, mm = _mean(costs), _mean(mins)
         row = {
-            "entrant": e, "task": tk, "runs": len(rs), "mean": round(_mean(totals), 2), "sd": round(_sd(totals), 2),
+            "entrant": e, "task": tk, "runs": len(rs), "n_used": rs[0].get("n_used"), "mean": round(_mean(totals), 2), "sd": round(_sd(totals), 2),
             "min": min(totals), "max": max(totals), "pass_rate": round(pr, 3), "pass_at_k": any(passed),
             "gate_fail_runs": sum(1 for r in rs if not r["score"]["gate_pass"]),
             "complete": all(r["score"]["complete"] for r in rs),
@@ -130,6 +134,9 @@ def collect(data: Path) -> dict:
         dims_full["cost"] = round(_mean(cost_scores), 1) if cost_scores else None
         dims_full["speed"] = round(_mean(speed_scores), 1) if speed_scores else None
         er = [r for r in runs if r["entrant"] == e]
+        vi = vinfo["entrants"].get(e, {})
+        if view == "full":
+            dims_full["stability"] = vi.get("stability")
         row = {
             "entrant": e, "quality": base["quality"], "ci_low": lo, "ci_high": hi, "dims": dims_full,
             "runs": len(er), "tasks": len(trs), "pass_rate": round(sum(r["score"]["passed"] for r in er) / len(er), 3),
@@ -138,6 +145,10 @@ def collect(data: Path) -> dict:
             "cost_coverage": f"{len(cost_scores)}/{len(trs)}", "complete": all(r["score"]["complete"] for r in er),
             "na_ratio": round(_mean([r["score"]["na_ratio"] for r in er]) or 0, 3),
         }
+        if view == "simple":
+            row.update({"n_min": vi.get("n_min"), "n_max": vi.get("n_max"), "star": vi.get("star"), "incident_retries": vi.get("incident_retries")})
+        elif view == "full":
+            row.update({"availability": vi.get("availability"), "consistency": vi.get("consistency"), "incidents": vi.get("incidents")})
         cfg_c = cfg.get("composite", {})
         if cfg_c.get("enabled") and row["quality"] is not None:
             row["composite"] = round(cfg_c["quality_weight"] * row["quality"] + cfg_c["cost_weight"] * (dims_full["cost"] or 0) + cfg_c["speed_weight"] * (dims_full["speed"] or 0), 2)
@@ -178,7 +189,7 @@ def collect(data: Path) -> dict:
 
     # skill 增益（同一题 A/C 两组）
     uplift = []
-    variants_tasks = {tid: load_rubric(tid) for tid in task_dirs() if load_rubric(tid).get("variants")}
+    variants_tasks = {tid: load_rubric(tid) for tid in task_dirs() if load_rubric(tid).get("variants") and v2lib.suite_of(tid) == suite}
     for tid in variants_tasks:
         for e in entrants:
             a = next((t for t in task_rows if t["entrant"] == e and t["task"] == tid + "A"), None)
@@ -213,6 +224,8 @@ def collect(data: Path) -> dict:
     coverage = []
     for tid in task_dirs():
         rub = load_rubric(tid)
+        if v2lib.suite_of(tid) != suite:
+            continue
         for vk, vconf in ((rub.get("variants") or {"": {"dims": rub.get("dims", {})}}).items()):
             row = {"task": tid + vk, "name": rub["name"]}
             for d in qdims:
@@ -220,7 +233,11 @@ def collect(data: Path) -> dict:
             row["items"] = sum(1 for it in rub.get("items", []) if not it.get("variants") or vk in it["variants"])
             coverage.append(row)
 
-    out = {"benchmark": cfg.get("name"), "version": cfg.get("version"), "frozen_date": cfg.get("frozen_date"),
+    v2cfg = cfg.get("v2") or {}
+    out = {"benchmark": cfg.get("name"), "view": view,
+           "version": cfg.get("version") if view == "history" else v2cfg.get("version"),
+           "frozen_date": cfg.get("frozen_date") if view == "history" else v2cfg.get("frozen_date"),
+           "excluded": vinfo["excluded"],
            "dimensions": dims, "board": board, "tasks": task_rows, "items": item_rows, "uplift": uplift, "failures": fails,
            "coverage": coverage,
            "runs": [{"run_id": r["meta"]["run_id"], "entrant": r["entrant"], "task": r["tkey"], "run_index": r["meta"].get("run_index"),
@@ -234,5 +251,5 @@ def collect(data: Path) -> dict:
                      "usage_source": r["usage"].get("source")} for r in runs],
            "long": [{"run_id": r["meta"]["run_id"], "entrant": r["entrant"], "task": r["tkey"], **{k: it.get(k) for k in ("id", "dim", "tier", "method", "weight", "status", "s", "value")}}
                     for r in runs for it in r["score"]["items"]]}
-    dump_json(data / "results" / "aggregate.json", out)
+    dump_json(data / "results" / ("aggregate.json" if view == "history" else f"aggregate-{view}.json"), out)
     return out
