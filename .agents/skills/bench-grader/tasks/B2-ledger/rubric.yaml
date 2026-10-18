@@ -1,0 +1,58 @@
+id: B2
+name: 账务与转账（幂等、并发、崩溃恢复）
+short: 实现带幂等键的转账 / 冲正 / 分页流水服务；考察并发下不超支、不死锁，kill -9 后已确认的操作不丢、账务守恒
+extends: [backend]
+deliverable_dir: ledger
+dims: {be: 1.0, eng: 0.5, agent: 0.4}
+condition: 无人值守；评测机有 Node 22 与 Python 3.11；评测会在负载下 kill -9 服务再重启
+materials: []
+time_limit_min: 90
+probes:
+  - type: files
+    opts:
+      required: [DECISIONS.md]
+  - type: api
+    opts:
+      tests: [hidden/test_ledger.py]
+      support: [../_common/hidden/bt.py]
+      chaos_test: hidden/test_chaos.py
+      categories: [func, edge, idem, conc, inv]
+      named_tests:
+        race_funds: test_conc_no_overdraft_under_race
+        idem_race: test_conc_same_key_applies_once
+        deadlock: test_conc_opposite_transfers_do_not_deadlock
+        reverse_race: test_conc_reverse_applies_once
+        conserve: test_conc_mixed_load_conserves_money
+      perf:
+        path: /health
+        requests: 200
+        concurrency: 10
+calibration:
+  tier: hard
+  defect_must_fail: []
+
+items:
+  - {id: B2-B01, dim: be, tier: basic, weight: 3, method: auto, edition: base, module: func, desc: 主流程（开户、入账、转账、冲正、流水）通过率, metric: api.cat.func, rule: {type: ratio}}
+  - {id: B2-B02, dim: be, tier: advanced, weight: 4, method: auto, edition: base, module: edge, desc: 边界与校验（余额恰好、金额类型、幂等键长度、分页游标）通过率, metric: api.cat.edge, rule: {type: ratio}}
+  - {id: B2-B03, dim: be, tier: advanced, weight: 4, method: auto, edition: base, module: idempotency, desc: 幂等语义（重放、冲突、跨接口、失败不占用键）通过率, metric: api.cat.idem, rule: {type: ratio}}
+  - {id: B2-B04, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: concurrency, desc: 并发测试通过率（不超支、同键只生效一次、不死锁、冲正只一次、守恒）, metric: api.cat.conc, rule: {type: ratio}}
+  - {id: B2-B05, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: invariants, desc: 账务不变量（流水与余额一致、seq 全局唯一、转账两条腿）, metric: api.cat.inv, rule: {type: ratio}}
+  - {id: B2-B06, dim: be, tier: excellent, weight: 6, method: auto, edition: base, module: chaos, desc: 负载下 kill -9 后重启：已确认的转账不丢、幂等记录仍有效、账务守恒、没有只记一条腿的转账, metric: api.chaos_ok, rule: {type: bool}}
+  - {id: B2-B07, dim: be, tier: excellent, weight: 2, method: auto, edition: detail, module: concurrency, desc: 相反方向的并发转账不死锁, metric: api.test.deadlock, rule: {type: bool}}
+  - id: B2-S01
+    dim: be
+    tier: advanced
+    method: agent
+    edition: detail
+    module: design
+    desc: 数据一致性设计：余额更新与流水写入在同一事务内，幂等记录与业务写入同事务，锁/事务策略在代码或 DECISIONS.md 里说清楚
+    evidence: 读转账路径的代码：从“检查余额”到“写流水”之间有没有缺口；幂等键的写入是否与转账原子
+    anchors: ["余额与流水可能分离，无并发保护", "有保护但幂等记录与业务写入不原子", "事务内完成检查与写入，幂等原子", "事务、幂等、崩溃恢复都有明确设计并写明了理由"]
+  - id: B2-S02
+    dim: be
+    tier: advanced
+    method: agent
+    edition: detail
+    module: decisions
+    desc: DECISIONS.md 识别了规格灰色地带（如：失败的请求是否占用幂等键、冲正的前置条件、流水游标语义）并说明处理
+    anchors: ["没有或只复述规格", "识别 1 处", "识别 2 处以上且与实现一致", "识别全面并用测试固定"]

@@ -1,0 +1,102 @@
+id: B5
+name: 库存服务遗留缺陷排查（竞态、边界、分页、金额、注入、未报告缺陷）
+short: 在线上库存服务里定位并修复 5 条已报告 + 1 个未报告缺陷，补能复现问题的回归测试，实现新报表接口，不重写项目
+extends: [backend]
+deliverable_dir: inventory-legacy
+dims: {be: 1.0, eng: 0.8, agent: 0.6}
+condition: 无人值守；工作目录预置 materials/inventory-legacy/ 的副本；评测机有 Python 3.11
+materials: ["materials/inventory-legacy/（种子仓库，复制到工作目录）"]
+time_limit_min: 75
+bugs:
+  R1: {issue: "#12", title: 抢购超卖, root: "预留/调整/提交的读-判-写没有互斥（预留判断与写入之间还有审计 I/O）", test: "test_conc_reservations_do_not_oversell, test_conc_mixed_reserve_and_adjust_never_negative, test_conc_commit_only_once"}
+  R2: {issue: "#15", title: 低库存阈值边界, root: "low_stock 判断用了 < 而不是 <=", test: test_edge_low_stock_threshold_is_inclusive}
+  R3: {issue: "#18", title: 分页重复遗漏与 total 不对, root: "先 LIMIT/OFFSET 取一页再在页内排序；COUNT 没带搜索条件", test: "test_func_pagination_sorted_across_pages, test_func_pagination_total_reflects_search"}
+  R4: {issue: "#21", title: 总值差几分钱, root: "用浮点数逐件计算并截断", test: test_edge_valuation_exact_cents}
+  R5: {issue: "#24", title: 搜索注入, root: "搜索词直接拼进 SQL；LIKE 通配符未转义", test: "test_sec_search_is_not_injectable, test_sec_like_wildcards_are_literal"}
+  R6: {issue: 未报告, title: 过期预留仍占用库存, root: "reserved_qty 没有排除已过期的预留", test: test_edge_expired_reservation_releases_stock}
+probes:
+  - type: files
+    opts:
+      required: [app.py, FIXES.md]
+      scan: ["**/*.py"]
+  - type: diff
+    opts: {seed: materials/inventory-legacy}
+  - type: docs
+    opts:
+      docs:
+        fixes:
+          path: FIXES.md
+          groups:
+            r6: ["过期|expire|expires|ttl", "占用|预留|reserv|可用|available"]
+            r5: ["参数化|占位符|parameteri[sz]ed|\\?", "注入|injection|拼接|通配|escape|转义"]
+  - type: api
+    opts:
+      tests: [hidden/test_inventory.py]
+      support: [../_common/hidden/bt.py]
+      categories: [func, edge, sec, conc, feat]
+      own_test_mutation:
+        reference: hidden/reference_server.py
+        mutants: hidden/mutants.json
+        limit: 12
+        timeout: 90
+      named_tests:
+        race: [test_conc_reservations_do_not_oversell, test_conc_mixed_reserve_and_adjust_never_negative, test_conc_commit_only_once]
+        threshold: test_edge_low_stock_threshold_is_inclusive
+        paging: [test_func_pagination_sorted_across_pages, test_func_pagination_total_reflects_search]
+        money: test_edge_valuation_exact_cents
+        sqli: [test_sec_search_is_not_injectable, test_sec_like_wildcards_are_literal]
+        expiry: test_edge_expired_reservation_releases_stock
+      regression_exclude: [test_conc_reservations_do_not_oversell, test_conc_mixed_reserve_and_adjust_never_negative, test_conc_commit_only_once, test_edge_low_stock_threshold_is_inclusive, test_func_pagination_sorted_across_pages, test_func_pagination_total_reflects_search, test_edge_valuation_exact_cents, test_sec_search_is_not_injectable, test_sec_like_wildcards_are_literal, test_edge_expired_reservation_releases_stock]
+calibration:
+  tier: hard
+  defect_src: materials/inventory-legacy
+  defect_must_fail: []
+  defect_min_regression: 0.95
+
+items:
+  - {id: B5-B01, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: race, desc: "R1 #12 并发超卖已修复（预留、调整、提交都是原子的）", metric: api.test.race, rule: {type: bool}}
+  - {id: B5-B02, dim: be, tier: basic, weight: 2, method: auto, edition: base, module: boundary, desc: "R2 #15 低库存阈值边界已修复", metric: api.test.threshold, rule: {type: bool}}
+  - {id: B5-B03, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: paging, desc: "R3 #18 分页稳定且 total 正确", metric: api.test.paging, rule: {type: bool}}
+  - {id: B5-B04, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: money, desc: "R4 #21 金额按整数分计算，没有浮点误差", metric: api.test.money, rule: {type: bool}}
+  - {id: B5-B05, dim: be, tier: excellent, weight: 3, method: auto, edition: base, module: security, desc: "R5 #24 搜索注入已修复，LIKE 通配符按字面处理", metric: api.test.sqli, rule: {type: bool}}
+  - {id: B5-B06, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: unreported, desc: "R6 未报告缺陷（过期预留仍占用库存）被发现并修复", metric: api.test.expiry, rule: {type: bool}}
+  - {id: B5-B07, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: feature, desc: "#27 低库存报表接口测试通过率（3 项）", metric: api.cat.feat, rule: {type: ratio}}
+  - {id: B5-B08, dim: be, tier: basic, weight: 4, method: auto, edition: base, module: regression, desc: 无回归（其余原本通过的测试仍通过）, metric: api.regression_ratio, rule: {type: linear, bad: 0.8, good: 1.0}}
+  - {id: B5-E10, dim: eng, tier: advanced, weight: 2, method: auto, edition: base, module: churn, desc: 没有重写项目（删除/改写的原始行占比）, metric: diff.churn_ratio, rule: {type: max, max: 0.2, zero: 0.6}}
+  - {id: B5-E11, dim: eng, tier: basic, weight: 1, method: auto, edition: base, module: deps, desc: 未引入运行时第三方依赖, metric: diff.runtime_third_party, rule: {type: max, max: 0}}
+  - {id: B5-E12, dim: eng, tier: advanced, weight: 2, method: auto, edition: detail, module: tests, desc: 新增回归测试函数数量, metric: diff.new_test_functions, rule: {type: linear, bad: 1, good: 8}}
+  - {id: B5-E13, dim: eng, tier: excellent, weight: 4, method: auto, edition: detail, module: tests, desc: 新增测试对“把缺陷或类似错误改回去”的检出率（变异检验，前 12 个变异体）, metric: api.mut_score, rule: {type: linear, bad: 0.2, good: 0.85}}
+  - {id: B5-E14, dim: eng, tier: basic, weight: 1, method: auto, edition: base, module: docs, desc: 交付了 FIXES.md, metric: docs.fixes.exists, rule: {type: bool}}
+  - id: B5-S01
+    dim: eng
+    tier: advanced
+    method: agent
+    edition: detail
+    module: tests
+    desc: 回归测试确实能复现原问题（修复前失败、修复后通过；可用种子仓库验证）
+    anchors: ["没有回归测试", "有测试但测不到原问题", "大部分能复现", "每个修复都有能复现的测试，竞态用并发测试"]
+  - id: B5-S02
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: rootcause
+    desc: FIXES.md · 并发超卖的根因定位（读-判-写不是原子操作，以及预留判断与写入之间存在 I/O 窗口）与方案说明
+    anchors: ["未提及或错误", "只描述现象", "指出竞态", "指出竞态并说明为什么该方案能保证原子性（以及多进程部署时的局限）"]
+  - id: B5-S03
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: rootcause
+    desc: FIXES.md · 注入问题用参数化查询而不是“过滤危险字符”，并排查了其他拼接 SQL 的位置
+    anchors: ["未提及或错误", "只做字符过滤", "改成参数化", "参数化并排查了 sort 等其他输入，说明白名单理由"]
+  - {id: B5-S04, dim: agent, tier: excellent, weight: 3, method: auto, edition: base, module: exploration, desc: FIXES.md 记录了未报告的缺陷（过期预留占用库存）, metric: docs.fixes.hits.r6, rule: {type: bool}}
+  - id: B5-S05
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: verification
+    desc: 自我验证：修改后实际运行了测试，并在汇报中如实说明结果（含没有修好或不确定的部分）
+    anchors: ["没有运行", "声称运行但无证据", "运行并报告结果", "运行、报告并在失败时继续修复直至通过"]

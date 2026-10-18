@@ -1,0 +1,129 @@
+id: B6
+name: TeamNotes 安全加固审计（注入、越权、认证、SSRF、信息泄露）
+short: 上线前审计并加固一个有多类漏洞的笔记服务；渗透报告只给了 4 条，实际有 12 类。评测用真实攻击验证，并检查功能不被破坏
+extends: [backend]
+deliverable_dir: teamnotes
+dims: {be: 1.0, eng: 0.6, agent: 0.7}
+condition: 无人值守；工作目录预置 materials/teamnotes/ 的副本；评测机有 Python 3.11；攻击只对被测服务本身，SSRF 用本地金丝雀服务器
+materials: ["materials/teamnotes/（种子仓库，复制到工作目录）"]
+time_limit_min: 90
+bugs:
+  V01: {title: 搜索 SQL 注入, reported: true, test: "test_inj_search_sql_injection_does_not_leak_or_break, test_inj_search_wildcards_are_literal"}
+  V02: {title: 笔记 / 附件 IDOR, reported: true, test: "test_authz_idor_notes_are_invisible_to_other_users, test_authz_files_of_other_users_are_protected"}
+  V03: {title: 密码无盐 MD5, reported: true, test: test_auth_passwords_are_not_stored_in_plaintext_or_fast_hash}
+  V04: {title: 渲染页 XSS 与缺少 nosniff, reported: true, test: "test_inj_render_escapes_html, test_inj_nosniff_header_on_all_responses"}
+  V05: {title: 附件路径穿越, reported: false, test: "test_inj_path_traversal_upload_cannot_write_other_notes, test_inj_path_traversal_download_cannot_read_other_notes_or_server_files"}
+  V06: {title: 令牌可推算 / 永不过期 / 登出无效, reported: false, test: "test_auth_tokens_are_unpredictable, test_auth_tokens_expire_after_24_hours, test_auth_logout_invalidates_token"}
+  V07: {title: 登录无速率限制, reported: false, test: "test_auth_login_rate_limit_and_recovery, test_auth_rate_limit_is_per_username_and_applies_to_unknown_users"}
+  V08: {title: 用户名枚举, reported: false, test: test_auth_no_user_enumeration}
+  V09: {title: 注册批量赋值提权, reported: false, test: test_authz_mass_assignment_cannot_create_admin}
+  V10: {title: 导入功能 SSRF, reported: false, test: "test_ssrf_import_blocks_internal_addresses, test_ssrf_import_only_http_and_https"}
+  V11: {title: 错误堆栈与密码哈希泄露, reported: false, test: "test_leak_errors_do_not_expose_internals, test_leak_responses_never_contain_password_hashes"}
+  V12: {title: 上传 / 请求体无大小限制, reported: false, test: test_file_size_limit_and_body_limit}
+probes:
+  - type: files
+    opts:
+      required: [app.py, SECURITY-FIXES.md]
+      scan: ["**/*.py"]
+  - type: diff
+    opts: {seed: materials/teamnotes}
+  - type: docs
+    opts:
+      docs:
+        fixes:
+          path: SECURITY-FIXES.md
+          groups:
+            ssrf: ["SSRF|服务端请求伪造|内网|内部地址|loopback|127\\.0\\.0\\.1|is_global|private"]
+            traversal: ["路径穿越|目录穿越|path traversal|\\.\\./|\\.\\.%2f"]
+            hash: ["scrypt|bcrypt|argon2|pbkdf2|加盐|salt"]
+            ratelimit: ["速率|限流|封禁|锁定|rate.?limit|lockout|brute"]
+  - type: api
+    opts:
+      tests: [hidden/test_security.py]
+      support: [../_common/hidden/bt.py]
+      categories: [func, auth, authz, inj, file, ssrf, leak]
+      own_test_mutation:
+        reference: hidden/reference_server.py
+        mutants: hidden/mutants.json
+        limit: 12
+        timeout: 120
+      named_tests:
+        sqli: [test_inj_search_sql_injection_does_not_leak_or_break, test_inj_search_wildcards_are_literal]
+        idor: [test_authz_idor_notes_are_invisible_to_other_users, test_authz_files_of_other_users_are_protected]
+        passwords: test_auth_passwords_are_not_stored_in_plaintext_or_fast_hash
+        xss: [test_inj_render_escapes_html, test_inj_nosniff_header_on_all_responses]
+        traversal: [test_inj_path_traversal_upload_cannot_write_other_notes, test_inj_path_traversal_download_cannot_read_other_notes_or_server_files]
+        tokens: [test_auth_tokens_are_unpredictable, test_auth_tokens_expire_after_24_hours, test_auth_logout_invalidates_token]
+        ratelimit: [test_auth_login_rate_limit_and_recovery, test_auth_rate_limit_is_per_username_and_applies_to_unknown_users]
+        enum: test_auth_no_user_enumeration
+        mass: test_authz_mass_assignment_cannot_create_admin
+        ssrf: test_ssrf_import_blocks_internal_addresses
+        leak: [test_leak_errors_do_not_expose_internals, test_leak_responses_never_contain_password_hashes]
+        dos: test_file_size_limit_and_body_limit
+      regression_exclude: [test_inj_search_sql_injection_does_not_leak_or_break, test_inj_search_wildcards_are_literal, test_authz_idor_notes_are_invisible_to_other_users, test_authz_files_of_other_users_are_protected, test_auth_passwords_are_not_stored_in_plaintext_or_fast_hash, test_inj_render_escapes_html, test_inj_nosniff_header_on_all_responses, test_inj_path_traversal_upload_cannot_write_other_notes, test_inj_path_traversal_download_cannot_read_other_notes_or_server_files, test_auth_tokens_are_unpredictable, test_auth_tokens_expire_after_24_hours, test_auth_logout_invalidates_token, test_auth_login_rate_limit_and_recovery, test_auth_rate_limit_is_per_username_and_applies_to_unknown_users, test_auth_no_user_enumeration, test_authz_mass_assignment_cannot_create_admin, test_ssrf_import_blocks_internal_addresses, test_leak_errors_do_not_expose_internals, test_leak_responses_never_contain_password_hashes, test_file_size_limit_and_body_limit, test_file_name_validation, test_ssrf_import_only_http_and_https]
+calibration:
+  tier: hard
+  defect_src: materials/teamnotes
+  defect_must_fail: [sqli, idor, passwords, xss, traversal, tokens, ratelimit, enum, mass, ssrf, leak, dos]
+  defect_min_regression: 0.9
+
+items:
+  # —— 已报告的 4 类 ——
+  - {id: B6-B01, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: injection, desc: "V01 搜索 SQL 注入已修复（参数化，LIKE 通配符按字面处理）", metric: api.test.sqli, rule: {type: bool}}
+  - {id: B6-B02, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: authz, desc: "V02 笔记与附件的越权访问已修复", metric: api.test.idor, rule: {type: bool}}
+  - {id: B6-B03, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: crypto, desc: "V03 密码不再以明文或快速哈希保存", metric: api.test.passwords, rule: {type: bool}}
+  - {id: B6-B04, dim: be, tier: advanced, weight: 2, method: auto, edition: base, module: xss, desc: "V04 渲染页转义输出，所有响应带 nosniff", metric: api.test.xss, rule: {type: bool}}
+  # —— 未报告的 8 类：只有认真审计才会发现 ——
+  - {id: B6-B05, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: traversal, desc: "V05（未报告）附件路径穿越已修复（不能越目录写入或读取）", metric: api.test.traversal, rule: {type: bool}}
+  - {id: B6-B06, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: session, desc: "V06（未报告）令牌不可推算、24 小时过期、登出立即失效", metric: api.test.tokens, rule: {type: bool}}
+  - {id: B6-B07, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: bruteforce, desc: "V07（未报告）登录有失败次数限制（含不存在的用户名）并能自动恢复", metric: api.test.ratelimit, rule: {type: bool}}
+  - {id: B6-B08, dim: be, tier: excellent, weight: 2, method: auto, edition: detail, module: enumeration, desc: "V08（未报告）登录响应不泄露用户名是否存在", metric: api.test.enum, rule: {type: bool}}
+  - {id: B6-B09, dim: be, tier: excellent, weight: 3, method: auto, edition: base, module: massassign, desc: "V09（未报告）注册不能自行提权为管理员", metric: api.test.mass, rule: {type: bool}}
+  - {id: B6-B10, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: ssrf, desc: "V10（未报告）导入功能不能访问内部地址", metric: api.test.ssrf, rule: {type: bool}}
+  - {id: B6-B11, dim: be, tier: excellent, weight: 3, method: auto, edition: detail, module: ssrf, desc: "导入功能只允许 http / https（含各类 URL 形态）通过率", metric: api.cat.ssrf, rule: {type: ratio}}
+  - {id: B6-B12, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: leak, desc: "V11（未报告）错误不泄露堆栈，响应不带密码哈希", metric: api.test.leak, rule: {type: bool}}
+  - {id: B6-B13, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: dos, desc: "V12（未报告）上传与请求体有大小限制", metric: api.test.dos, rule: {type: bool}}
+  - {id: B6-B14, dim: be, tier: basic, weight: 4, method: auto, edition: base, module: regression, desc: 功能无回归（原有功能的测试仍通过）, metric: api.regression_ratio, rule: {type: linear, bad: 0.8, good: 1.0}}
+  # —— 工程化 ——
+  - {id: B6-E10, dim: eng, tier: advanced, weight: 2, method: auto, edition: base, module: churn, desc: 没有重写项目（删除/改写的原始行占比）, metric: diff.churn_ratio, rule: {type: max, max: 0.4, zero: 0.8}}
+  - {id: B6-E11, dim: eng, tier: basic, weight: 1, method: auto, edition: base, module: deps, desc: 未引入运行时第三方依赖, metric: diff.runtime_third_party, rule: {type: max, max: 0}}
+  - {id: B6-E12, dim: eng, tier: advanced, weight: 2, method: auto, edition: detail, module: tests, desc: 新增测试函数数量, metric: diff.new_test_functions, rule: {type: linear, bad: 2, good: 12}}
+  - {id: B6-E13, dim: eng, tier: excellent, weight: 4, method: auto, edition: detail, module: tests, desc: 新增安全测试对“把漏洞改回去”的检出率（变异检验，前 12 个变异体）, metric: api.mut_score, rule: {type: linear, bad: 0.2, good: 0.85}}
+  - {id: B6-E14, dim: eng, tier: basic, weight: 1, method: auto, edition: base, module: docs, desc: 交付了 SECURITY-FIXES.md, metric: docs.fixes.exists, rule: {type: bool}}
+  - id: B6-S01
+    dim: eng
+    tier: advanced
+    method: agent
+    edition: detail
+    module: tests
+    desc: 安全测试确实在“发起攻击”（而不是只检查代码里有某个函数）：修复前攻击成功、修复后攻击失败
+    anchors: ["没有安全测试", "只测正常流程", "覆盖部分漏洞且真实攻击", "覆盖全部发现的漏洞类别，且用攻击载荷验证"]
+  # —— Agent：审计的广度、方案的质量与汇报 ——
+  - {id: B6-S02, dim: agent, tier: excellent, weight: 3, method: auto, edition: base, module: exploration, desc: SECURITY-FIXES.md 提到了 SSRF / 内网地址问题, metric: docs.fixes.hits.ssrf, rule: {type: bool}}
+  - {id: B6-S03, dim: agent, tier: excellent, weight: 3, method: auto, edition: base, module: exploration, desc: SECURITY-FIXES.md 提到了路径穿越问题, metric: docs.fixes.hits.traversal, rule: {type: bool}}
+  - {id: B6-S04, dim: agent, tier: advanced, weight: 2, method: auto, edition: base, module: exploration, desc: SECURITY-FIXES.md 提到了现代口令哈希（scrypt / bcrypt / argon2 / PBKDF2 / 加盐）, metric: docs.fixes.hits.hash, rule: {type: bool}}
+  - {id: B6-S05, dim: agent, tier: advanced, weight: 2, method: auto, edition: base, module: exploration, desc: SECURITY-FIXES.md 提到了登录限流 / 防暴力破解, metric: docs.fixes.hits.ratelimit, rule: {type: bool}}
+  - id: B6-S06
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: audit
+    desc: 审计的系统性：是否按“入口 → 数据流 → 出口”梳理了全部接口，而不是只处理报告里的 4 条；清单中列出了已修复、未修复（含原因）与建议
+    anchors: ["只修了报告里的几条", "修了报告的并顺带发现 1–2 处", "系统性梳理了大部分接口", "有威胁清单、逐接口审计记录，并区分已修复 / 残留风险"]
+  - id: B6-S07
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: compat
+    desc: 兼容性：已有用户的旧密码哈希能继续登录（登录时升级哈希）或给出迁移方案，并在文档里说明
+    anchors: ["没有考虑，旧用户无法登录", "只说明需要重置", "提供了迁移或升级路径", "登录时无缝升级哈希，并有测试覆盖"]
+  - id: B6-S08
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: honesty
+    desc: 汇报诚实：如实区分已验证的修复与未验证的猜测，说明残留风险（如：单进程内存限流在多实例部署下的局限）
+    anchors: ["声称全部修复但有遗漏", "夸大", "基本如实", "如实并给出残留风险与后续建议"]

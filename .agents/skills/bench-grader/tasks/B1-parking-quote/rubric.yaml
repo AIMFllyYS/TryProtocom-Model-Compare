@@ -1,0 +1,56 @@
+id: B1
+name: 停车场计费规则转写
+short: 把一页精确的业务规则逐条转写成可靠的 HTTP 计价服务；考察对规则的忠实度、边界处理与输入校验
+extends: [backend]
+deliverable_dir: parking-quote
+dims: {be: 1.0, eng: 0.5, agent: 0.4}
+condition: 无人值守；评测机有 Node 22 与 Python 3.11
+materials: []
+time_limit_min: 60
+probes:
+  - type: files
+    opts:
+      required: [DECISIONS.md]
+  - type: api
+    opts:
+      tests: [hidden/test_quote.py]
+      support: [../_common/hidden/bt.py]
+      categories: [func, edge, sec, amb]
+      differential:
+        reference: {script: hidden/reference_server.py}
+        driver: hidden/diff_driver.py
+        timeout: 300
+      named_tests:
+        grace: [test_func_grace_15_minutes_free, test_edge_grace_is_judged_on_minutes_rounded_up, test_edge_grace_before_coupon]
+        night: [test_edge_night_starts_at_22_00_sharp, test_edge_night_ends_at_06_00_sharp, test_edge_units_priced_by_their_own_start_time]
+        cap: [test_edge_daily_cap_applies, test_edge_cap_is_per_natural_day, test_edge_just_below_and_above_cap]
+        rounding: [test_edge_ev_rounds_half_up]
+        tz: [test_amb_offsets_are_instants, test_amb_date_attribution_uses_shanghai_not_utc, test_amb_other_offset]
+      perf:
+        path: /health
+        requests: 200
+        concurrency: 10
+calibration:
+  tier: medium          # 预期难度：strong 模型通过率 ≥ 0.9，弱模型主要丢在 edge / amb
+  defect_must_fail: []
+
+items:
+  # —— 后端：隐藏黑盒 ——
+  - {id: B1-B01, dim: be, tier: basic, weight: 3, method: auto, edition: base, module: func, desc: 主流程用例通过率（计价基本公式、折扣、遗失票据）, metric: api.cat.func, rule: {type: ratio}}
+  - {id: B1-B02, dim: be, tier: advanced, weight: 5, method: auto, edition: base, module: edge, desc: 边界与规则交互通过率（宽限期、夜间价、跨日、封顶、舍入、7 天上限）, metric: api.cat.edge, rule: {type: ratio}}
+  - {id: B1-B03, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: validation, desc: 输入校验与统一错误格式通过率, metric: api.cat.sec, rule: {type: ratio}}
+  - {id: B1-B04, dim: be, tier: excellent, weight: 3, method: auto, edition: detail, module: amb, desc: 规格里可推断的约定（时区换算、偏移量、小数秒、默认值）, metric: api.cat.amb, rule: {type: ratio}}
+  - {id: B1-B05, dim: be, tier: excellent, weight: 4, method: auto, edition: detail, module: differential, desc: 与参考实现的差分一致率（400 个随机请求）, metric: api.diff_match_ratio, rule: {type: linear, bad: 0.8, good: 1.0}}
+  - {id: B1-B06, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: night, desc: 夜间价的起点、终点与按单元起点计价, metric: api.test.night, rule: {type: bool}}
+  - {id: B1-B07, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: cap, desc: 日封顶按自然日、按本地时区, metric: api.test.cap, rule: {type: bool}}
+  - {id: B1-B08, dim: be, tier: excellent, weight: 2, method: auto, edition: detail, module: rounding, desc: 折扣舍入为四舍五入（不是截断或银行家舍入）, metric: api.test.rounding, rule: {type: bool}}
+  # —— 需求理解：规格里没有写清楚的地方有没有被发现并记录 ——
+  - id: B1-S01
+    dim: be
+    tier: advanced
+    method: agent
+    edition: detail
+    module: decisions
+    desc: DECISIONS.md 记录了规格里的灰色地带（如：优惠券与宽限期的先后、封顶与折扣的先后、跨日单元归属）及处理理由
+    evidence: 对照 DECISIONS.md 与代码，看记录的决定是否真的被实现
+    anchors: ["没有或只复述规格", "识别了 1 个灰色地带", "识别了 2 个以上且与实现一致", "识别全面、理由充分，并用测试固定了这些决定"]

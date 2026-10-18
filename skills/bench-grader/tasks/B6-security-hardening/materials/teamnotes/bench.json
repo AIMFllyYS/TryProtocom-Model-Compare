@@ -1,0 +1,1 @@
+{"start": "python app.py", "setup": "", "test": "python -m unittest discover -s tests -v", "health": "/health"}

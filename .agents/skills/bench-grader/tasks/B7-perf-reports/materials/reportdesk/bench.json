@@ -1,0 +1,6 @@
+{
+  "start": "python app.py",
+  "setup": "",
+  "test": "python -m pytest -q tests",
+  "health": "/health"
+}

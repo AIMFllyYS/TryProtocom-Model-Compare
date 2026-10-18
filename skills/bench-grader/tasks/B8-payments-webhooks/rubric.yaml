@@ -1,0 +1,115 @@
+id: B8
+name: PayDesk 支付对接（幂等、webhook 验签与去重、网关故障、退款、对账）
+short: 对接一个会出各种状况的支付网关：只有 5xx / 超时 / 断连 / 限流 / webhook 重复与乱序都处理对，钱才不会多扣、少收、重复退。评测方运行带故障注入的沙箱网关做黑盒验证
+extends: [backend]
+deliverable_dir: paydesk
+dims: {be: 1.0, eng: 0.5, agent: 0.6}
+condition: 无人值守；评测机有 Python 3.11；评测方在本机运行沙箱网关（同 materials/provider-sim/provider.py，带故障注入），地址与密钥通过环境变量交给被测服务
+materials: ["materials/provider-sim/（网关沙箱与接口文档，复制到工作目录）"]
+time_limit_min: 120
+probes:
+  - type: files
+    opts:
+      required: [DECISIONS.md]
+  - type: api
+    opts:
+      tests: [hidden/test_pay.py]
+      support: [../_common/hidden/bt.py]
+      tests_timeout: 1500
+      sidecar:
+        script: materials/provider-sim/provider.py
+        env: PROVIDER_URL
+        extra_env: {PROVIDER_KEY: sk_test_bench, WEBHOOK_SECRET: whsec_bench}
+      categories: [func, idem, fault, hook, refund, recon, conc]
+      named_tests:
+        sig: test_hook_bad_signatures_are_rejected_and_change_nothing
+        replay: test_hook_stale_timestamp_rejected_and_tolerance_respected
+        dedupe: [test_hook_duplicate_event_ids_apply_once, test_hook_provider_duplicate_deliveries_are_acknowledged_and_idempotent]
+        reorder: [test_hook_out_of_order_refund_before_charge_is_not_lost, test_hook_stale_failure_after_success_is_ignored]
+        mismatch: test_hook_amount_mismatch_is_not_marked_paid
+        idem: [test_idem_same_key_replays_without_second_charge, test_idem_same_key_after_paid_still_replays, test_idem_concurrent_same_key_single_charge, test_idem_concurrent_different_keys_single_winner]
+        stablekey: [test_idem_gateway_key_is_stable_across_retries, test_fault_timeout_after_processing_is_retried_safely]
+        retry: [test_fault_http500_then_success, test_fault_rate_limit_honors_retry_after]
+        unknown: [test_fault_exhausted_gives_unknown_not_error_and_never_double_charges, test_fault_drop_after_every_attempt_then_reconcile]
+        race: test_fault_webhook_before_pay_response_does_not_regress_status
+        refundonce: [test_refund_concurrent_cannot_exceed, test_refund_idempotent_replay, test_refund_gateway_fault_retried_with_same_key]
+        recon: [test_recon_pending_becomes_paid_and_is_idempotent, test_recon_declined_charge_becomes_failed, test_recon_leaves_pending_when_gateway_is_still_pending, test_recon_latest_charge_wins_after_a_failed_attempt]
+      regression_exclude: [test_hook_bad_signatures_are_rejected_and_change_nothing, test_hook_stale_timestamp_rejected_and_tolerance_respected, test_hook_duplicate_event_ids_apply_once, test_hook_provider_duplicate_deliveries_are_acknowledged_and_idempotent, test_hook_out_of_order_refund_before_charge_is_not_lost, test_hook_stale_failure_after_success_is_ignored, test_hook_amount_mismatch_is_not_marked_paid, test_idem_same_key_replays_without_second_charge, test_idem_same_key_after_paid_still_replays, test_idem_concurrent_same_key_single_charge, test_idem_concurrent_different_keys_single_winner, test_idem_gateway_key_is_stable_across_retries, test_fault_timeout_after_processing_is_retried_safely, test_fault_http500_then_success, test_fault_rate_limit_honors_retry_after, test_fault_exhausted_gives_unknown_not_error_and_never_double_charges, test_fault_drop_after_every_attempt_then_reconcile, test_fault_webhook_before_pay_response_does_not_regress_status, test_refund_concurrent_cannot_exceed, test_refund_idempotent_replay, test_refund_gateway_fault_retried_with_same_key, test_recon_pending_becomes_paid_and_is_idempotent, test_recon_declined_charge_becomes_failed, test_recon_leaves_pending_when_gateway_is_still_pending, test_recon_latest_charge_wins_after_a_failed_attempt, test_refund_gateway_unavailable_is_reported_and_can_be_retried, test_refund_webhook_after_sync_response_is_not_double_counted, test_conc_many_orders_paid_independently, test_hook_unknown_reference_and_malformed_bodies]
+      own_test_mutation:
+        reference: hidden/reference_server.py
+        mutants: hidden/mutants.json
+        limit: 12
+        timeout: 240
+calibration:
+  tier: expert
+  defect_src: hidden/naive
+  defect_must_fail: [sig, replay, dedupe, reorder, mismatch, idem, stablekey, retry, unknown, race, refundonce, recon]
+  defect_min_regression: 0.5
+
+items:
+  # —— 主流程 ——
+  - {id: B8-B01, dim: be, tier: basic, weight: 4, method: auto, edition: base, module: func, desc: 订单创建、支付、拒付、列表、重试支付等主流程通过率, metric: api.cat.func, rule: {type: ratio}}
+  # —— 幂等：不重复扣款 ——
+  - {id: B8-B02, dim: be, tier: advanced, weight: 5, method: auto, edition: base, module: idempotency, desc: 同一个幂等键重放、并发同键 / 异键只扣一次, metric: api.test.idem, rule: {type: bool}}
+  - {id: B8-B03, dim: be, tier: excellent, weight: 5, method: auto, edition: base, module: idempotency, desc: 调用网关的重试使用稳定的网关幂等键（超时 / 断连后重试不会重复扣款）, metric: api.test.stablekey, rule: {type: bool}}
+  # —— 网关故障 ——
+  - {id: B8-B04, dim: be, tier: advanced, weight: 4, method: auto, edition: base, module: fault, desc: 5xx 与限流（Retry-After）后重试成功, metric: api.test.retry, rule: {type: bool}}
+  - {id: B8-B05, dim: be, tier: excellent, weight: 6, method: auto, edition: base, module: fault, desc: 重试耗尽后订单为“结果未知”而不是失败或 5xx，之后不会重复扣款，并能通过对账收敛, metric: api.test.unknown, rule: {type: bool}}
+  - {id: B8-B06, dim: be, tier: excellent, weight: 5, method: auto, edition: base, module: fault, desc: webhook 先于支付响应到达时，状态不会被后到的响应覆盖, metric: api.test.race, rule: {type: bool}}
+  - {id: B8-B07, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: fault, desc: 网关故障类全部用例通过率, metric: api.cat.fault, rule: {type: ratio}}
+  # —— webhook ——
+  - {id: B8-B08, dim: be, tier: advanced, weight: 5, method: auto, edition: base, module: webhook, desc: 签名验证（原始字节、HMAC、缺失 / 篡改 / 错误密钥都拒绝且不改变状态）, metric: api.test.sig, rule: {type: bool}}
+  - {id: B8-B09, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: webhook, desc: 时间戳容忍窗口（过期与未来都拒绝，窗口内接受）, metric: api.test.replay, rule: {type: bool}}
+  - {id: B8-B10, dim: be, tier: advanced, weight: 4, method: auto, edition: base, module: webhook, desc: 事件去重（重复事件号、重复退款号只入账一次）, metric: api.test.dedupe, rule: {type: bool}}
+  - {id: B8-B11, dim: be, tier: excellent, weight: 5, method: auto, edition: base, module: webhook, desc: 乱序处理（先到的退款不丢；过期的失败通知不覆盖成功）, metric: api.test.reorder, rule: {type: bool}}
+  - {id: B8-B12, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: webhook, desc: 金额与订单不符时不标记已支付, metric: api.test.mismatch, rule: {type: bool}}
+  - {id: B8-B13, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: webhook, desc: webhook 类全部用例通过率, metric: api.cat.hook, rule: {type: ratio}}
+  # —— 退款与对账 ——
+  - {id: B8-B14, dim: be, tier: advanced, weight: 4, method: auto, edition: base, module: refund, desc: 退款只做一次（并发、重放、网关故障后重试都不会多退）, metric: api.test.refundonce, rule: {type: bool}}
+  - {id: B8-B15, dim: be, tier: advanced, weight: 3, method: auto, edition: detail, module: refund, desc: 退款类全部用例通过率（部分 / 全额 / 超额 / 校验 / 网关不可用）, metric: api.cat.refund, rule: {type: ratio}}
+  - {id: B8-B16, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: recon, desc: 对账：待确认订单与网关一致后收敛，重复执行无副作用, metric: api.test.recon, rule: {type: bool}}
+  - {id: B8-B17, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: concurrency, desc: 并发支付多个订单互不串号, metric: api.cat.conc, rule: {type: ratio}}
+  # —— 工程化 ——
+  - {id: B8-E10, dim: eng, tier: excellent, weight: 4, method: auto, edition: detail, module: tests, desc: 自带测试对“验签 / 去重 / 幂等 / 乱序 / 状态覆盖”等回归的检出率（变异检验，前 12 个变异体）, metric: api.mut_score, rule: {type: linear, bad: 0.2, good: 0.8}}
+  - {id: B8-E11, dim: eng, tier: basic, weight: 1, method: auto, edition: base, module: docs, desc: 交付了 DECISIONS.md, metric: files.required_ratio, rule: {type: ratio}}
+  - id: B8-S01
+    dim: eng
+    tier: advanced
+    method: agent
+    edition: detail
+    module: tests
+    desc: 自带测试是否使用故障注入（对着沙箱网关构造 5xx / 超时 / 重复 webhook），而不只测顺利路径
+    anchors: ["没有测试", "只测顺利路径", "覆盖部分故障", "覆盖重试、验签、重复与乱序，并断言钱的结果（扣款次数、金额）"]
+  - id: B8-S02
+    dim: eng
+    tier: advanced
+    method: agent
+    edition: detail
+    module: code
+    desc: 状态机清晰：订单状态与合法迁移集中定义，所有 webhook / 同步响应 / 对账都走同一个迁移函数
+    anchors: ["状态散落在各处，随处改写", "有状态常量但迁移分散", "迁移集中", "迁移集中且有幂等、序号与终态保护，并有测试"]
+  # —— Agent：金融场景的风险意识与诚实 ——
+  - id: B8-S03
+    dim: agent
+    tier: excellent
+    method: agent
+    edition: detail
+    module: judgment
+    desc: DECISIONS.md 是否讲清取舍与风险：为什么超时后不直接标记失败、为什么用稳定幂等键、重放窗口取值、未实现的部分（如多实例锁、持久化重试队列）
+    anchors: ["没有", "只复述实现", "说明了主要决策与原因", "决策、风险、未做的事和后续建议都具体，并区分已验证与推断"]
+  - id: B8-S04
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: exploration
+    desc: 是否主动用沙箱的故障注入把每一类故障都跑过（而不是只测顺利路径），并在汇报里给出证据（命令输出、扣款次数）
+    anchors: ["没有", "只跑顺利路径", "跑了几类故障", "逐类故障都跑过，汇报里有可复核的证据"]
+  - id: B8-S05
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: honesty
+    desc: 汇报诚实：没有声称已处理但实际未验证的情形（如多实例、进程崩溃于“已扣款未记录”之间）
+    anchors: ["夸大或隐瞒", "含糊", "基本如实", "如实并列出已知的残余风险"]

@@ -1,0 +1,66 @@
+# 任务：带租约的作业队列
+
+## 契约
+
+- 技术栈自选（Node.js / Python / Go 等均可），要能在装有 Node 22 与 Python 3.11 的 Linux 机器上用一条命令启动。可以使用开源依赖，但要有锁文件或固定版本。
+- 在工作目录新建文件夹 `job-queue/`，所有交付都放在里面。
+- 监听端口取环境变量 `PORT`；数据文件路径取环境变量 `DB_PATH`；`GET /health` 返回 200。
+- **数据必须持久化，并且在响应之前就已经落盘**：评测会在服务处理请求的过程中直接 `kill -9`，然后用同一个 `DB_PATH` 重启。
+- **时间由请求头控制**：请求头 `X-Bench-Now`（ISO 8601，例如 `2026-10-08T09:00:00.000Z`）存在时，服务用它作为处理这个请求的“当前时间”（所有时间计算——延迟、租约过期、退避——都基于它）；不存在时用真实时间。不要在后台用真实时钟自己“推进”状态：作业状态只在请求到来时按那个请求的“当前时间”计算（惰性过期）。
+- 环境变量 `BENCH_MODE=1` 时提供 `POST /api/__bench/reset`：清空全部作业，回到初始状态，返回 200 或 204。
+- 在 `job-queue/bench.json` 写：`{"start": "启动命令", "setup": "安装依赖命令（可空）", "test": "运行你自己测试的命令", "health": "/health"}`。
+- 你自己的测试要能对一个正在运行的服务实例工作：读取环境变量 `BASE_URL`（例如 `http://127.0.0.1:8080`）发请求，不要在测试里自己再起一个服务。评测会把你的测试对着“故意改错的实现”跑，看它能不能发现错误。
+- `README.md`（启动、接口、配置）与 `DECISIONS.md`（规格里没有说清楚的地方，你怎么处理、为什么）。
+- 完成时在工作目录写 `FINAL_MESSAGE.md`：交付了什么、怎么验证的、已知限制。只写真实存在的内容。
+
+## 规格
+
+一个内部任务系统需要一个“至少一次投递”的作业队列：生产者入队，消费者（worker）租用作业、处理、确认；处理失败可以重试，重试用完进入死信。
+
+### 作业与状态
+
+作业有这些字段：`id`、`queue`、`payload`（JSON 对象）、`priority`（0–9，数字大的优先，默认 5）、`attempts`（已租用次数）、`max_attempts`（1–10，默认 3）、`run_at`（最早可被取出的时刻）。
+
+作业状态（相对于请求的“当前时间” `now`）：
+
+| 状态 | 含义 |
+|---|---|
+| `delayed` | 还没到 `run_at`（`run_at > now`） |
+| `ready` | 可以被取出（`run_at ≤ now`） |
+| `leased` | 被某个 worker 租用，租约未过期 |
+| `done` | 已确认完成 |
+| `dead` | 死信：重试用完 |
+
+### 接口（JSON，前缀 `/api`，队列名只能是 1–32 个小写字母 / 数字 / `_` / `-`，否则 400）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/queues/{q}/jobs` | 入队：`{payload, priority?, delay_ms?, max_attempts?}`。`delay_ms` 0–86400000，默认 0，`run_at = now + delay_ms`。返回 201 与作业对象 |
+| POST | `/queues/{q}/lease` | 租用一个作业：`{lease_ms?}`（1000–600000，默认 30000）。有作业：200 `{job: {id, payload, attempt, priority, lease_token, lease_expires_at}}`；没有：204，无响应体 |
+| POST | `/jobs/{id}/ack` | 确认完成：`{lease_token}` → 200 作业对象（`state: done`） |
+| POST | `/jobs/{id}/nack` | 处理失败：`{lease_token, retry_delay_ms?, error?}` → 200 作业对象 |
+| POST | `/jobs/{id}/extend` | 续租：`{lease_token, lease_ms}`，从 `now` 起重新计 `lease_ms` → 200 作业对象 |
+| GET | `/jobs/{id}` | → 作业对象 |
+| GET | `/queues/{q}/stats` | → `{ready, delayed, leased, done, dead}`（按请求的 `now` 计数） |
+| GET | `/queues/{q}/dead` | → `{jobs: [作业对象…]}`，按“进入死信的先后”排序 |
+| POST | `/jobs/{id}/requeue` | 把死信重新入队：`attempts` 归零，立即可取，`last_error` 清除。不是死信：409 `NOT_DEAD` |
+
+作业对象：`{id, queue, state, priority, attempts, max_attempts, run_at, payload, last_error?}`；时间一律是 UTC、毫秒精度的 ISO 字符串（如 `2026-10-08T09:00:01.000Z`）。
+
+### 规则
+
+1. **取出顺序**：只在 `ready` 的作业里取：先按 `priority` 降序；相同则按 `run_at` 升序（谁先变得可取谁先）；再相同则按创建先后。延迟中的作业不参与，也不会挡住别的作业。
+2. **租用**：被取出的作业 `attempts` 加 1（`attempt` 即这个新值），生成新的 `lease_token`，`lease_expires_at = now + lease_ms`。每个作业同一时刻最多只能被租用一次——并发的多个 worker 不可能拿到同一个作业。
+3. **租约过期**：当 `now ≥ lease_expires_at`（含边界）时租约过期：若 `attempts < max_attempts`，作业回到 `ready`（`run_at` 为租约到期的时刻）；否则进入 `dead`，`last_error` 为 `lease_expired`。过期按请求的 `now` 惰性计算，所以任何接口看到的都是一致的状态。
+4. **确认 / 失败 / 续租** 都要带当前有效的 `lease_token`，否则 409：
+   - `LEASE_MISMATCH`：令牌不是这个作业最近一次租约的令牌（或没带令牌）；
+   - `LEASE_EXPIRED`：令牌是最近一次租约的，但租约已经过期（`now ≥ lease_expires_at`）；
+   - `ALREADY_FINISHED`：令牌是最近一次租约的，但这个租约已经被确认或 nack 过了。
+5. **nack**：`attempts < max_attempts` 时作业回到“延迟”：`run_at = now + 延迟`，其中延迟是 `retry_delay_ms`（0–86400000 的整数，不合法 400），不给则用指数退避 `min(1000 × 2^(attempts−1), 60000)` 毫秒。`attempts ≥ max_attempts` 时进入 `dead`，`last_error` 为请求里的 `error`（字符串）或默认的 `max_attempts_exceeded`。
+6. **错误格式**：统一 `{"error": {"code": "...", "message": "..."}}`。参数校验失败（含 `X-Bench-Now` 格式不对、请求体不是合法 JSON）400 `VALIDATION_ERROR`；作业不存在 404 `NOT_FOUND`。任何输入都不能让服务返回 500 或泄露堆栈。
+
+## 愿望
+
+请把它当成一个会被很多 worker 同时拉取、会被随时重启的真实队列来做。想一想：两个 worker 同时来取同一个作业怎么办？worker 取走作业后进程挂了怎么办？服务自己在处理中被杀掉怎么办？
+
+怎么设计存储、怎么保证取出的原子性、怎么测试，都由你决定。

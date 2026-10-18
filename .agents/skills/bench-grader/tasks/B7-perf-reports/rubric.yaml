@@ -1,0 +1,121 @@
+﻿id: B7
+name: ReportDesk 报表服务提速（数字不变，写后一致，并发正确）
+short: 一个功能正确但很慢的报表服务：先定位瓶颈再提速。评测在同一台机器上比较“原实现”与“你的实现”的响应时间，并用 50 项黑盒测试确认数字、缓存失效与并发都没出错
+extends: [backend]
+deliverable_dir: reportdesk
+dims: {be: 1.0, eng: 0.6, agent: 0.6}
+condition: 无人值守；工作目录预置 materials/reportdesk/ 的副本（含固定数据生成器 seed.py）；评测机有 Python 3.11；压测与基线实现在同一台机器上依次运行
+materials: ["materials/reportdesk/（种子仓库，复制到工作目录）"]
+time_limit_min: 90
+probes:
+  - type: files
+    opts:
+      required: [app.py, PERF-REPORT.md]
+      scan: ["**/*.py"]
+  - type: diff
+    opts: {seed: materials/reportdesk}
+  - type: docs
+    opts:
+      docs:
+        perf:
+          path: PERF-REPORT.md
+          groups:
+            measure: ["基线|之前|优化前|before|baseline|p95|p50|毫秒|ms|req/s|QPS"]
+            index: ["索引|index|EXPLAIN|执行计划"]
+            nplus1: ["N\\+1|n\\+1|逐条查询|循环里查询|批量查询|JOIN|聚合"]
+            cache: ["缓存|cache|失效|invalidat"]
+  - type: api
+    opts:
+      tests: [hidden/test_reports.py]
+      support: [../_common/hidden/bt.py, hidden/seedgen.py]
+      categories: [func, edge, fresh, conc]
+      named_tests:
+        stale: [test_fresh_empty_range_then_create_shows_up, test_fresh_cancel_reverts_all_reports, test_fresh_cancelling_a_seed_order_updates_reports]
+        retro: test_fresh_price_change_is_not_retroactive
+        ties: [test_fresh_ranking_ties_break_by_product_id, test_fresh_same_second_orders_are_listed_by_id_desc]
+        race: [test_conc_parallel_creates_are_all_counted, test_conc_cancel_same_order_exactly_once]
+      perf:
+        paths:
+          - /api/customers/1/summary
+          - /api/customers/2/summary
+          - /api/customers/3/summary
+          - /api/customers/10/summary
+          - /api/reports/monthly?year=2025
+          - /api/reports/monthly?year=2026
+          - /api/reports/top-products?from=2025-03-01&to=2025-03-31
+          - /api/reports/top-products?from=2026-01-01&to=2026-06-30&limit=20
+          - /api/orders?customer_id=1&limit=20
+          - /api/orders?limit=50&offset=500
+          - /api/orders?status=cancelled&limit=20
+        warmup: 11
+        requests: 220
+        concurrency: 10
+        timeout: 30
+        reset_before: true
+        gate_categories: [func, fresh]
+        baseline: {dir: materials/reportdesk}
+      own_test_mutation:
+        reference: hidden/reference_server.py
+        mutants: hidden/mutants.json
+        limit: 12
+        timeout: 150
+calibration:
+  tier: hard
+  defect_src: materials/reportdesk
+  defect_must_fail: []
+  defect_max_speedup: 1.3
+
+items:
+  # —— 正确性：提速的前提 ——
+  - {id: B7-B01, dim: be, tier: basic, weight: 5, method: auto, edition: base, module: correctness, desc: 读接口数字与原实现完全一致（客户汇总、排行、月报、订单列表）通过率, metric: api.cat.func, rule: {type: ratio}}
+  - {id: B7-B02, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: validation, desc: 输入校验与错误处理通过率, metric: api.cat.edge, rule: {type: ratio}}
+  - {id: B7-B03, dim: be, tier: excellent, weight: 6, method: auto, edition: base, module: freshness, desc: 写后一致：新建、取消、改价之后所有报表立刻反映（没有脏缓存，价格不追溯）通过率, metric: api.cat.fresh, rule: {type: ratio}}
+  - {id: B7-B04, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: concurrency, desc: 并发：并行写入全部计入、重复取消只成功一次、读写混合不报错通过率, metric: api.cat.conc, rule: {type: ratio}}
+  - {id: B7-B05, dim: be, tier: excellent, weight: 3, method: auto, edition: detail, module: freshness, desc: 取消订单后缓存同步更新（报表、汇总、排行）, metric: api.test.stale, rule: {type: bool}}
+  - {id: B7-B06, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: determinism, desc: 并列时排序稳定（按商品编号 / 订单编号）, metric: api.test.ties, rule: {type: bool}}
+  # —— 速度：只有在正确的前提下才计分 ——
+  - {id: B7-B07, dim: be, tier: excellent, weight: 8, method: auto, edition: base, module: speed, desc: 同一台机器上相对原实现的 p95 加速比（数字有任何出入则按 0 计）, metric: api.speedup_gated, rule: {type: linear, bad: 1.5, good: 5}}
+  - {id: B7-B08, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: speed, desc: 并发 10 路时的 p95 延迟（毫秒）, metric: api.p95_ms, rule: {type: max, max: 50, zero: 300}}
+  - {id: B7-B09, dim: be, tier: basic, weight: 2, method: auto, edition: base, module: speed, desc: 压测期间没有报错, metric: api.load_error_rate, rule: {type: max, max: 0, zero: 0.2}}
+  # —— 工程化 ——
+  - {id: B7-E10, dim: eng, tier: advanced, weight: 2, method: auto, edition: base, module: churn, desc: 没有重写项目（改写的原始行占比）, metric: diff.churn_ratio, rule: {type: max, max: 0.6, zero: 0.95}}
+  - {id: B7-E11, dim: eng, tier: basic, weight: 1, method: auto, edition: base, module: deps, desc: 未引入运行时第三方依赖, metric: diff.runtime_third_party, rule: {type: max, max: 0}}
+  - {id: B7-E12, dim: eng, tier: excellent, weight: 4, method: auto, edition: detail, module: tests, desc: 新增测试对“缓存失效错误 / 排序 / 边界”这类提速常见回归的检出率（变异检验，前 12 个变异体）, metric: api.mut_score, rule: {type: linear, bad: 0.2, good: 0.8}}
+  - {id: B7-E13, dim: eng, tier: basic, weight: 1, method: auto, edition: base, module: docs, desc: 交付了 PERF-REPORT.md, metric: docs.perf.exists, rule: {type: bool}}
+  - id: B7-S01
+    dim: eng
+    tier: advanced
+    method: agent
+    edition: detail
+    module: tests
+    desc: 新增测试是否能保护“数字不变”：有对照用例（提速前后同一数据的输出）、写后读取、并列排序和边界日期
+    anchors: ["没有新增测试", "只测正常路径", "覆盖了数字一致与写后一致中的一类", "对照、写后一致、并列与边界都有，并对着真实服务运行"]
+  # —— Agent：先测量再优化，并诚实汇报 ——
+  - {id: B7-S02, dim: agent, tier: advanced, weight: 3, method: auto, edition: base, module: method, desc: PERF-REPORT.md 里有优化前后的测量数据（p50/p95、ms、req/s 等）, metric: docs.perf.hits.measure, rule: {type: bool}}
+  - {id: B7-S03, dim: agent, tier: advanced, weight: 2, method: auto, edition: base, module: method, desc: PERF-REPORT.md 提到索引 / 执行计划, metric: docs.perf.hits.index, rule: {type: bool}}
+  - {id: B7-S04, dim: agent, tier: advanced, weight: 2, method: auto, edition: base, module: method, desc: PERF-REPORT.md 提到逐条查询（N+1）或聚合 / JOIN 的改造, metric: docs.perf.hits.nplus1, rule: {type: bool}}
+  - {id: B7-S05, dim: agent, tier: advanced, weight: 2, method: auto, edition: base, module: method, desc: PERF-REPORT.md 说明了缓存及其失效策略（如有）, metric: docs.perf.hits.cache, rule: {type: bool}}
+  - id: B7-S06
+    dim: agent
+    tier: excellent
+    method: agent
+    edition: detail
+    module: method
+    desc: 方法：先复现慢、测出瓶颈（而不是凭感觉改），一次只改一处并复测，保留了测量脚本或命令，最终数字与评测机结果量级一致
+    anchors: ["没有测量，凭感觉改", "有最终数字但没有对照", "有前后对照，改动和收益能对上", "有可复现的测量脚本，逐项改动逐项测量，收益归因清楚"]
+  - id: B7-S07
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: risk
+    desc: 风险与规模意识：说明了数据增长到 10 倍时的行为、哪些做法会在多实例 / 重启后失效（如进程内缓存）、哪些权衡有意没做
+    anchors: ["没有讨论", "只有笼统一句", "说明了主要限制", "给出规模预估、失效条件与后续建议，并区分已验证与未验证"]
+  - id: B7-S08
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: honesty
+    desc: 汇报诚实：声称的加速倍数与可复现的测量一致，没有隐瞒任何数字变化或放弃的接口
+    anchors: ["夸大或与测量不符", "含糊", "基本如实", "如实并附可复现命令与局限"]

@@ -1,0 +1,69 @@
+id: B4
+name: 对象存储的 HTTP 语义（ETag、条件请求、Range、并发写）
+short: 实现带 ETag / Last-Modified / 条件请求 / 单段 Range 的对象存储；考察对 HTTP 缓存与断点续传语义的精确理解、求值顺序、并发下的乐观并发控制
+extends: [backend]
+deliverable_dir: blob-http
+dims: {be: 1.0, eng: 0.5, agent: 0.4}
+condition: 无人值守；评测机有 Node 22 与 Python 3.11；评测用 X-Bench-Now 控制时间，并与参考实现做差分比较
+materials: []
+time_limit_min: 90
+probes:
+  - type: files
+    opts:
+      required: [DECISIONS.md]
+  - type: api
+    opts:
+      tests: [hidden/test_blob.py]
+      support: [../_common/hidden/bt.py]
+      persist_test: hidden/test_persist.py
+      categories: [func, cond, range, edge, conc]
+      differential:
+        reference: {script: hidden/reference_server.py}
+        driver: hidden/diff_driver.py
+        timeout: 300
+      own_test_mutation:
+        reference: hidden/reference_server.py
+        mutants: hidden/mutants.json
+        limit: 12
+        timeout: 90
+      named_tests:
+        weak: [test_cond_if_none_match_list_weak_and_star, test_cond_put_if_match]
+        order: [test_cond_get_if_match_mismatch_is_412_and_beats_304, test_cond_if_none_match_wins_over_range, test_cond_if_none_match_takes_precedence_over_if_modified_since]
+        suffix: [test_range_end_is_clipped_and_suffix_longer_than_body, test_range_unsatisfiable_is_416_with_content_range]
+        ifrange: [test_range_if_range_etag, test_range_if_range_date, test_range_if_range_without_range_is_ignored]
+        cas: [test_conc_create_only_race_has_one_winner, test_conc_if_match_race_has_one_winner]
+      perf:
+        path: /health
+        requests: 200
+        concurrency: 10
+calibration:
+  tier: hard
+  defect_must_fail: []
+
+items:
+  - {id: B4-B01, dim: be, tier: basic, weight: 3, method: auto, edition: base, module: func, desc: 主流程（上传、下载、HEAD、删除、列表分页、ETag 只由内容决定）通过率, metric: api.cat.func, rule: {type: ratio}}
+  - {id: B4-B02, dim: be, tier: advanced, weight: 4, method: auto, edition: base, module: conditional, desc: 条件请求（If-None-Match / If-Modified-Since / If-Match / If-Unmodified-Since，含弱比较与优先级）通过率, metric: api.cat.cond, rule: {type: ratio}}
+  - {id: B4-B03, dim: be, tier: excellent, weight: 5, method: auto, edition: base, module: range, desc: Range 语义（开区间 / 后缀 / 裁剪 / 416 / 非法忽略 / If-Range）通过率, metric: api.cat.range, rule: {type: ratio}}
+  - {id: B4-B04, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: edge, desc: 名字校验、大小上限、空对象、错误格式通过率, metric: api.cat.edge, rule: {type: ratio}}
+  - {id: B4-B05, dim: be, tier: excellent, weight: 4, method: auto, edition: base, module: concurrency, desc: 并发（仅创建 / If-Match 乐观并发 / 删除各只有一个赢家，读不到撕裂内容）通过率, metric: api.cat.conc, rule: {type: ratio}}
+  - {id: B4-B06, dim: be, tier: advanced, weight: 3, method: auto, edition: base, module: persistence, desc: 重启后对象内容、ETag、Last-Modified 保持不变, metric: api.persist_ok, rule: {type: bool}}
+  - {id: B4-B07, dim: be, tier: excellent, weight: 4, method: auto, edition: detail, module: differential, desc: 与参考实现的差分一致率（500 个随机的 Range / 条件头组合）, metric: api.diff_match_ratio, rule: {type: linear, bad: 0.8, good: 1.0}}
+  - {id: B4-B08, dim: be, tier: advanced, weight: 2, method: auto, edition: detail, module: priority, desc: 条件头的求值顺序（If-Match → If-None-Match → Range），404 先于条件, metric: api.test.order, rule: {type: bool}}
+  - {id: B4-B09, dim: be, tier: excellent, weight: 2, method: auto, edition: detail, module: ifrange, desc: If-Range 的强校验器与精确日期语义, metric: api.test.ifrange, rule: {type: bool}}
+  - {id: B4-E10, dim: eng, tier: excellent, weight: 3, method: auto, edition: detail, module: tests, desc: 自带测试对“故意改错的实现”的检出率（变异检验，前 12 个变异体）, metric: api.mut_score, rule: {type: linear, bad: 0.1, good: 0.8}}
+  - id: B4-S01
+    dim: be
+    tier: advanced
+    method: agent
+    edition: detail
+    module: design
+    desc: 校验器与条件逻辑集中在一个可读、可测的模块里，而不是散落在每个路由；大对象的 Range 读取不会把整个对象读进内存（或在 DECISIONS.md 里说明取舍）
+    anchors: ["条件逻辑散落且重复", "有抽取但难以对照 RFC", "集中成清晰的求值流程", "求值流程与 RFC 逐条对应，并有表驱动测试"]
+  - id: B4-S02
+    dim: be
+    tier: advanced
+    method: agent
+    edition: detail
+    module: decisions
+    desc: DECISIONS.md 识别了规格灰色地带（如：内容没变的重复 PUT 是否更新 Last-Modified、HEAD 与 Range、多段 Range、ETag 取值方式）并说明处理
+    anchors: ["没有或只复述规格", "识别 1 处", "识别 2 处以上且与实现一致", "识别全面并用测试固定"]
