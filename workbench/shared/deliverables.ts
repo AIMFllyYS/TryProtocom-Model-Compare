@@ -37,6 +37,70 @@ export const DELIVERABLES: Record<string, Deliverable> = {
     ],
   },
   T08: { dir: 'studyspot-legacy', kind: 'repo', preview: 'FIXES.md', note: '直接修改预置的 studyspot-legacy/', files: [{ path: 'FIXES.md', label: 'FIXES.md 修复记录（新增）' }, { path: 'tests', dir: true, label: 'tests/ 回归测试' }] },
+  // ---------------- v2 愿望版（契约里的最小交付；其余自由发挥） ----------------
+  V01: { dir: 'pelican', kind: 'web', preview: 'index.html', files: [{ path: 'index.html', label: '入口页面（window.__bench 契约）' }] },
+  V02: { dir: 'bicycle', kind: 'web', preview: 'index.html', files: [{ path: 'index.html', label: '入口页面（window.__bench 契约）' }] },
+  V03: {
+    dir: 'mc-sol-luna', kind: 'web', preview: 'index.html', files: [
+      { path: 'index.html', label: '实时渲染成片（window.FILM / window.__bench）' }, { path: 'project.json' }, { path: 'shot-list.json' }, { path: 'audio-cue-sheet.csv' },
+      { path: 'qc-report.md' }, { path: 'delivery-manifest.json' }, { path: 'keyframes', dir: true, label: 'keyframes/ 关键帧' },
+      { path: 'contact-sheet.jpg', optional: true, label: 'contact-sheet.jpg（无法截图时在 qc-report.md 说明）' },
+    ],
+  },
+  V04: { dir: 'aether9-site', kind: 'web', preview: 'index.html', files: [{ path: 'index.html', label: '入口页面（构建结果或源文件，window.__bench 契约）' }] },
+  V05: { dir: 'mc-build', kind: 'web', preview: 'index.html', files: [{ path: 'index.html', label: '入口页面（window.__scene / window.__bench）' }] },
+  V06: { dir: 'photoreal-building', kind: 'web', preview: 'index.html', files: [{ path: 'index.html', label: '入口页面（实时渲染，window.__bench）' }] },
+  V07: { dir: 'tempo-promo', kind: 'web', preview: 'index.html', files: [{ path: 'index.html', label: '可直接打开的成片页面（window.__hf）' }, { path: '*.mp4', any: [], optional: true, label: '导出的 MP4（可选）' }] },
+  V08: { dir: 'aether9-promo', kind: 'video', preview: 'final.mp4', files: [{ path: 'final.mp4' }, { path: 'subtitles.srt' }, { path: 'script.md', label: 'script.md 旁白脚本' }] },
+  // ---------------- v2 后端题族（契约里的最小交付） ----------------
+  B1: {
+    dir: 'parking-quote', kind: 'api', preview: 'README.md', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'DECISIONS.md' },
+      { path: 'lock', any: LOCKS, optional: true, label: '依赖清单 / lock 文件（标准库实现可不提供）' },
+    ],
+  },
+  B2: {
+    dir: 'ledger', kind: 'api', preview: 'README.md', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'DECISIONS.md' },
+      { path: 'lock', any: LOCKS, optional: true, label: '依赖清单 / lock 文件（标准库实现可不提供）' },
+    ],
+  },
+  B3: {
+    dir: 'job-queue', kind: 'api', preview: 'README.md', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'DECISIONS.md' },
+      { path: 'lock', any: LOCKS, optional: true, label: '依赖清单 / lock 文件（标准库实现可不提供）' },
+    ],
+  },
+  B4: {
+    dir: 'blob-http', kind: 'api', preview: 'README.md', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'DECISIONS.md' },
+      { path: 'lock', any: LOCKS, optional: true, label: '依赖清单 / lock 文件（标准库实现可不提供）' },
+    ],
+  },
+  B5: {
+    dir: 'inventory-legacy', kind: 'repo', preview: 'FIXES.md', note: '直接修改预置的 inventory-legacy/', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'FIXES.md', label: 'FIXES.md 修复记录（新增）' },
+      { path: 'tests', dir: true, label: 'tests/ 回归测试' },
+    ],
+  },
+  B6: {
+    dir: 'teamnotes', kind: 'repo', preview: 'SECURITY-FIXES.md', note: '直接修改预置的 teamnotes/', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'SECURITY-FIXES.md', label: 'SECURITY-FIXES.md 审计与加固记录（新增）' },
+      { path: 'tests', dir: true, label: 'tests/ 安全回归测试' },
+    ],
+  },
+  B7: {
+    dir: 'reportdesk', kind: 'repo', preview: 'PERF-REPORT.md', note: '直接修改预置的 reportdesk/', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'PERF-REPORT.md', label: 'PERF-REPORT.md 性能分析（新增）' },
+      { path: 'tests', dir: true, label: 'tests/ 数字不变的回归测试' },
+    ],
+  },
+  B8: {
+    dir: 'paydesk', kind: 'api', preview: 'README.md', files: [
+      { path: 'bench.json', label: 'bench.json 启动约定' }, { path: 'README.md' }, { path: 'DECISIONS.md' },
+      { path: 'lock', any: LOCKS, optional: true, label: '依赖清单 / lock 文件（标准库实现可不提供）' },
+    ],
+  },
 };
 
 export const deliverableFor = (task: string, fallbackDir?: string): Deliverable =>

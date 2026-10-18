@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { execFile, spawn, spawnSync } from 'node:child_process';
-import type { Aggregate, JobInfo, JobKind, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
+import type { Aggregate, BoardView, JobInfo, JobKind, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
 import { aggregate } from '../shared/aggregate';
 import { petJobs } from '../shared/activity';
 import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
@@ -60,12 +60,13 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   }
 
   // ---------- 汇总缓存 ----------
-  let aggCache: { key: string; agg: Aggregate } | null = null;
-  async function getAgg(): Promise<Aggregate> {
+  const aggCache = new Map<BoardView, { key: string; agg: Aggregate }>();
+  async function getAgg(view: BoardView = 'history'): Promise<Aggregate> {
     const key = store.data.updated_at + ':' + store.data.runs.length;
-    if (aggCache?.key === key) return aggCache.agg;
-    const agg = aggregate(store.data.runs, await loadSpec());
-    aggCache = { key, agg };
+    const hit = aggCache.get(view);
+    if (hit?.key === key) return hit.agg;
+    const agg = aggregate(store.data.runs, await loadSpec(), { view });
+    aggCache.set(view, { key, agg });
     return agg;
   }
 
@@ -91,8 +92,8 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     hub.emit({ type: 'store', updated_at: store.data.updated_at });
   };
 
-  const graderJob = (kind: Parameters<Jobs['submit']>[0]['kind'], title: string, args: string[], after?: Parameters<Jobs['submit']>[0]['after'], subject?: Parameters<Jobs['submit']>[0]['subject']) =>
-    jobs.submit({ kind, title, cmd: py(), args: [bench, '--data', cfg.benchData, ...args], cwd: cfg.graderDir, after, subject });
+  const graderJob = (kind: Parameters<Jobs['submit']>[0]['kind'], title: string, args: string[], after?: Parameters<Jobs['submit']>[0]['after'], subject?: Parameters<Jobs['submit']>[0]['subject'], opts: { afterFatal?: boolean } = {}) =>
+    jobs.submit({ kind, title, cmd: py(), args: [bench, '--data', cfg.benchData, ...args], cwd: cfg.graderDir, after, subject, afterFatal: opts.afterFatal });
 
   function gradeRuns(runDirs: string[] | 'all', opts: { fast?: boolean; skip?: boolean; task?: string; refs?: string[] } = {}) {
     const args = ['grade', ...(runDirs === 'all' ? ['--all'] : runDirs)];
@@ -102,6 +103,8 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     // 标出作用的运行，界面据此在卡片 / 详情页上显示“自动评分中”
     const ids = runDirs === 'all' ? store.data.runs.filter((r) => !opts.task || r.task === opts.task).map((r) => r.run_id) : runDirs.map((d) => path.basename(d));
     const refs = [...new Set([...(opts.refs || []), ...store.data.workspaces.filter((w) => w.grader_run_id && ids.includes(w.grader_run_id)).map((w) => w.ref)])];
+    // 注意：grade 的 after（sync）只是收尾步骤——score.json 在 grade 进程结束前已写好，所以 sync
+    // 失败/超时只在任务日志里记警告，不把评分任务标成 failed（见 jobs.ts 的 afterFatal 说明）。
     return graderJob('grade', runDirs === 'all' ? `评分：全部运行${opts.task ? ' · ' + opts.task : ''}` : `评分：${runDirs.map((d) => path.basename(d)).join(', ')}`, args, async () => sync(), { run_ids: ids, refs });
   }
 
@@ -136,7 +139,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       if (opts.grade) gradeRuns([path.join(cfg.benchData, 'runs', rid)], { fast: opts.fast, refs: [ref] });
       else await sync();
       return { run_id: rid };
-    }, { refs: [ref] });
+    }, { refs: [ref] }, { afterFatal: true });
   }
 
   const openFolder = (p: string) => {
@@ -156,7 +159,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   const settings = () => store.data.settings;
   const renderPrompt = (s: SpecData, t: SpecTask, variant: string | null, wsAbs: string | null, index: number | null) => buildRunPrompt(t.prompt, {
     bench: `${s.cfg.name} ${s.cfg.version}`, taskId: t.id, taskName: t.name, variant, runIndex: index, workspace: wsAbs,
-    deliverableDir: t.deliverable, timeLimit: t.time_limit, materials: t.materials, condition: t.condition,
+    deliverableDir: t.deliverable, timeLimit: t.time_limit, materials: t.materials, condition: t.condition, suite: t.suite === 'v2' ? 'v2' : 'v1',
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
   /** 可以直接拿来用的运行：已创建、没开始、没交付、没登记 */
   const claimable = (vendor: string, model: string, tkey: string): WorkspaceRun | undefined => ws.listRuns().find((w) =>
@@ -176,7 +179,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   // 素材在“每次运行创建时”复制进 rN/（而不是新增模型时）：每次运行都要一份没被动过的副本（T08 会就地修改种子仓库）。
   // T03/T04 的音频由 build_materials.py 确定性生成，缺了就自动生成；仍然缺就拒绝发车，免得白跑一次。
   const buildScript = path.join(cfg.graderDir, 'scripts', 'build_materials.py');
-  const GENERATED_TASKS = new Set(['T03', 'T04']);
+  const GENERATED_TASKS = new Set(['T03', 'T04', 'V07', 'V08']);
   function missingMaterials(t: SpecTask): string[] {
     const dir = taskDirOf(t);
     const out: string[] = [];
@@ -409,7 +412,11 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.get('/api/events', (req, res) => { hub.attach(res); return undefined; });
   R.get('/api/spec', async (req) => loadSpec(req.query.get('refresh') === '1'));
   R.get('/api/store', () => store.data);
-  R.get('/api/aggregate', () => getAgg());
+  R.get('/api/aggregate', (req) => {
+    const v = req.query.get('view') || 'history';
+    if (!['history', 'simple', 'full'].includes(v)) throw new HttpError(400, `未知榜单视图：${v}（可选 history / simple / full）`);
+    return getAgg(v as BoardView);
+  });
   R.post('/api/sync', () => sync());
 
   // 模型
@@ -731,6 +738,20 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
         return gradeRuns(ids.map((id) => path.join(cfg.benchData, 'runs', id)), { fast: b.fast, skip: b.skip_graded });
       }
       case 'review': return graderJob('review', '生成评分包（人工/agent/用量）', ['review', ...(b.task ? ['--task', b.task] : [])], async () => sync());
+      case 'ingest': {
+        // 导入评分页导出的结果：pairwise.csv（两两比较，Bradley–Terry 折算 0–3）或 human_scores.csv（绝对打分）
+        // Agent 验收：exploration（导入探索报告，可选 file=目录）/ sample（抽样请人工复核）/ calibration（Agent↔人工一致性）
+        if (b.what === 'exploration') {
+          const dir = b.file ? path.resolve(cfg.root, String(b.file)) : null;
+          return graderJob('ingest', '导入 Agent 探索测试结果', ['ingest-exploration', ...(dir ? ['--dir', dir] : [])], async () => sync());
+        }
+        if (b.what === 'sample') return graderJob('ingest', '抽取 Agent 打分的人工复核样本', ['agent-sample', ...(b.rate ? ['--rate', String(b.rate)] : [])], async () => sync());
+        if (b.what === 'calibration') return graderJob('ingest', 'Agent↔人工一致性校准', ['agent-calibration'], async () => null);
+        const what = b.what === 'pairwise' ? 'ingest-pairwise' : 'ingest-scores';
+        const file = path.resolve(cfg.root, String(b.file || ''));
+        if (!b.file || !fs.existsSync(file)) throw new HttpError(404, `找不到要导入的文件：${b.file || '(未指定)'}`);
+        return graderJob('ingest', `导入评分：${path.basename(file)}`, [what, file, ...(b.by ? ['--by', String(b.by)] : [])], async () => sync());
+      }
       case 'export': {
         const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '').replace(/^(\d{8})(\d{4})$/, '$1-$2');
         const out = path.join(cfg.reportsDir, `${stamp}-${(b.label || 'leaderboard').replace(/[^\w.-]+/g, '-')}`);
@@ -739,7 +760,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
             fs.mkdirSync(out, { recursive: true });
             fs.copyFileSync(cfg.storeFile, path.join(out, 'bench-store.snapshot.json'));
             return { dir: toRel(cfg.root, out) };
-          });
+          }, undefined, { afterFatal: true });
           return null;
         });
       }

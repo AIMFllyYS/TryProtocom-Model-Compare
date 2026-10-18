@@ -1,7 +1,7 @@
 // 一次性自测：node --test（由 esbuild 打包后运行，不启动任何服务）
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inferVendor, parseModelInput, iconFor, suggestHarness } from '../shared/vendors';
+import { inferVendor, parseModelInput, iconFor, suggestHarness, harnessGroup } from '../shared/vendors';
 import { runHeader, buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { DELIVERABLES, evalDeliverable } from '../shared/deliverables';
 import { settleQuota, unitPrice } from '../shared/quota';
@@ -59,6 +59,27 @@ test('运行约定头', () => {
   const p = buildRunPrompt('原文\n【A 组】a\n【C 组】c\n', { bench: 'b', taskId: 'T03', taskName: 'x', variant: 'A', runIndex: 1, workspace: 'W', deliverableDir: 'tempo-promo', timeLimit: 60, materials: [] });
   assert.ok(p.text.includes('【A 组】a') && !p.text.includes('【C 组】c'));
   assert.ok(!buildRunPrompt('原文', { bench: 'b', taskId: 'T01', taskName: 'x', variant: null, runIndex: 1, workspace: 'W', deliverableDir: 'pelican-bike', timeLimit: 60, materials: [] }, { header: false }).text.includes('运行约定'));
+});
+
+test('运行约定头（v2）：契约 / 愿望、软时限、无聊天式输出约束；v1 保持不变', () => {
+  const base = { bench: 'Coding Bench v2.0', taskId: 'T05', taskName: 'x', variant: null, runIndex: 1, workspace: 'W', deliverableDir: 'aether9-site', timeLimit: 90, materials: [] as string[] };
+  const v2 = runHeader({ ...base, suite: 'v2' });
+  assert.match(v2, /契约/); assert.match(v2, /愿望/);
+  assert.match(v2, /软时限/); assert.doesNotMatch(v2, /时间上限/);
+  assert.match(v2, /内容、长度和格式都不限/);
+  assert.match(v2, /\n6\. \*\*自检\*\*/);
+  const v1 = runHeader(base);
+  assert.match(v1, /时间上限/); assert.doesNotMatch(v1, /软时限|愿望/);
+  const withMat = runHeader({ ...base, suite: 'v2', materials: ['materials/assets/'] });
+  assert.match(withMat, /\n7\. \*\*自检\*\*/);
+});
+
+test('harness 能力分组', () => {
+  assert.equal(harnessGroup('Claude Code'), 'terminal');
+  assert.equal(harnessGroup('Antigravity'), 'ide');
+  assert.equal(harnessGroup('Codex 桌面版'), 'desktop');
+  assert.equal(harnessGroup('Claude Web Chat + local command relay'), 'chat-relay');
+  assert.equal(harnessGroup('某个没登记的'), 'other');
 });
 
 test('交付检测', () => {
@@ -201,4 +222,40 @@ test('桌面宠物的任务列表与进度里程碑', () => {
   assert.deepEqual(p.probe, { i: 3, n: 5, type: 'browser' }); assert.equal(p.syncing, false); assert.equal(p.last, 'fps 60');
   assert.equal(parseProgress(['[probe 5/5] claims', '[after] 写入结果…']).syncing, true);
   assert.equal(parseProgress(['$ python grade.py']).probe, null);
+});
+
+test('榜单三视图：历史版不含 v2、简化版取最高并标 n、完整版只收测满 3 次者并给出稳定性', async () => {
+  const { aggregate } = await import('../shared/aggregate');
+  const dims = [{ id: 'visual', name: 'v', kind: 'quality', desc: '' }, { id: 'stability', name: '稳定性', kind: 'quality', weight: 0, only_views: ['full'], desc: '' }] as any;
+  const spec = {
+    dims, cfg: { runs_per_task: 3, pass_threshold: 60 },
+    config_full: { runs_per_task: 3, pass_threshold: 60, efficiency: { cost: { best: 0.01, worst: 10 }, speed: { best: 1, worst: 100 } }, statistics: { bootstrap_samples: 20 }, v2: { full_runs: 3 } },
+    tasks: [{ id: 'T01', suite: 'v1', variants: {} }, { id: 'V01', suite: 'v2', variants: {} }, { id: 'V02', suite: 'v2', variants: {} }],
+  } as any;
+  const mk = (id: string, ent: string, tkey: string, idx: number, total: number, extra: Partial<StoreRun> = {}) => ({
+    run_id: id, entrant: ent, model: ent, vendor: null, harness: 'H', task: tkey, variant: null, tkey, run_index: idx, graded: true, usage: {}, manual: {},
+    benchmark_version: tkey.startsWith('V') ? 'v2.0-draft' : null,
+    score: { gate_pass: true, total, dims: { visual: total }, dim_weights: { visual: 1 }, tiers: {}, items: [], na_ratio: 0, low_confidence: false, pending: [], complete: true, passed: total >= 60, tier0_pass: true, gate_fail: [] },
+    ...extra,
+  }) as unknown as StoreRun;
+  const runs: StoreRun[] = [mk('h1', 'old', 'T01', 1, 80)];
+  for (const i of [1, 2, 3]) runs.push(mk(`a${i}-1`, 'full', 'V01', i, [90, 30, 90][i - 1], i === 2 ? { score: { ...mk('x', 'x', 'V01', 1, 30).score!, tier0_pass: false } } : {}), mk(`a${i}-2`, 'full', 'V02', i, 70));
+  runs.push(mk('p1', 'part', 'V01', 1, 50), mk('p2', 'part', 'V01', 2, 80), mk('p3', 'part', 'V02', 1, 60));
+
+  const hist = aggregate(runs, spec, { bootstrap: 20, view: 'history' });
+  assert.deepEqual(hist.entrants, ['old']);
+  assert.equal(hist.board[0].dims.stability, undefined);
+
+  const simple = aggregate(runs, spec, { bootstrap: 20, view: 'simple' });
+  const part = simple.board.find((b) => b.entrant === 'part')!;
+  assert.equal(part.n_max, 2); assert.equal(part.n_min, 1); assert.equal(part.star, true);
+  assert.equal(simple.tasks.find((t) => t.entrant === 'part' && t.task === 'V01')!.mean, 80, '每题取最高');
+
+  const full = aggregate(runs, spec, { bootstrap: 20, view: 'full' });
+  assert.deepEqual(full.board.map((b) => b.entrant), ['full']);
+  assert.equal(full.excluded![0].entrant, 'part');
+  assert.match(full.excluded![0].missing.join(), /V01（2\/3）/);
+  const f = full.board[0];
+  assert.ok(f.availability! < 100 && f.dims.stability! < 100, '失误计入稳定性');
+  assert.equal(f.runs, 6);
 });

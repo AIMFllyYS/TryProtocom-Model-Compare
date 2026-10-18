@@ -92,6 +92,7 @@ export class StoreFile {
         vendor: m.vendor || ws?.vendor || byId.get(row.run_id)?.vendor || null, harness: m.harness, entrant: entrantOf(m),
         run_index: m.run_index ?? null, date: m.date ?? null, alias: row.alias ?? null, ws_ref: m.ws_ref || ws?.ref || null,
         started_at: m.started_at ?? null, ended_at: m.ended_at ?? null, timed_out: !!m.timed_out, failure_tag: m.failure_tag ?? null,
+        benchmark_version: m.benchmark_version ?? null, incident: m.incident ?? null,
         graded: !!row.graded, score: row.score || null, usage: row.usage || {}, manual: row.manual || {}, artifacts: row.artifacts || {},
         notes: row.notes || [], dir: row.dir, has_final_message: !!row.has_final_message, synced_at: now, origin: machineName(),
       };

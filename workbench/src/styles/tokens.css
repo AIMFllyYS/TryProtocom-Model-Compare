@@ -22,7 +22,7 @@
 
   /* 维度色（与雷达图一致，深浅主题共用，选饱和度适中、互相可分辨的色相） */
   --d-3d: #7b6cff; --d-anim: #ff7aa8; --d-ui: #3fb6ff; --d-be: #34c38f; --d-eng: #f5a524;
-  --d-req: #b67cff; --d-agent: #ff8a4c; --d-cost: #2ec4b6; --d-speed: #8fa3bf;
+  --d-req: #b67cff; --d-agent: #ff8a4c; --d-stability: #5ad1a0; --d-cost: #2ec4b6; --d-speed: #8fa3bf;
 }
 
 /* ---------- 浅色 ---------- */

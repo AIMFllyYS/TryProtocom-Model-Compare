@@ -172,6 +172,21 @@ export const harnessByName = (name: string | null | undefined) => {
   return n ? HARNESSES.find((h) => h.name.toLowerCase() === n || h.id === n) : undefined;
 };
 
+/** harness 能力分组（v2 榜单对比时同组更公平）：不同类型的 harness 自带的工具与自检手段不同。 */
+export type HarnessGroupId = 'terminal' | 'ide' | 'desktop' | 'chat-relay' | 'other';
+export const HARNESS_GROUPS: Record<HarnessGroupId, { label: string; hint: string }> = {
+  terminal: { label: '终端型', hint: '命令行 Agent：自带 shell 与文件读写，自检多靠命令行' },
+  ide: { label: 'IDE 型', hint: 'IDE 内 Agent：可读写工程、通常带终端，部分带预览' },
+  desktop: { label: '桌面应用型', hint: '桌面 Agent 应用：工具集由应用决定，部分带浏览器与截图' },
+  'chat-relay': { label: '对话中转型', hint: '网页对话 + 本地命令中继：模型靠中继执行命令，无原生文件工具' },
+  other: { label: '其他', hint: '未登记的 harness' },
+};
+export function harnessGroup(name: string | null | undefined): HarnessGroupId {
+  const h = harnessByName(name);
+  if (h) return h.kind === 'cli' ? 'terminal' : h.kind === 'ide' ? 'ide' : 'desktop';
+  return /web\s*chat|relay|中转|对话/i.test(String(name || '')) ? 'chat-relay' : 'other';
+}
+
 /** 为模型推荐 harness：全局默认 → 与供应商同源的 → DeepSeek Harness → 其他已安装的。 */
 export function suggestHarness(vendor: string | null | undefined, installed: string[], preferred?: string | null): HarnessDef | null {
   const ok = (h?: HarnessDef) => !!h && installed.includes(h.id);

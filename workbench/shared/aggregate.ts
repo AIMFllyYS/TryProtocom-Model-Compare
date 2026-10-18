@@ -1,7 +1,8 @@
 // 汇总：运行 → 题目 → 维度 → 参赛者（模型 @ harness）。逐行移植自 bench-grader/scripts/benchlib/aggregate.py，
 // 输入只依赖可移植存储文件中的 StoreRun，因此在没有 bench-data 的电脑上也能出榜。
 // 与 Python 版的唯一差异：bootstrap 使用 mulberry32 随机数，置信区间数值会有极小抖动。
-import type { Aggregate, BoardRow, Dimension, FullConfig, ItemAnalysisRow, SpecData, StoreRun, TaskRow } from './types';
+import type { Aggregate, BoardRow, BoardView, Dimension, FullConfig, ItemAnalysisRow, SpecData, StoreRun, TaskRow } from './types';
+import { applyView, isV2, suiteOf } from './v2';
 
 const mean = (xs: (number | null | undefined)[]): number | null => {
   const v = xs.filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
@@ -35,11 +36,13 @@ function mulberry32(seed: number) {
 
 export const entrantOf = (r: Pick<StoreRun, 'model' | 'harness'>) => `${r.model} @ ${r.harness}`;
 
-export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'config_full' | 'cfg' | 'tasks'>, opts: { bootstrap?: number } = {}): Aggregate {
+export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'config_full' | 'cfg' | 'tasks'>, opts: { bootstrap?: number; view?: BoardView } = {}): Aggregate {
+  const view: BoardView = opts.view ?? 'history';
   const cfg: FullConfig = { ...spec.cfg, ...(spec.config_full || {}) };
-  const dims: Dimension[] = spec.dims;
+  const dims: Dimension[] = spec.dims.filter((d) => !d.only_views || d.only_views.includes(view));
   const qdims = dims.filter((d) => d.kind === 'quality');
-  const runs = allRuns.filter((r) => r.graded && r.score);
+  const { runs, info: vinfo } = applyView(allRuns.filter((r) => r.graded && r.score), view, cfg, spec.tasks);
+  const suite = view === 'history' ? 'v1' : 'v2';
   const byEt = new Map<string, StoreRun[]>();
   const k = (e: string, t: string) => `${e}\u0000${t}`;
   for (const r of runs) {
@@ -62,7 +65,7 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
     const mc = mean(rs.map((r) => r.usage?.cost_usd ?? null));
     const mm = mean(rs.map(usageMin));
     const row: TaskRow = {
-      entrant: e, task: tk, runs: rs.length, mean: r2(mean(totals) ?? 0), sd: r2(psd(totals)), min: Math.min(...totals), max: Math.max(...totals),
+      entrant: e, task: tk, runs: rs.length, n_used: (rs[0] as { n_used?: number }).n_used ?? null, mean: r2(mean(totals) ?? 0), sd: r2(psd(totals)), min: Math.min(...totals), max: Math.max(...totals),
       pass_rate: r2(pr, 3), pass_at_k: passed.some(Boolean), gate_fail_runs: rs.filter((r) => !r.score!.gate_pass).length,
       complete: rs.every((r) => r.score!.complete), low_confidence: rs.some((r) => r.score!.low_confidence),
       mean_cost_usd: mc != null ? r2(mc, 4) : null, mean_min: mm != null ? r2(mm) : null,
@@ -126,13 +129,19 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
     const dimsFull: Record<string, number | null> = { ...base.dims };
     dimsFull.cost = costS.length ? r2(mean(costS)!, 1) : null;
     dimsFull.speed = speedS.length ? r2(mean(speedS)!, 1) : null;
-    const suite = (xs: number[], d: number) => (xs.length ? (xs.every((x) => x !== INF) ? r2(xs.reduce((a, b) => a + b, 0), d) : INF) : null);
+    const suiteSum = (xs: number[], d: number) => (xs.length ? (xs.every((x) => x !== INF) ? r2(xs.reduce((a, b) => a + b, 0), d) : INF) : null);
     const row: BoardRow = {
       rank: '', entrant: e, model: er[0].model, vendor: er[0].vendor, harness: er[0].harness, quality: base.quality, ci_low: lo, ci_high: hi,
       dims: dimsFull, runs: er.length, tasks: trs.length, pass_rate: r2(er.filter((r) => r.score!.passed).length / er.length, 3),
-      suite_exp_cost_usd: suite(expC, 3), suite_exp_min: suite(expM, 1), cost_coverage: `${costS.length}/${trs.length}`,
+      suite_exp_cost_usd: suiteSum(expC, 3), suite_exp_min: suiteSum(expM, 1), cost_coverage: `${costS.length}/${trs.length}`,
       complete: er.every((r) => r.score!.complete), na_ratio: r2(mean(er.map((r) => r.score!.na_ratio)) ?? 0, 3),
     };
+    const vi = vinfo.entrants[e] || {};
+    if (view === 'simple') Object.assign(row, { n_min: vi.n_min, n_max: vi.n_max, star: vi.star, incident_retries: vi.incident_retries });
+    if (view === 'full') {
+      dimsFull.stability = vi.stability ?? null;
+      Object.assign(row, { availability: vi.availability ?? null, consistency: vi.consistency ?? null, incidents: vi.incidents ?? 0 });
+    }
     const cc = cfg.composite;
     if (cc?.enabled && row.quality != null) row.composite = r2(cc.quality_weight * row.quality + cc.cost_weight * (dimsFull.cost ?? 0) + cc.speed_weight * (dimsFull.speed ?? 0));
     board.push(row);
@@ -181,7 +190,7 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
 
   // skill 增益
   const uplift: Aggregate['uplift'] = [];
-  for (const t of spec.tasks.filter((t) => Object.keys(t.variants || {}).length)) {
+  for (const t of spec.tasks.filter((t) => Object.keys(t.variants || {}).length && suiteOf(t) === suite)) {
     for (const e of entrants) {
       const a = taskRows.find((x) => x.entrant === e && x.task === t.id + 'A');
       const c = taskRows.find((x) => x.entrant === e && x.task === t.id + 'C');
@@ -208,13 +217,13 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
   }
 
   const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0 };
-  for (const r of allRuns) {
+  for (const r of allRuns.filter((x) => (view === 'history') === !isV2(x))) {
     if (!r.graded || !r.score) { pending.ungraded++; continue; }
     for (const it of r.score.items) if (it.status === 'pending') it.method === 'human' ? pending.human++ : pending.agent++;
     if ((r.usage?.missing || []).length) pending.usage_missing++;
     if (r.score.low_confidence) pending.low_confidence++;
   }
-  return { board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: new Date().toISOString(), pending };
+  return { view, excluded: vinfo.excluded, board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: new Date().toISOString(), pending };
 }
 
 export const isInf = (v: unknown) => v === INF || v === 'inf';

@@ -27,6 +27,8 @@ export interface RunHeaderInput {
   bench: string; taskId: string; taskName: string; variant: string | null; runIndex: number | null;
   workspace: string | null;           // 绝对路径；null 表示尚未创建（只在题目页预览时出现）
   deliverableDir: string; timeLimit: number | null; materials: string[]; condition?: string;
+  /** v2 题库：用「契约 / 愿望」两层的运行约定、软时限，不带聊天式输出约束 */
+  suite?: 'v1' | 'v2';
 }
 
 /** 统一运行约定：把“在哪里做、交什么、叫什么名字、怎么结束”说清楚，工作台据此自动检测交付。 */
@@ -35,9 +37,14 @@ export function runHeader(h: RunHeaderInput): string {
   const dir = d.dir || h.deliverableDir;
   const tag = `${h.taskId}${h.variant || ''}`;
   const L: string[] = [];
+  const v2 = h.suite === 'v2';
   L.push(`# 运行约定（${h.bench} · ${tag}${h.runIndex ? ` · 第 ${h.runIndex} 次运行` : ''}）`);
   L.push('');
   L.push('开始前请完整阅读本节，它与下面的题目原文同等重要。');
+  if (v2) {
+    L.push('');
+    L.push('下面的题目分「契约」和「愿望」两部分：**契约**是必须满足、会被脚本检查的最小交付约定；**愿望**是我想看到的样子——用什么手段、做到多复杂、有哪些额外设计，都由你自己决定，我不限制你的能力，也不会替你列清单。');
+  }
   L.push('');
   L.push(`1. **工作目录**：${h.workspace ? `\`${h.workspace}\`` : '（复制时由工作台创建并填入绝对路径）'}。只在这个目录里创建和修改文件，不要读取或改动目录之外的任何内容。`);
   if (d.kind === 'repo') L.push(`2. **交付位置**：直接修改工作目录中已有的 \`${dir}/\`（不要新建副本，不要重写整个项目）。`);
@@ -49,9 +56,17 @@ export function runHeader(h: RunHeaderInput): string {
     for (const f of req) L.push(`   - \`${dir}/${f.any ? '' : f.path}${f.dir ? '/' : ''}\`${f.any ? f.label || '' : f.label && f.label !== f.path ? ` —— ${f.label}` : ''}`);
     for (const f of opt) L.push(`   - （可选）${f.label || f.path}`);
   }
-  L.push(`4. **结束方式**：全部完成后，把你给我的最后一条总结的原文，同时保存为工作目录下的 \`${FINAL_FILE}\`（与回复内容一致，只写真实存在的文件）。这个文件出现即视为本次运行结束。`);
-  if (h.timeLimit) L.push(`5. **时间上限**：${h.timeLimit} 分钟。`);
+  if (v2) {
+    L.push(`4. **结束方式**：全部完成后，在工作目录下写一份 \`${FINAL_FILE}\`：内容、长度和格式都不限，可以说说你做了什么、怎么运行、有哪些没做完、最想让我看的地方；只写真实存在的东西。这个文件出现即视为本次运行结束。不需要在聊天里贴出代码——工作目录里的文件就是交付。`);
+    if (h.timeLimit) L.push(`5. **参考时长**：${h.timeLimit} 分钟（软时限）：超过不会被中断，也不扣质量分，只记录用时。请不要为赶时间降低完成度。`);
+  } else {
+    L.push(`4. **结束方式**：全部完成后，把你给我的最后一条总结的原文，同时保存为工作目录下的 \`${FINAL_FILE}\`（与回复内容一致，只写真实存在的文件）。这个文件出现即视为本次运行结束。`);
+    if (h.timeLimit) L.push(`5. **时间上限**：${h.timeLimit} 分钟。`);
+  }
   if (h.materials.length) L.push(`${h.timeLimit ? 6 : 5}. **预置素材**：已放在工作目录中（${h.materials.map((m) => m.replace(/^materials\//, '')).join('；')}），直接使用，不要重新下载或改名。`);
+  if (v2) {
+    L.push(`${(h.timeLimit ? 5 : 4) + (h.materials.length ? 2 : 1)}. **自检**：你可以自由使用所在环境提供的一切能力（终端、浏览器、截图、搜索……）来验证自己的作品。评测会在固定的机器上用真实浏览器逐项点击你的作品，建议你自己先完整点一遍。`);
+  }
   L.push('');
   L.push('---');
   L.push('');

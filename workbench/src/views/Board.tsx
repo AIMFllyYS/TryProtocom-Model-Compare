@@ -1,7 +1,7 @@
 // 排行榜：领奖台 + 可排序总榜（勾选即对比）+ 维度 / 逐题热力 + 效率帕累托 + 检查项分析 + Skill 增益 + 失败归因。
 import { useMemo, useRef, useState } from 'react';
 import { ArrowDownUp, Crown, Download, GitCompareArrows, PackageOpen, Trophy } from 'lucide-react';
-import type { BoardRow } from '../../shared/types';
+import { BOARD_VIEWS, type BoardRow } from '../../shared/types';
 import { useWb } from '../state';
 import { go, useLocal } from '../lib/router';
 import { cls, fmt, splitEntrant } from '../lib/format';
@@ -9,6 +9,7 @@ import { exportAllCharts } from '../lib/exporter';
 import { Badge, Btn, Card, CheckBox, Empty, Seg } from '../ui/kit';
 import { ChartCard, CiBar, heat, Heatmap, Legend, Pareto, Radar } from '../ui/charts';
 import { HarnessIcon, ModelAvatar } from '../ui/brand';
+import { HARNESS_GROUPS, harnessGroup } from '../../shared/vendors';
 import { toast } from '../ui/toast';
 import { Score, useNamer } from '../components/common';
 
@@ -23,23 +24,28 @@ export default function Board() {
   const [sort, setSort] = useState<{ k: SortK; asc: boolean }>({ k: 'rank', asc: true });
   const [hover, setHover] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const [onlyN1, setOnlyN1] = useLocal<boolean>('board.n1', false);
   const agg = wb.agg;
-  const dims = (wb.spec?.dims || []).filter((d) => d.kind === 'quality');
+  const view = wb.view;
+  const dims = (wb.spec?.dims || []).filter((d) => d.kind === 'quality' && (!d.only_views || d.only_views.includes(view)));
   const board = useMemo(() => {
-    const b = [...(agg?.board || [])];
+    const b = (agg?.board || []).filter((r) => !(view === 'simple' && onlyN1) || r.n_max === 1);
     const val = (r: BoardRow): number => sort.k === 'rank' ? parseFloat(r.rank) || 999 : sort.k === 'quality' ? r.quality ?? -1 : sort.k === 'pass' ? r.pass_rate : sort.k === 'cost' ? r.suite_exp_cost_usd ?? 1e9 : sort.k === 'time' ? r.suite_exp_min ?? 1e9 : r.dims[sort.k] ?? -1;
     b.sort((x, y) => (val(x) - val(y)) * (sort.asc ? 1 : -1));
     return b;
-  }, [agg, sort]);
+  }, [agg, sort, view, onlyN1]);
   if (!agg) return <div className="page"><div className="skel" style={{ height: 400 }} /></div>;
   if (!agg.board.length) return (
     <div className="page"><Head n={0} />
-      <Card><Empty icon={<Trophy size={30} />} title="还没有评分结果" action={<Btn tone="primary" onClick={() => go('tasks')}>去题目页开始测评</Btn>}>完成至少一次运行的登记与自动评分后，这里会出现总榜、雷达与效率对比。</Empty></Card>
+      <Card><Empty icon={<Trophy size={30} />} title={view === 'history' ? '还没有评分结果' : view === 'simple' ? 'v2 还没有评分结果' : '还没有参赛者测满 v2 全部题目'} action={<Btn tone="primary" onClick={() => go('tasks')}>去题目页开始测评</Btn>}>
+        {view === 'full' ? '完整版只收每道 v2 题都测满 3 次的参赛者；没测满的会在下方列出缺口。' : '完成至少一次运行的登记与自动评分后，这里会出现总榜、雷达与效率对比。'}
+      </Empty></Card>
+      <Excluded rows={agg.excluded} label={nm.entrant} />
     </div>
   );
   const toggle = (e: string) => setSel(sel.includes(e) ? sel.filter((x) => x !== e) : [...sel, e].slice(-6));
   const th = (k: SortK, label: string, cls2 = '') => <th className={cls('sortable', cls2)} onClick={() => setSort({ k, asc: sort.k === k ? !sort.asc : k === 'rank' || k === 'cost' || k === 'time' })}>{label}{sort.k === k && <ArrowDownUp size={11} style={{ display: 'inline', marginLeft: 3, opacity: .6 }} />}</th>;
-  const top = agg.board.slice(0, 3);
+  const top = board.slice(0, 3);
   const vendorOf = (e: string) => nm.vendorOf(e);
   const color = (e: string) => nm.color(e);
   const radarSeries = (sel.length ? agg.board.filter((b) => sel.includes(b.entrant)) : agg.board.slice(0, 5)).map((b) => ({ key: b.entrant, label: nm.entrant(b.entrant), color: color(b.entrant), values: b.dims }));
@@ -47,7 +53,7 @@ export default function Board() {
 
   return (
     <div className="page" ref={box}>
-      <Head n={agg.board.length} sel={sel} onCompare={() => go('compare', [], { e: sel.join('|') })} onExport={() => void exportAll()} />
+      <Head n={agg.board.length} sel={sel} onCompare={() => go('compare', [], { e: sel.join('|') })} onExport={() => void exportAll()} onlyN1={onlyN1} setOnlyN1={setOnlyN1} />
       <div className="podium">
         {top.map((b, i) => {
           const { model, harness } = splitEntrant(b.entrant);
@@ -59,7 +65,7 @@ export default function Board() {
               <div className="pod-n ellipsis">{nm.blind ? nm.entrant(b.entrant) : model}</div>
               <div className="muted xs row gap-s" style={{ justifyContent: 'center' }}><HarnessIcon name={harness} size="xs" />{harness}</div>
               <div className="pod-q">{fmt.n(b.quality)}</div>
-              <div className="muted xs">{b.ci_low != null ? `CI ${fmt.n(b.ci_low)}–${fmt.n(b.ci_high)}` : '—'} · 达标 {fmt.pct(b.pass_rate)}</div>
+              <div className="muted xs">{b.ci_low != null ? `CI ${fmt.n(b.ci_low)}–${fmt.n(b.ci_high)}` : '—'} · 达标 {fmt.pct(b.pass_rate)}{view === 'simple' && b.n_max != null ? ` · n=${nRange(b)}` : ''}</div>
             </button>
           );
         })}
@@ -81,18 +87,20 @@ export default function Board() {
               <thead><tr>
                 <th style={{ width: 36 }} />{th('rank', '名次')}<th>参赛者</th>{th('quality', '质量分')}<th style={{ width: 160 }}>95% CI</th>
                 {dims.map((d) => <th key={d.id} className="sortable num" onClick={() => setSort({ k: d.id, asc: sort.k === d.id ? !sort.asc : false })} style={{ color: `var(--d-${d.id})` }}>{d.name}</th>)}
-                {th('pass', '达标率', 'num')}{th('cost', '期望成本', 'num')}{th('time', '期望用时', 'num')}<th />
+                {view === 'simple' && <th className="num" title="每题实际使用的运行次数">n</th>}{view === 'full' && <th className="num" title="可用率 = Tier0 通过的运行占比">可用率</th>}{th('pass', '达标率', 'num')}{th('cost', '期望成本', 'num')}{th('time', '期望用时', 'num')}<th />
               </tr></thead>
               <tbody>{board.map((b) => {
                 const { model, harness } = splitEntrant(b.entrant);
                 return (
                   <tr key={b.entrant} className={cls('clickable', sel.includes(b.entrant) && 'on')} onClick={() => toggle(b.entrant)} onMouseEnter={() => setHover(b.entrant)} onMouseLeave={() => setHover(null)}>
                     <td onClick={(e) => e.stopPropagation()}><CheckBox checked={sel.includes(b.entrant)} onChange={() => toggle(b.entrant)} label={`选择 ${b.entrant}`} /></td>
-                    <td className="mono b">{b.rank}</td>
-                    <td><span className="row gap-s"><ModelAvatar vendor={vendorOf(b.entrant)} model={model} size="sm" blind={nm.blind} dot={color(b.entrant)} /><span className="who-t"><b>{nm.blind ? nm.entrant(b.entrant) : model}</b><span>{harness}</span></span></span></td>
+                    <td className="mono b">{b.rank}{view === 'simple' && b.star && <span title={`部分题目用了多次运行取最高（n=${nRange(b)}）`} className="tone-text-warn">*</span>}</td>
+                    <td><span className="row gap-s"><ModelAvatar vendor={vendorOf(b.entrant)} model={model} size="sm" blind={nm.blind} dot={color(b.entrant)} /><span className="who-t"><b>{nm.blind ? nm.entrant(b.entrant) : model}</b><span title={`${HARNESS_GROUPS[harnessGroup(harness)].label}：${HARNESS_GROUPS[harnessGroup(harness)].hint}`}>{harness}</span></span></span></td>
                     <td><Score v={b.quality} big /></td>
                     <td><CiBar v={b.quality} lo={b.ci_low} hi={b.ci_high} color={color(b.entrant)} /></td>
                     {dims.map((d) => <td key={d.id} className="num heat-td" style={{ background: heat(b.dims[d.id]) }}>{fmt.n(b.dims[d.id], 0)}</td>)}
+                    {view === 'simple' && <td className="num mono">{nRange(b)}</td>}
+                    {view === 'full' && <td className="num">{b.availability != null ? `${fmt.n(b.availability, 0)}%` : '—'}</td>}
                     <td className="num">{fmt.pct(b.pass_rate)}</td>
                     <td className="num">{fmt.usd(b.suite_exp_cost_usd)}</td>
                     <td className="num">{fmt.min(b.suite_exp_min)}</td>
@@ -102,6 +110,7 @@ export default function Board() {
               })}</tbody>
             </table></div>
           </Card>
+          <Excluded rows={agg.excluded} label={nm.entrant} />
           <div className="grid g-2 mt-l">
             <ChartCard title="维度雷达" sub={sel.length ? `已选 ${sel.length} 个参赛者` : '前 5 名'}>
               <div className="center"><Radar axes={dims.map((d) => ({ id: d.id, label: d.name }))} series={radarSeries} focus={hover} onFocus={setHover} /></div>
@@ -174,14 +183,37 @@ export default function Board() {
   );
 }
 
-function Head({ n, sel = [], onCompare, onExport }: { n: number; sel?: string[]; onCompare?: () => void; onExport?: () => void }) {
+const nRange = (b: BoardRow) => (b.n_min === b.n_max ? String(b.n_max ?? '—') : `${b.n_min}–${b.n_max}`);
+
+/** 完整版里没测满而未入榜的参赛者与缺口 */
+function Excluded({ rows, label }: { rows?: { entrant: string; missing: string[] }[]; label: (e: string) => string }) {
+  if (!rows?.length) return null;
+  return (
+    <Card title="未入榜（没测满）" sub="完整版要求每道 v2 题都测满 3 次；括号里是已测次数 / 要求次数" className="mt" pad={false}>
+      <div className="tbl-wrap"><table className="tbl compact">
+        <thead><tr><th>参赛者</th><th>缺口</th></tr></thead>
+        <tbody>{rows.map((x) => <tr key={x.entrant}><td>{label(x.entrant)}</td><td className="small">{x.missing.join('、')}</td></tr>)}</tbody>
+      </table></div>
+    </Card>
+  );
+}
+
+function Head({ n, sel = [], onCompare, onExport, onlyN1, setOnlyN1 }: { n: number; sel?: string[]; onCompare?: () => void; onExport?: () => void; onlyN1?: boolean; setOnlyN1?: (v: boolean) => void }) {
   const wb = useWb();
+  const v = wb.view;
+  const ver = v === 'history' ? wb.spec?.cfg.version : wb.spec?.config_full.v2?.version;
+  const hint = BOARD_VIEWS.find((x) => x.id === v)?.hint;
   return (
     <div className="page-head">
       <div className="page-head-t">
-        <div className="eyebrow">{wb.spec?.cfg.name} {wb.spec?.cfg.version} · {n} 个参赛者（模型 @ harness）</div>
+        <div className="eyebrow">{wb.spec?.cfg.name} {ver} · {n} 个参赛者（模型 @ harness）</div>
         <h1 className="page-title">排行榜</h1>
-        <p className="page-sub">质量总分 = 7 个质量维度按权重合成；成本与速度单独列出，不混入质量分。评分规则见 <a href="#/docs/scoring">方法论</a>。</p>
+        <div className="row gap-s" style={{ flexWrap: 'wrap', margin: '6px 0' }}>
+          <Seg value={v} onChange={wb.setView} options={BOARD_VIEWS.map((x) => ({ value: x.id, label: x.label }))} />
+          <span className="muted small">{hint}</span>
+          {v === 'simple' && setOnlyN1 && <label className="row gap-s small"><CheckBox checked={!!onlyN1} onChange={() => setOnlyN1(!onlyN1)} label="只看 n=1（没有重测）" />只看 n=1（没有重测）</label>}
+        </div>
+        <p className="page-sub">质量总分 = 质量维度按权重合成；成本与速度单独列出，{v === 'full' ? '稳定性是独立雷达轴，' : ''}不混入质量分。评分规则见 <a href="#/docs/scoring">方法论</a>。</p>
       </div>
       {n > 0 && <div className="page-x">
         <Btn icon={<Download size={15} />} onClick={onExport}>导出本页图表</Btn>

@@ -3,7 +3,16 @@ import type { DetectResult } from './deliverables';
 export type { DetectResult } from './deliverables';
 
 export type DimKind = 'quality' | 'efficiency';
-export interface Dimension { id: string; name: string; kind: DimKind; weight?: number; desc: string }
+export interface Dimension { id: string; name: string; kind: DimKind; weight?: number; desc: string; only_views?: BoardView[] }
+
+/** 榜单视图：历史版（v1.0 冻结）/ v2 简化版（每题取最高）/ v2 完整版（每题测满 3 次 + 稳定性） */
+export type BoardView = 'history' | 'simple' | 'full';
+export const BOARD_VIEWS: { id: BoardView; label: string; hint: string }[] = [
+  { id: 'history', label: '历史版', hint: 'v1.0 冻结口径，不再变动' },
+  { id: 'simple', label: 'v2 简化版', hint: '每题取已测运行中的最高分，标注 n' },
+  { id: 'full', label: 'v2 完整版', hint: '每道 v2 题都测满 3 次才入榜，含稳定性' },
+];
+export interface Incident { kind: 'tier0' | 'harness' | 'interrupted' | 'other' | string; reason?: string; date?: string }
 
 export type Tier = 'basic' | 'advanced' | 'excellent' | 'clean';
 export type Method = 'auto' | 'agent' | 'human';
@@ -11,6 +20,7 @@ export type Method = 'auto' | 'agent' | 'human';
 export interface SpecItem {
   id: string; dim: string; tier: Tier; tier_label: string; method: Method; method_label: string; weight: number;
   desc: string; metric: string; rule: string; anchors: string[]; evidence: string; variants: string[];
+  edition?: 'base' | 'detail'; module?: string | null; judge?: 'absolute' | 'pairwise' | null;
 }
 export interface SpecGate { id: string; desc: string; variants: string[] }
 export interface SpecBug { issue: string; title: string; root: string; test: string }
@@ -19,6 +29,7 @@ export interface SpecTask {
   variants: Record<string, { dims: Record<string, number>; desc?: string }>;
   condition: string; materials: string[]; time_limit: number | null; deliverable: string; probes: string[];
   prompt: string; items: SpecItem[]; gates: SpecGate[]; hidden: string[]; bugs?: Record<string, SpecBug> | null;
+  suite?: 'v1' | 'v2'; tier0?: SpecGate[];
 }
 export interface BenchConfig {
   name: string; version: string; frozen_date: string | null; runs_per_task: number; pass_threshold: number;
@@ -30,6 +41,12 @@ export interface FullConfig extends BenchConfig {
   composite?: { enabled?: boolean; quality_weight: number; cost_weight: number; speed_weight: number };
   blinding?: { alias_prefix?: string };
   external?: Record<string, unknown>;
+  v2?: V2Config;
+}
+export interface V2Config {
+  version?: string; frozen_date?: string | null; tier0_cap?: number; full_runs?: number;
+  stability?: { availability_weight?: number; consistency_weight?: number; consistency_k?: number };
+  incident_kinds?: string[];
 }
 export interface SpecData {
   cfg: BenchConfig; config_full: FullConfig; dims: Dimension[]; tasks: SpecTask[];
@@ -43,12 +60,15 @@ export interface SpecData {
 export type ItemStatus = 'scored' | 'missing' | 'na' | 'pending';
 export interface ItemScore {
   id: string; dim: string; tier: Tier; method: Method; weight: number; desc: string;
+  edition?: 'base' | 'detail'; module?: string | null; judge?: 'absolute' | 'pairwise' | null;
   status: ItemStatus; s: number | null; value?: unknown; by?: string; note?: string; na_reason?: string;
 }
 export interface RunScore {
   gate_pass: boolean; gate_fail: { id: string; desc: string; value: unknown }[]; total: number;
   dims: Record<string, number | null>; dim_weights: Record<string, number>; tiers: Record<string, number | null>;
   items: ItemScore[]; na_ratio: number; low_confidence: boolean; pending: string[]; complete: boolean; passed: boolean;
+  tier0_pass?: boolean | null; tier0_fail?: { id: string; desc: string; value: unknown }[];
+  editions?: Record<string, number | null>; modules?: Record<string, { score: number | null; items: string[] }>;
 }
 export interface Usage {
   wall_min?: number; active_min?: number; input_tokens?: number; output_tokens?: number;
@@ -62,6 +82,7 @@ export interface StoreRun {
   run_id: string; task: string; variant: string | null; tkey: string; model: string; vendor: string | null; harness: string;
   entrant: string; run_index: number | null; date: string | null; alias: string | null; ws_ref: string | null;
   started_at?: string | null; ended_at?: string | null; timed_out?: boolean; failure_tag?: string | null;
+  benchmark_version?: string | null; incident?: Incident | null;
   graded: boolean; score: RunScore | null; usage: Usage; manual: Record<string, ManualScore>;
   artifacts: Record<string, string>; notes: string[]; dir: string; has_final_message: boolean;
   synced_at: string; origin?: string;
@@ -146,18 +167,26 @@ export interface TaskRow {
   mean_cost_usd: number | null; mean_min: number | null; exp_cost_usd: number | null; exp_min: number | null;
   dims: Record<string, number | null>; dim_weights: Record<string, number>; tiers: Record<string, number | null>;
   cost_score: number | null; speed_score: number | null;
+  n_used?: number | null;
 }
 export interface BoardRow {
   rank: string; entrant: string; model: string; vendor: string | null; harness: string; quality: number | null;
   ci_low: number | null; ci_high: number | null; dims: Record<string, number | null>; runs: number; tasks: number;
   pass_rate: number; suite_exp_cost_usd: number | null; suite_exp_min: number | null; cost_coverage: string;
   complete: boolean; na_ratio: number; composite?: number;
+  /** 简化版：用了几次运行（每题取最高），n_max>1 时榜单标 * */
+  n_min?: number; n_max?: number; star?: boolean; incident_retries?: number;
+  /** 完整版：稳定性的两个构成 */
+  availability?: number | null; consistency?: number | null; incidents?: number;
 }
 export interface ItemAnalysisRow {
   task: string; item_id: string; dim: string; tier: string; method: string; desc: string; mean: number;
   between_sd: number; within_sd: number; n: number; flag: string; by_entrant: Record<string, number>;
 }
 export interface Aggregate {
+  view?: BoardView;
+  /** 完整版：没测满而未入榜的参赛者及缺口 */
+  excluded?: { entrant: string; missing: string[] }[];
   board: BoardRow[]; tasks: TaskRow[]; items: ItemAnalysisRow[];
   uplift: { entrant: string; task: string; A_mean: number; C_mean: number; uplift: number; A_anim: number | null; C_anim: number | null; anim_uplift: number; A_cost: number | null; C_cost: number | null; A_min: number | null; C_min: number | null }[];
   failures: { entrant: string; task: string; run_id: string; total: number; tags: string }[];
@@ -181,7 +210,7 @@ export interface ProcInfo {
   id: string; name: string; cwd: string; cmd: string; pid: number | null; status: 'running' | 'exited' | 'failed';
   code: number | null; started_at: number; ended_at: number | null; url: string | null; session_id: string | null;
 }
-export type JobKind = 'grade' | 'review' | 'export' | 'doctor' | 'materials' | 'validate' | 'build-spec' | 'register' | 'aggregate' | 'probe' | 'sync' | 'npm-install' | 'custom';
+export type JobKind = 'grade' | 'review' | 'ingest' | 'export' | 'doctor' | 'materials' | 'validate' | 'build-spec' | 'register' | 'aggregate' | 'probe' | 'sync' | 'npm-install' | 'custom';
 export interface JobInfo {
   id: string; kind: JobKind; title: string; status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
   started_at: number; ended_at: number | null; code: number | null; lines: number; result?: unknown; error?: string;

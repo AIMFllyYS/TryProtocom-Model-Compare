@@ -8,8 +8,13 @@ interface JobSpec {
   subject?: JobInfo['subject'];
   /** 进程结束后执行（如：评分后同步存储），返回值写入 result */
   after?: (code: number, lines: string[]) => Promise<unknown> | unknown;
+  /** after 是否属于任务产出本身：true 时 after 抛错仍判定任务失败（登记要从中解析 run id）；默认 false（收尾失败只警告） */
+  afterFatal?: boolean;
 }
 interface Job extends JobInfo { spec: JobSpec; out: string[]; child?: ChildProcess; waiters: ((j: JobInfo) => void)[] }
+
+/** 判断收尾钩子的返回值是否为可挂警告的普通对象（不破坏已有返回结构） */
+const isPlainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** 串行任务队列：评分/导出等 Python 任务很吃内存，一次只跑一个。 */
 export class Jobs {
@@ -81,7 +86,21 @@ export class Jobs {
       const cancelled = (j.status as string) === 'cancelled';
       if (j.spec.after && !cancelled) {
         this.line(j, '[after] 写入结果…'); // 界面据此显示“写入结果”阶段
-        try { j.result = await j.spec.after(code, j.out); } catch (e) { j.error = (e as Error).message; this.line(j, `[after] ${j.error}`); }
+        try {
+          j.result = await j.spec.after(code, j.out);
+        } catch (e) {
+          const msg = (e as Error).message;
+          if (j.spec.afterFatal) {
+            // 收尾钩子本身就是任务的产出（例如登记要从中解析新 run id）：失败就是任务失败
+            j.error = msg;
+            this.line(j, `[after] ${msg}`);
+          } else {
+            // 纯粹的收尾（同步存储、刷新汇总…）失败不等于任务本体失败：评分的 score.json 此时已经写完，
+            // 所以只记警告、日志保留错误原文，任务仍按退出码判定 done。
+            this.line(j, `[after] 收尾失败（不影响本次结果）：${msg}`);
+            j.result = { ...(isPlainObject(j.result) ? j.result : {}), warning: `收尾步骤失败：${msg}`, after_failed: true };
+          }
+        }
       }
       this.finish(j, cancelled ? 'cancelled' : code === 0 && !j.error ? 'done' : 'failed', code);
     } catch (e) {

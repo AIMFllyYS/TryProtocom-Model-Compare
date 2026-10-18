@@ -25,11 +25,30 @@ GRADER = Path(os.environ.get("WB_GRADER_DIR") or HERE.parents[1] / "skills" / "b
 sys.path.insert(0, str(GRADER / "scripts"))
 
 
+def _write_stdout(s: str) -> None:
+    """写 stdout，任何编码问题都降级处理：桥接的输出是服务端的唯一结果通道，不能在这里抛异常。"""
+    try:
+        sys.stdout.write(s)
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        # 兜底：stdout 的编码器仍然拒绝某些字符（例如被替换成只认 GBK 的流）时，
+        # 用替换字符写出。宁可个别字符显示成 ?，也不能让整条 JSON 结果丢失。
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        sys.stdout.write(s.encode(enc, "replace").decode(enc, "replace"))
+        sys.stdout.flush()
+
+
 def out(data=None, error: str | None = None) -> None:
     payload = {"ok": error is None, "data": data} if error is None else {"ok": False, "error": error}
+    # 生产环境由 PY_ENV() 设 PYTHONIOENCODING=utf-8，但直接跑脚本时可能是 GBK 控制台
+    # （历史上 'gbk' codec 无法编码 '\u2212' 导致桥接崩掉、服务端报“无输出”）。
+    # 服务端始终按 utf-8 解码 stdout，这里强制成 utf-8 + replace，保证一定能写出结果。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001  stdout 可能被替换成没有 reconfigure 的对象
+        pass
     # 评分代码内部可能 print；用标记行分隔，服务端只解析标记之后的 JSON
-    sys.stdout.write("\n@@WB@@" + json.dumps(payload, ensure_ascii=False, default=str))
-    sys.stdout.flush()
+    _write_stdout("\n@@WB@@" + json.dumps(payload, ensure_ascii=False, default=str))
 
 
 def _clean(v):
@@ -79,7 +98,7 @@ def cmd_spec(a):
 
 
 def _run_record(rd: Path, root: Path) -> dict:
-    from benchlib.common import bench_config, load_json
+    from benchlib.common import bench_config, dump_json, load_json
     from benchlib.runs import rescore
     from benchlib.usage import resolve_usage
     meta = load_json(rd / "meta.json") or {}
@@ -88,6 +107,16 @@ def _run_record(rd: Path, root: Path) -> dict:
         usage = resolve_usage(meta, bench_config())
     except Exception as e:  # noqa: BLE001
         usage = {"source": "error", "missing": ["wall_min", "cost_usd"], "error": str(e)}
+    else:
+        # 把解析结果回写 meta.json（原子写，与 review.usage_needed 的做法一致），让用量不再只活在
+        # 本次进程的内存里：usage/usage-needed 这类后续步骤可以直接读它，不必为每次快照重算全部运行。
+        # 回写失败不影响本次返回：服务端仍拿到上面的 usage，只是这次没留下记录。
+        if usage != meta.get("usage_resolved"):
+            try:
+                meta["usage_resolved"] = usage
+                dump_json(rd / "meta.json", meta)
+            except Exception:  # noqa: BLE001
+                pass
     metrics = load_json(rd / "metrics.json", {}) or {}
     arts = {}
     for k, p in (metrics.get("artifacts") or {}).items():
@@ -145,7 +174,8 @@ def cmd_set_manual(a):
             ms.pop(a.item, None)
         else:
             s = max(0.0, min(3.0, float(a.score)))
-            ms[a.item] = {"score": s, "note": a.note or "", "by": a.by or "human", "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+            from benchlib.agent_accept import keep_agent_score
+            ms[a.item] = keep_agent_score(ms.get(a.item), {"score": s, "note": a.note or "", "by": a.by or "human", "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
         dump_json(rd / "manual_scores.json", ms)
         root = Path(a.root).resolve() if a.root else data.resolve().parent
         out(_clean(_run_record(rd, root)))

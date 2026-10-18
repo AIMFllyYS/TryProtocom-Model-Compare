@@ -1,6 +1,6 @@
 // 全局数据层：会话、题库规范、存储文件、汇总、任务、预览会话与进程。SSE 事件驱动增量刷新。
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, ProcInfo, RequestEntry, SessionInfo, SpecData, StoreRun, WbEvent } from '../shared/types';
+import type { Aggregate, BenchStore, BoardView, JobInfo, LogEntry, PreviewSession, ProcInfo, RequestEntry, SessionInfo, SpecData, StoreRun, WbEvent } from '../shared/types';
 import type { HarnessInfo } from '../server/harness';
 import { boot, connectEvents, get, post, type Conn } from './api';
 import { bus, jobKey, useBus } from './lib/bus';
@@ -32,6 +32,9 @@ export interface Wb {
   spec: SpecData | null;
   store: BenchStore | null;
   agg: Aggregate | null;
+  /** 榜单视图（历史版 / v2 简化版 / v2 完整版）：全站的汇总数据都跟随它 */
+  view: BoardView;
+  setView: (v: BoardView) => void;
   jobs: JobInfo[];
   previews: PreviewSession[];
   procs: ProcInfo[];
@@ -60,6 +63,9 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
   const [spec, setSpec] = useState<SpecData | null>(null);
   const [store, setStore] = useState<BenchStore | null>(null);
   const [agg, setAgg] = useState<Aggregate | null>(null);
+  const [view, setViewS] = useState<BoardView>(() => { const v = localStorage.getItem('wb.view'); return v === 'simple' || v === 'full' ? v : 'history'; });
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const [jobs, setJobs] = useState<JobInfo[]>([]);
   const [previews, setPreviews] = useState<PreviewSession[]>([]);
   const [procs, setProcs] = useState<ProcInfo[]>([]);
@@ -81,7 +87,7 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     const tasks: Promise<unknown>[] = [];
     if (what.includes('spec')) tasks.push(get<SpecData>('/api/spec').then(setSpec));
     if (what.includes('store')) tasks.push(get<BenchStore>('/api/store').then((s) => { setStore(s); if (localStorage.getItem('wb.current') === null && s.settings.current_model) setCurrentS(s.settings.current_model); }));
-    if (what.includes('agg')) tasks.push(get<Aggregate>('/api/aggregate').then(setAgg));
+    if (what.includes('agg')) tasks.push(get<Aggregate>('/api/aggregate', { view: viewRef.current }).then(setAgg));
     if (what.includes('jobs')) tasks.push(get<JobInfo[]>('/api/jobs').then(setJobs));
     if (what.includes('previews')) tasks.push(get<PreviewSession[]>('/api/preview').then(setPreviews));
     if (what.includes('procs')) tasks.push(get<ProcInfo[]>('/api/procs').then(setProcs));
@@ -90,6 +96,13 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     const bad = rs.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
     if (bad) toast.error('刷新失败：' + (bad.reason?.message || bad.reason));
   }, []);
+
+  const setView = useCallback((v: BoardView) => {
+    localStorage.setItem('wb.view', v);
+    viewRef.current = v;
+    setViewS(v);
+    void refresh(['agg']);
+  }, [refresh]);
 
   const patchRun = useCallback<Wb['patchRun']>((runId, patch) => {
     setStore((s) => (s ? { ...s, runs: s.runs.map((r) => (r.run_id === runId ? { ...r, ...patch } : r)) } : s));
@@ -161,8 +174,8 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     } catch (e: any) { toast.error(e.message); return null; }
   }, []);
 
-  const value = useMemo<Wb | null>(() => session && { session, spec, store, agg, jobs, previews, procs, conn, refresh, patchRun, runJob, blind, setBlind, harness, current, setCurrent },
-    [session, spec, store, agg, jobs, previews, procs, conn, refresh, patchRun, runJob, blind, harness, current, setCurrent]);
+  const value = useMemo<Wb | null>(() => session && { session, spec, store, agg, view, setView, jobs, previews, procs, conn, refresh, patchRun, runJob, blind, setBlind, harness, current, setCurrent },
+    [session, spec, store, agg, view, setView, jobs, previews, procs, conn, refresh, patchRun, runJob, blind, harness, current, setCurrent]);
   if (!value) return <>{fallback(err, start)}</>;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

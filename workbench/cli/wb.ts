@@ -144,7 +144,7 @@ Skills    wb skills sync   把 skills/ 镜像到 .agents/skills/（不含 hidden
 回收站    wb run stop <ref> [--reason …]   彻底停止并作废（关掉该目录的开发服务器 / 预览；外部 Agent 会话需在 harness 里手动停）
           wb run discard <ref|run_id> [--reason …] | wb run restore <ref|run:run_id> | wb trash
           wb trash purge <id>… --yes | wb trash purge --all --yes   永久删除（仅回收站内条目，无法恢复）
-评分      wb grade [run_id…|--all] [--task T05] [--fast] [--skip-graded] | wb review [--task T05]
+评分      wb grade [run_id…|--all] [--task T05] [--fast] [--skip-graded] | wb review [--task T05] | wb ingest <pairwise|scores> <文件> | wb ingest <exploration|sample|calibration>
           wb pending [--method agent|human] [--task T05] | wb score <run_id> <item_id> <0-3> --note "证据" [--by agent]
           wb show <run_id> | wb sync
 结果      wb board | wb compare <关键词> <关键词>… | wb report <供应商>/<模型> | wb export [--formats csv,md,xlsx,png,html]
@@ -253,6 +253,17 @@ async function main() {
       await maybeWait(job); return;
     }
     case 'review': { await maybeWait(await post<JobInfo>('/api/jobs', { kind: 'review', task: sub || str('task') })); return; }
+    case 'ingest': {
+      const file = rest[0] || str('file');
+      if (['exploration', 'sample', 'calibration'].includes(sub || '')) {
+        // Agent 验收：wb ingest exploration [目录] | wb ingest sample [--rate 0.2] | wb ingest calibration
+        await maybeWait(await post<JobInfo>('/api/jobs', { kind: 'ingest', what: sub, file, rate: str('rate') }));
+        return;
+      }
+      if (!['pairwise', 'scores'].includes(sub || '') || !file) die('用法：wb ingest <pairwise|scores> <文件> | wb ingest <exploration|sample|calibration>   （pairwise.csv 来自评分页的“导出 pairwise.csv”）');
+      await maybeWait(await post<JobInfo>('/api/jobs', { kind: 'ingest', what: sub, file, by: str('by') }));
+      return;
+    }
     case 'export': { const j = await post<JobInfo>('/api/jobs', { kind: 'export', formats: str('formats'), label: str('label') }); await maybeWait(j); if (!flags['no-wait']) { const jobs = await get<JobInfo[]>('/api/jobs'); const ex = jobs.find((x) => x.kind === 'export'); if (ex) await waitJob(ex, true).then((r) => !JSON_OUT && console.log(`输出目录：${(r.result as any)?.dir ?? ''}`)); } return; }
     case 'doctor': case 'materials': case 'validate': { await maybeWait(await post<JobInfo>('/api/jobs', { kind: cmd })); return; }
     case 'pending': {
@@ -297,10 +308,13 @@ async function main() {
       });
     }
     case 'board': {
-      const agg = await get<Aggregate>('/api/aggregate');
+      const view = str('view') || 'history'; // history | simple | full
+      const agg = await get<Aggregate>(`/api/aggregate?view=${encodeURIComponent(view)}`);
       return out(agg.board, () => {
-        if (!agg.board.length) return console.log('还没有已评分的运行。');
-        table([['名次', '参赛者', '质量', '95% CI', '3D', '动画', 'UI', '后端', '工程', '需求', 'Agent', '成本', '速度', '达标率', '运行', '完整'], ...agg.board.map((b) => [b.rank, b.entrant, fmt(b.quality, 2), `${fmt(b.ci_low)}–${fmt(b.ci_high)}`, ...['3d', 'anim', 'ui', 'be', 'eng', 'req', 'agent', 'cost', 'speed'].map((d) => fmt(b.dims[d], 0)), fmt(b.pass_rate * 100, 0) + '%', b.runs, b.complete ? '是' : '否'])]);
+        for (const x of agg.excluded || []) console.log(`未入榜 ${x.entrant}：${x.missing.join('、')}`);
+        if (!agg.board.length) return console.log(view === 'history' ? '还没有已评分的运行。' : `v2 ${view === 'full' ? '完整版' : '简化版'}还没有可入榜的运行。`);
+        const extraH = view === 'simple' ? ['n'] : view === 'full' ? ['稳定性', '可用率'] : [];
+        table([['名次', '参赛者', '质量', '95% CI', '3D', '动画', 'UI', '后端', '工程', '需求', 'Agent', '成本', '速度', ...extraH, '达标率', '运行', '完整'], ...agg.board.map((b) => [b.rank + (view === 'simple' && b.star ? '*' : ''), b.entrant, fmt(b.quality, 2), `${fmt(b.ci_low)}–${fmt(b.ci_high)}`, ...['3d', 'anim', 'ui', 'be', 'eng', 'req', 'agent', 'cost', 'speed'].map((d) => fmt(b.dims[d], 0)), ...(view === 'simple' ? [b.n_min === b.n_max ? String(b.n_max) : `${b.n_min}–${b.n_max}`] : view === 'full' ? [fmt(b.dims.stability, 0), fmt(b.availability, 0)] : []), fmt(b.pass_rate * 100, 0) + '%', b.runs, b.complete ? '是' : '否'])]);
       });
     }
     case 'compare': {
