@@ -1,0 +1,95 @@
+id: V06
+extends: [creative-web, creative-3d, agent-acceptance]
+name: 逼真建筑（v2 愿望版）
+short: 实时渲染的最像照片的建筑：材质质感、物理可信的光照、摄影感、建筑设计与环境
+deliverable_dir: photoreal-building
+dims: {agent: 0.5, 3d: 1.0, ui: 0.2, eng: 0.5}
+condition: 无人值守；无需任何素材
+materials: []
+time_limit_min: 120   # 软时限：只记用时，不中断、不扣分
+
+capture:
+  views:
+    - {id: facade, label: 立面}
+    - {id: street_level, label: 街景视角}
+    - {id: aerial, label: 鸟瞰}
+    - {id: detail, label: 细部特写}
+    - {id: dusk, label: 黄昏}
+  orbit: {frames: 8}
+  motion: {samples: 3, interval_ms: 600}
+
+# 逼真度本身不由脚本裁定（任何指标都可以被针对性优化）。脚本只做两件事：
+#   1) 画面不是“信息贫乏”的（亮度熵、对比度）——排除纯色 / 近全黑 / 近全白
+#   2) 黄昏视角确实改变了光照，而不是换了个名字
+items:
+  - {id: V06-I01, dim: 3d, tier: basic, method: auto, edition: base, module: image, desc: 各视角画面信息量（亮度熵均值，比特），排除纯色 / 近全黑 / 近全白, metric: capture.entropy_mean, rule: {type: linear, bad: 3.5, good: 6.0}}
+  - {id: V06-I02, dim: 3d, tier: advanced, method: auto, edition: base, module: image, desc: 画面动态范围（亮度 p99 − p1，0–255）, metric: capture.dynamic_range_mean, rule: {type: linear, bad: 70, good: 170}}
+  - {id: V06-I03, dim: 3d, tier: advanced, method: auto, edition: detail, module: lighting, desc: 黄昏视角相对其他视角的平均亮度变化（光照确实切换了）, metric: capture.dusk_luma_shift, rule: {type: min, min: 0.06, zero: 0.0}}
+
+  # ---------------- 人工（两两比较为主） ----------------
+  - id: V06-H04
+    dim: 3d
+    tier: excellent
+    method: human
+    judge: pairwise
+    edition: base
+    module: realism
+    desc: 第一眼像不像照片（整体逼真度，不看技术手段）
+    evidence: facade / street_level / aerial
+    anchors: ["明显的 CG / 玩具感", "有质感但一眼是渲染", "接近照片，细看有破绽", "几乎分不出是不是照片"]
+  - id: V06-H05
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: material
+    desc: 材质质感：混凝土 / 玻璃 / 金属 / 砖石 / 木头各有真实表现，有污渍、水渍、划痕与接缝
+    evidence: detail / facade
+    anchors: ["平涂或同一种材质", "有区分但很干净", "材质真实，有使用痕迹", "每种材质都经得起放大看"]
+  - id: V06-H06
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: lighting
+    desc: 光照：软阴影、环境光遮蔽、天空光、玻璃反射 / 折射，黄昏的色温对比
+    evidence: facade / dusk
+    anchors: ["无阴影或平光", "有阴影但生硬", "光照可信", "光照有摄影级的氛围"]
+  - id: V06-H07
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: camera
+    desc: 摄影感：曝光、景深、色调映射、镜头特征
+    evidence: street_level / detail
+    anchors: ["无任何摄影处理", "单一后处理", "多项后处理且协调", "像一张认真拍的建筑摄影"]
+  - id: V06-H08
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: detail
+    module: architecture
+    desc: 建筑设计：比例、窗墙关系、细部节点、设备与标识，而不是贴图的盒子
+    evidence: facade / detail
+    anchors: ["一个盒子", "有造型但细部缺失", "比例合理、细部完整", "设计讲究，有明确的建筑语言"]
+  - id: V06-H09
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: environment
+    desc: 环境：街道、人行道、树木、街具让建筑落在真实场景里
+    evidence: street_level / aerial
+    anchors: ["悬在空白里", "只有地面", "有街道与植被", "环境丰富可信，与建筑互相映衬"]
+  - id: V06-H10
+    dim: ui
+    tier: advanced
+    method: human
+    edition: detail
+    desc: 镜头操作（环绕 / 缩放、视角切换）顺手，重渲染下仍可操作
+    evidence: 实际操作
+    anchors: ["无法操作", "能操作但别扭或卡顿", "流畅可用", "手感好，有视角预设与光照切换"]

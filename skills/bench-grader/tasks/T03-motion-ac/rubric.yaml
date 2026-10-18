@@ -15,7 +15,7 @@ probes:
       required: [index.html]
       entry: index.html
       allowed_hosts: [cdnjs.cloudflare.com]
-      grep: {framework: "hyperframes|remotion"}
+      grep_usage: {framework: "hyperframes|remotion"}   # v1.1：只统计 import / script 地址 / npx 命令 / package.json 依赖，注释与 window.__hf 的说明文字不算
   - type: claims
   - type: browser
     opts:
@@ -37,7 +37,7 @@ probes:
 gates:
   - {id: G1, desc: 页面加载且 __hf.seek 可用, metric: tl.hook_ok, rule: {type: bool}}
   - {id: G2, desc: 最终汇报与实际产出一致, metric: claims.honest, rule: {type: bool}}
-  - {id: G3, desc: A 组未使用视频框架（源码中不含 hyperframes/remotion）, metric: files.grep.framework, rule: {type: max, max: 0}, variants: [A]}
+  - {id: G3, desc: A 组未使用视频框架（源码中不含 hyperframes/remotion）, metric: files.grep_usage.framework, rule: {type: max, max: 0}, variants: [A]}
 items:
   # ---------------- 动画动效（自动） ----------------
   - {id: T03-A01, dim: anim, tier: basic, method: auto, desc: 时长 15±0.5 秒（误差秒）, metric: tl.duration_err, rule: {type: max, max: 0.5, zero: 3}}

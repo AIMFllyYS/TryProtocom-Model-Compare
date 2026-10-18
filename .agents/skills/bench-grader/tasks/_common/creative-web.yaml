@@ -1,0 +1,45 @@
+# v2 创作类网页题的公共评分模板（被各题 rubric.yaml 的 `extends: [creative-web]` 引入）。
+# 子题只写自己特有的探针、检查项与人工评分；Tier0、门槛、工程项与交互走查在这里统一，保证各题口径一致。
+# {T} 会替换成题目编号。
+suite: v2
+kind: creative
+
+probes:
+  - type: files
+    opts:
+      entry: index.html
+      allowed_hosts: [cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, esm.sh, cdn.skypack.dev, ajax.googleapis.com, threejs.org]
+      # 开放 CDN 库，但画面必须当场生成：不得携带/引用外部图片、模型、音频、字体文件
+      forbid_ext: [.png, .jpg, .jpeg, .gif, .webp, .avif, .glb, .gltf, .obj, .fbx, .stl, .mp3, .wav, .ogg, .woff, .woff2, .ttf, .otf]
+  - type: claims
+  - type: browser
+    opts:
+      entry: index.html
+      allowed_hosts: [cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, esm.sh, cdn.skypack.dev, ajax.googleapis.com, threejs.org]
+      wait_ms: 4000
+      mobile: true
+
+# Tier0：能不能用。失败不清零，但总分封顶（v2.tier0_cap），并计入稳定性的“可用率”
+tier0:
+  - {id: "{T}-T0-1", desc: 页面能在 Chromium 中加载, metric: browser.loaded, rule: {type: bool}}
+  - {id: "{T}-T0-2", desc: 首屏不是空白（画面有内容）, metric: capture.default_nonblank, rule: {type: bool}}
+  - {id: "{T}-T0-3", desc: 加载后没有未捕获的页面异常, metric: browser.page_errors, rule: {type: max, max: 0, zero: 1}}
+
+gates:
+  - {id: G1, desc: 交付了入口文件 index.html, metric: files.entry_exists, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致（未谎报文件）, metric: claims.honest, rule: {type: bool}}
+
+items:
+  - {id: "{T}-E01", dim: eng, tier: advanced, method: auto, edition: base, desc: 控制台零报错（桌面 + 手机宽度）, metric: browser.errors_total, rule: {type: max, max: 0, zero: 5}}
+  - {id: "{T}-E02", dim: eng, tier: basic, method: auto, edition: base, desc: 运行时没有白名单（开放 CDN）之外的网络请求, metric: browser.external_requests, rule: {type: max, max: 0, zero: 3}}
+  - {id: "{T}-E03", dim: eng, tier: clean, method: auto, edition: base, desc: 没有携带或引用外部图片 / 模型 / 音频 / 字体文件（画面必须当场生成）, metric: files.forbidden_assets, rule: {type: max, max: 0}}
+  - {id: "{T}-E04", dim: eng, tier: clean, method: auto, edition: base, desc: CDN 依赖固定了版本号, metric: files.cdn_unpinned, rule: {type: max, max: 0, zero: 2}}
+  - {id: "{T}-E05", dim: eng, tier: clean, method: auto, edition: base, desc: 没有“此处省略”之类的占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}
+  - id: "{T}-H00"
+    dim: eng
+    tier: basic
+    method: human
+    edition: base
+    desc: 交互走查：把页面上每一个可点击/可拖动/可输入的控件各操作一遍，有没有崩溃、卡死、无效按钮、报错？
+    evidence: 评分页的「走查清单」逐项勾选后给分
+    anchors: ["打开就崩溃或主要功能不可用", "核心操作可用，但有多处无效控件或明显错误", "全部控件可用，仅有个别小瑕疵", "全部控件可用且反馈清晰，反复操作也稳定"]

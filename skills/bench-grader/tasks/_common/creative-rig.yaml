@@ -1,0 +1,12 @@
+# v2 创作类 3D 题：“有主体、有结构”的题（鹈鹕、自行车、角色、火箭）再加一层 rig 完整性检查。
+# 建筑 / 体素世界这类“很多独立物件”的题不引入这一层（被 V05 / V06 排除在 extends 之外）。
+# 机器只读 __scene 里网格的世界包围盒，抓“散架”“整体嵌进另一个零件”“关键接触脱开”三类严重缺陷；
+# 这是粗筛（AABB 连通 ≠ 真接触），细节由人工项判断，所以阈值都留有余量。
+probes:
+  - type: scene_audit
+    opts: {}
+
+items:
+  - {id: "{T}-R01", dim: 3d, tier: advanced, method: auto, edition: detail, module: assembly, desc: 部件没有漂浮 / 分离（所有部件的包围盒连成一体）, metric: rig.floating_ratio, rule: {type: max, max: 0.05, zero: 0.3}}
+  - {id: "{T}-R02", dim: 3d, tier: advanced, method: auto, edition: detail, module: assembly, desc: 没有大面积穿模（互不相干的部件几乎整体重叠）, metric: rig.deep_clip_ratio, rule: {type: max, max: 0.08, zero: 0.35}}
+  - {id: "{T}-R03", dim: 3d, tier: excellent, method: auto, edition: detail, module: assembly, desc: 运动过程中部件仍然连在一起（采样多个时刻）, metric: rig.motion_floating_max, rule: {type: max, max: 0.05, zero: 0.3}}

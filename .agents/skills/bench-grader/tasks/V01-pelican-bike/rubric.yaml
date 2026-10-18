@@ -1,0 +1,81 @@
+id: V01
+extends: [creative-web, creative-3d, creative-rig, agent-acceptance]
+name: 鹈鹕骑自行车（v2 愿望版）
+short: 一只鹈鹕骑自行车：只给最小契约，其余全凭模型发挥；看整体冲击力、生物与机械的可信度、骑行动作与细节
+deliverable_dir: pelican
+dims: {agent: 0.5, 3d: 1.0, anim: 0.5, eng: 0.4}
+condition: 无人值守；无需任何素材
+materials: []
+time_limit_min: 90   # 软时限：只记用时，不中断、不扣分
+
+capture:
+  views:
+    - {id: side, label: 侧视}
+    - {id: front, label: 正面}
+    - {id: three_quarter, label: 三分之四}
+    - {id: top, label: 俯视}
+    - {id: closeup_head, label: 头部特写}
+    - {id: closeup_legs, label: 腿足特写}
+  # 关键接触：a / b 是部件名的正则（不区分大小写）；tol 为场景对角线的比例。找不到命名部件时这项记 N/A，改由人工项判断
+  contacts:
+    - {a: "foot|feet|toe|paw", b: "pedal", tol: 0.02, label: 脚—踏板}
+    - {a: "wing|hand|arm", b: "handle|bar|stem", tol: 0.03, label: 翅膀—车把}
+    - {a: "body|torso|hip|pelvis|belly", b: "saddle|seat", tol: 0.03, label: 身体—车座}
+    - {a: "wheel|tire|tyre", b: "ground|road|floor|plane", tol: 0.02, label: 车轮—地面}
+  motion: {samples: 4, interval_ms: 500}
+  orbit: {frames: 8}
+
+items:
+  - {id: V01-R04, dim: 3d, tier: excellent, method: auto, edition: detail, module: contact, desc: 关键接触成立（脚—踏板、翅膀—车把、身体—车座、车轮—地面）, metric: rig.contacts_ok_ratio, rule: {type: ratio}}
+  - id: V01-H04
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 骑行动作的自然度与节奏（踩踏、颠簸、重心、喉囊与羽毛的跟随；与同题其他作品两两比较）
+    evidence: 页面实际运行与环绕视频
+    anchors: ["几乎不动，或动作僵硬机械", "有踩踏，但各部分动作不协调", "动作连贯，重心与节奏可信", "有生命感：颠簸、跟随、重心转移都自然，一眼就觉得它在骑车"]
+  - id: V01-H05
+    dim: 3d
+    tier: basic
+    method: human
+    edition: base
+    desc: 一眼认得出是鹈鹕（长喙、喉囊、体型、羽色），而不是别的鸟或抽象几何体
+    evidence: 侧视与头部特写
+    anchors: ["认不出是鸟", "像鸟，但看不出是鹈鹕", "能认出鹈鹕，主要特征齐全", "一看就是鹈鹕，物种特征准确"]
+  - id: V01-H06
+    dim: 3d
+    tier: basic
+    method: human
+    edition: base
+    desc: 自行车是一辆“真能骑的车”：车架、车轮、链条、飞轮、车把、车座的比例与结构可信
+    evidence: 侧视与腿足特写
+    anchors: ["只是几根棍子加两个圈", "能认出自行车，但结构或比例明显错误", "结构完整、比例可信", "细节讲究（链条、辐条、刹车线等），像真车"]
+  - id: V01-H07
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: head
+    desc: 头部细节：长喙与喙尖的钩、会晃动的喉囊、眼睛的神气
+    evidence: 头部特写
+    anchors: ["头部只是一个球加一根棍", "有长喙，但缺钩或喉囊", "喙、钩、喉囊都有，造型准确", "细节讲究且有表情，喉囊会随运动晃动"]
+  - id: V01-H08
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: legs
+    desc: 腿足细节：短粗的鸟腿、反向弯曲的踝关节、全蹼足；踩踏时脚贴合踏板
+    evidence: 腿足特写，逐帧观察踩踏
+    anchors: ["人形腿或没有脚", "鸟腿但没有蹼，踩踏时脱离踏板", "鸟腿有蹼，关节大体正确，脚基本贴合", "解剖正确、踩踏时脚始终贴合踏板"]
+  - id: V01-H09
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: wings
+    desc: 翅膀与羽毛：翅膀如何扶把或保持平衡，羽毛的层次（初级、次级、覆羽）与质感
+    evidence: 三分之四与正面视角
+    anchors: ["翅膀是两块板，羽毛无层次", "翅膀有形状，羽毛平涂", "羽毛有明显层次，翅膀位置合理", "羽毛层次丰富、有质感，翅膀动作有表现力"]

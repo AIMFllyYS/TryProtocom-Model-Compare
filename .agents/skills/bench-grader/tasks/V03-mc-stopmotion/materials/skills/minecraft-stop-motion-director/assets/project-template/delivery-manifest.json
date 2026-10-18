@@ -1,0 +1,11 @@
+{
+  "project": "PROJECT_TITLE",
+  "deliverables": [
+    {"type": "final_video", "path": "", "required": true, "verified": false},
+    {"type": "poster", "path": "", "required": false, "verified": false},
+    {"type": "storyboard_or_contact_sheet", "path": "", "required": false, "verified": false},
+    {"type": "project_source_bundle", "path": "", "required": false, "verified": false},
+    {"type": "audio_master", "path": "", "required": false, "verified": false},
+    {"type": "qc_report", "path": "qc-report.md", "required": true, "verified": false}
+  ]
+}

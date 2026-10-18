@@ -1,0 +1,111 @@
+id: V05
+extends: [creative-web, creative-3d, agent-acceptance]
+name: 方块世界宏大建筑（v2 愿望版）
+short: 体素语法正确（等大方块、对齐网格）的大型建筑：尺度、结构层次、细节、内部空间、光照氛围
+deliverable_dir: mc-build
+dims: {agent: 0.5, 3d: 1.0, ui: 0.4, eng: 0.5}
+condition: 无人值守；无需任何素材
+materials: []
+time_limit_min: 120   # 软时限：只记用时，不中断、不扣分
+
+capture:
+  views:
+    - {id: exterior_far, label: 远景外观}
+    - {id: exterior_near, label: 近景外观}
+    - {id: aerial, label: 鸟瞰}
+    - {id: interior, label: 内部}
+    - {id: detail, label: 细节特写}
+  orbit: {frames: 8}
+  motion: {samples: 3, interval_ms: 600}
+
+# 体素审计：只读 __scene 里的方块（Mesh / InstancedMesh 的世界包围盒），不对建模手段打分
+probes:
+  - type: voxel_audit
+    opts: {block_size_from: __bench.blockSize}
+
+items:
+  # ---------------- 体素语法（客观） ----------------
+  - {id: V05-B01, dim: 3d, tier: basic, method: auto, edition: base, module: voxel, desc: 场景里能读出方块（体素审计成功）, metric: voxel.available, rule: {type: bool}}
+  - {id: V05-B02, dim: 3d, tier: advanced, method: auto, edition: base, module: voxel, desc: 方块对齐到同一网格（位置是方块尺寸的整数倍）, metric: voxel.aligned_ratio, rule: {type: min, min: 0.95, zero: 0.5}}
+  - {id: V05-B03, dim: 3d, tier: advanced, method: auto, edition: base, module: voxel, desc: 方块等大（绝大多数方块的尺寸一致）, metric: voxel.uniform_ratio, rule: {type: min, min: 0.9, zero: 0.4}}
+  - {id: V05-B04, dim: 3d, tier: advanced, method: auto, edition: base, module: scale, desc: 建筑尺度（最大边长，单位：方块）, metric: voxel.extent_max, rule: {type: linear, bad: 24, good: 96}}
+  - {id: V05-B05, dim: 3d, tier: advanced, method: auto, edition: detail, module: structure, desc: 高度层次（有多少个不同的高度层有方块）, metric: voxel.height_levels, rule: {type: linear, bad: 6, good: 48}}
+  - {id: V05-B06, dim: 3d, tier: advanced, method: auto, edition: detail, module: structure, desc: 内部空腔（被围起来的可进入空间占比）, metric: voxel.interior_void_ratio, rule: {type: linear, bad: 0.0, good: 0.15}}
+  - {id: V05-B07, dim: 3d, tier: clean, method: auto, edition: detail, module: palette, desc: 方块种类（不同材质 / 颜色的数量）, metric: voxel.palette_size, rule: {type: linear, bad: 3, good: 14}}
+
+  # ---------------- 人工（两两比较为主） ----------------
+  - id: V05-H04
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: scale
+    desc: 宏大感：尺度、轮廓层次、远观近看都成立
+    evidence: exterior_far / aerial / exterior_near
+    anchors: ["小模型，没有宏大感", "尺度可观，但轮廓单调", "尺度大且轮廓有层次", "令人震撼，远近观都有看点"]
+  - id: V05-H05
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: architecture
+    desc: 建筑设计：风格统一、立面节奏、比例（像一座真的“建筑”而不是方块堆）
+    evidence: exterior_far / exterior_near
+    anchors: ["随意堆叠", "有形状但风格杂乱", "风格统一、比例合理", "设计讲究，有明确的建筑语言"]
+  - id: V05-H06
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: detail
+    desc: 近看细节：砖石、窗框、扶壁、旗帜、火把、苔藓与裂纹等使用痕迹
+    evidence: detail / exterior_near
+    anchors: ["平整一片", "少量装饰", "细节丰富", "几乎每个角落都有设计"]
+  - id: V05-H07
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: interior
+    desc: 真有内部空间：大厅、楼梯、房间、地下室，可以走进去看
+    evidence: interior + 实际漫游
+    anchors: ["实心或无内部", "有一两个空房间", "多个功能空间，连通合理", "内部与外观相呼应，空间叙事感强"]
+  - id: V05-H08
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: palette
+    desc: 像素贴图与配色：统一、有设计感、有磨损
+    evidence: 近景与细节视角
+    anchors: ["杂乱或纯色", "能看出像素风格但粗糙", "统一而有质感", "有原创设计感，磨损自然"]
+  - id: V05-H09
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: detail
+    module: lighting
+    desc: 光照氛围：白天 / 夜晚、火把与月光、阴影，各有味道
+    evidence: 不同时间的截图或实际操作
+    anchors: ["无光照设计", "仅明暗变化", "光照自然，有氛围", "光照讲究，让人想进去看看"]
+  - id: V05-H10
+    dim: 3d
+    tier: excellent
+    method: human
+    edition: detail
+    module: terrain
+    desc: 地形、水、植被与建筑融为一体
+    evidence: aerial / exterior_far
+    anchors: ["建筑悬在空白里", "有地面但与建筑无关", "地形与建筑搭配", "建筑像从土地里长出来"]
+  - id: V05-H11
+    dim: ui
+    tier: advanced
+    method: human
+    edition: base
+    desc: 镜头操作手感（环绕 / 漫游、碰撞与速度、重场景下仍可操作）
+    evidence: 实际操作
+    anchors: ["无法操作", "能操作但别扭或卡顿", "流畅可用", "手感好，有快捷视角或小地图之类的辅助"]

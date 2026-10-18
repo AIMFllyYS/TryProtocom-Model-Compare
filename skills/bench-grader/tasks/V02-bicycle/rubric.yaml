@@ -1,0 +1,118 @@
+id: V02
+extends: [creative-web, creative-3d, creative-rig, agent-acceptance]
+name: 自行车（v2 愿望版）
+short: 一辆真正的自行车：机械结构与传动的正确性、部件拆分与精细度、材质与光照
+deliverable_dir: bicycle
+dims: {agent: 0.5, 3d: 1.0, anim: 0.3, eng: 0.5}
+condition: 无人值守；无需任何素材
+materials: []
+time_limit_min: 90   # 软时限：只记用时，不中断、不扣分
+
+capture:
+  views:
+    - {id: side, label: 侧视}
+    - {id: three_quarter, label: 三分之四}
+    - {id: top, label: 俯视}
+    - {id: closeup_drivetrain, label: 传动系统特写}
+    - {id: closeup_front, label: 前叉车把特写}
+    - {id: closeup_wheel, label: 车轮特写}
+  contacts:
+    - {a: "wheel|tire|tyre", b: "ground|road|floor|plane", tol: 0.02, label: 车轮—地面}
+    - {a: "chain", b: "chainring|crank|ring", tol: 0.02, label: 链条—牙盘}
+    - {a: "chain", b: "cog|cassette|sprocket", tol: 0.02, label: 链条—飞轮}
+    - {a: "brake|caliper|pad", b: "rim", tol: 0.03, label: 刹车—轮圈}
+  motion: {samples: 4, interval_ms: 500}
+  orbit: {frames: 8}
+  # 期望能在部件树（或场景节点名）里找到的零件；只做“找得到名字”的检查，名称写中英文都行
+  expected_parts:
+    - {id: frame, module: frame, re: "frame|车架|top.?tube|down.?tube|seat.?tube"}
+    - {id: fork, module: steering, re: "fork|前叉"}
+    - {id: handlebar, module: steering, re: "handle|bar|车把"}
+    - {id: stem, module: steering, re: "stem|立管|把立"}
+    - {id: saddle, module: frame, re: "saddle|seat(?!.?tube)|车座|坐垫"}
+    - {id: seatpost, module: frame, re: "seat.?post|座管"}
+    - {id: crank, module: drivetrain, re: "crank|曲柄"}
+    - {id: chainring, module: drivetrain, re: "chain.?ring|牙盘"}
+    - {id: pedal, module: drivetrain, re: "pedal|踏板"}
+    - {id: chain, module: drivetrain, re: "chain(?!.?ring|.?stay)|链条"}
+    - {id: cassette, module: drivetrain, re: "cog|cassette|sprocket|freewheel|飞轮|飞盘"}
+    - {id: derailleur, module: drivetrain, re: "derailleur|后拨|变速"}
+    - {id: hub, module: wheels, re: "hub|轮毂|花鼓"}
+    - {id: spoke, module: wheels, re: "spoke|辐条"}
+    - {id: rim, module: wheels, re: "rim|轮圈"}
+    - {id: tire, module: wheels, re: "tire|tyre|轮胎"}
+    - {id: brake, module: brakes, re: "brake|caliper|刹车|卡钳"}
+
+probes:
+  - type: browser
+    opts:
+      hooks: [__bench.setSpeed, __bench.getState, __bench.listParts]
+      js_metrics:
+        phys: |
+          const b = window.__bench; const out = {};
+          const safe = async (k, fn) => { try { out[k] = await fn(); } catch (e) { out[k] = null; } };
+          b.setSpeed(3); await sleep(1200);
+          const s1 = b.getState(); const t1 = performance.now(); await sleep(2000); const s2 = b.getState(); const dt = (performance.now() - t1) / 1000;
+          await safe('slip_err', () => { const dist = s2.speed * dt; const roll = Math.abs(s2.wheelAngle - s1.wheelAngle) * s2.wheelRadius; return Math.abs(roll - dist) / Math.max(dist, 1e-6); });
+          await safe('gear_err', () => { const dW = s2.wheelAngle - s1.wheelAngle, dC = s2.crankAngle - s1.crankAngle; const exp = s2.cogTeeth / s2.chainringTeeth; return Math.abs(Math.abs(dC / dW) - exp) / exp; });
+          await safe('monotonic', () => s2.wheelAngle > s1.wheelAngle && s2.crankAngle > s1.crankAngle);
+          await safe('speed_response', async () => { b.setSpeed(6); await sleep(1200); const a = b.getState(); await sleep(1000); const c = b.getState(); const r6 = c.wheelAngle - a.wheelAngle; b.setSpeed(3); await sleep(1200); const a3 = b.getState(); await sleep(1000); const c3 = b.getState(); const r3 = c3.wheelAngle - a3.wheelAngle; return r3 > 0 && Math.abs(r6 / r3 - 2) < 0.25; });
+          await safe('static_at_zero', async () => { b.setSpeed(0); await sleep(900); const z1 = b.getState(); await sleep(1000); const z2 = b.getState(); return Math.abs(z2.wheelAngle - z1.wheelAngle) < 1e-3 && Math.abs(z2.crankAngle - z1.crankAngle) < 1e-3; });
+          b.setSpeed(3);
+          return out;
+
+items:
+  - {id: V02-P01, dim: 3d, tier: basic, method: auto, edition: base, desc: 车轮不打滑（滚动距离与前进距离一致）, metric: js.phys.slip_err, rule: {type: max, max: 0.03, zero: 0.3}}
+  - {id: V02-P02, dim: 3d, tier: advanced, method: auto, edition: base, desc: 传动比一致（曲柄 / 后轮转角比等于飞轮 / 牙盘齿数比）, metric: js.phys.gear_err, rule: {type: max, max: 0.03, zero: 0.3}}
+  - {id: V02-P03, dim: 3d, tier: basic, method: auto, edition: base, desc: 速度为 0 时所有运动部件静止, metric: js.phys.static_at_zero, rule: {type: bool}}
+  - {id: V02-P04, dim: 3d, tier: advanced, method: auto, edition: detail, module: drivetrain, desc: 速度加倍时车轮转速也加倍（速度响应线性）, metric: js.phys.speed_response, rule: {type: bool}}
+  - {id: V02-S01, dim: 3d, tier: advanced, method: auto, edition: detail, module: frame, desc: 车架与座管类零件在部件树里能找到名字, metric: capture.expected.frame, rule: {type: ratio}}
+  - {id: V02-S02, dim: 3d, tier: advanced, method: auto, edition: detail, module: steering, desc: 转向系统零件（前叉 / 车把 / 立管）在部件树里能找到名字, metric: capture.expected.steering, rule: {type: ratio}}
+  - {id: V02-S03, dim: 3d, tier: advanced, method: auto, edition: detail, module: drivetrain, desc: 传动系统零件（曲柄 / 牙盘 / 踏板 / 链条 / 飞轮 / 后拨）在部件树里能找到名字, metric: capture.expected.drivetrain, rule: {type: ratio}}
+  - {id: V02-S04, dim: 3d, tier: advanced, method: auto, edition: detail, module: wheels, desc: 轮组零件（轮毂 / 辐条 / 轮圈 / 轮胎）在部件树里能找到名字, metric: capture.expected.wheels, rule: {type: ratio}}
+  - {id: V02-S05, dim: 3d, tier: advanced, method: auto, edition: detail, module: brakes, desc: 刹车零件在部件树里能找到名字, metric: capture.expected.brakes, rule: {type: ratio}}
+  - {id: V02-R04, dim: 3d, tier: excellent, method: auto, edition: detail, module: contact, desc: 关键接触成立（车轮—地面、链条—牙盘 / 飞轮、刹车—轮圈）, metric: rig.contacts_ok_ratio, rule: {type: ratio}}
+  - id: V02-H04
+    dim: 3d
+    tier: basic
+    method: human
+    edition: base
+    desc: 一眼是一辆真能骑的自行车：车架几何、轮径、车把车座位置协调
+    evidence: 侧视与三分之四
+    anchors: ["比例失调，不像能骑的车", "能认出自行车，几何有明显问题", "几何合理、比例协调", "几何讲究，能看出是哪一类车（公路 / 通勤 / 山地…）"]
+  - id: V02-H05
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: drivetrain
+    desc: 传动系统是对的：链条绕过牙盘与飞轮、后拨张紧链条，曲柄转一圈链条走一圈；放大了看不穿帮
+    evidence: 传动系统特写，逐帧观察
+    anchors: ["没有链条或链条与齿轮无关", "有链条，但不绕齿轮或穿模", "链条绕行基本正确，运动可信", "链条、齿盘、后拨联动准确，细节可信"]
+  - id: V02-H06
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: wheels
+    desc: 轮组细节：轮毂、辐条（数量与交叉方式）、轮圈、轮胎胎纹，转动时辐条不闪烁错乱
+    evidence: 车轮特写
+    anchors: ["实心圆盘", "有辐条但很稀疏或不转", "辐条、轮圈、轮胎齐全且转动正常", "轮组精细，辐条编排与胎纹有讲究"]
+  - id: V02-H07
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: steering
+    desc: 前叉、车把、刹车线与刹车的结构与比例；转向是否有表现
+    evidence: 前叉车把特写
+    anchors: ["只有一根横杆", "有车把与前叉，但结构简化", "结构正确，刹车与线缆俱全", "细节讲究（线缆走向、握把、刹把），前叉倾角可信"]
+  - id: V02-H08
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 运行时的动感：轮子、链条、踏板、悬挂或镜头的运动是否自然（与同题其他作品两两比较）
+    evidence: 页面实际运行
+    anchors: ["几乎不动，或动作错乱", "有运动，但各部分不同步", "运动连贯同步", "运动细腻，有额外的物理细节（如车身晃动、阴影联动）"]

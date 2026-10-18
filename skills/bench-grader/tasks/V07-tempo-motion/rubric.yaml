@@ -1,0 +1,141 @@
+id: V07
+suite: v2
+kind: motion
+name: Tempo 动效短片（v2 愿望版，A 手写 / C 用 Skill）
+short: 同一份 15 秒产品动画：A 组纯手写、C 组用 HyperFrames skills；机器只查缺陷，缓动 / 编排 / 踩点 / 创意交给两两比较
+deliverable_dir: tempo-promo
+dims: {anim: 1.0}
+variants:
+  A: {dims: {anim: 1.0, eng: 0.5}, desc: 纯手写，无 skill、无视频框架}
+  C: {dims: {anim: 1.0, agent: 0.5, eng: 0.5}, desc: HyperFrames + 官方 skills}
+condition: 无人值守；工作目录预置 assets/（copy.md、bgm.wav、beats.json）；A/C 环境按提示词说明隔离
+materials: ["materials/assets/copy.md", "materials/assets/bgm.wav", "materials/assets/beats.json"]
+time_limit_min: 60   # 软时限：只记用时，不中断、不扣分
+
+# v1（T03）里“平均帧间变化量 / 视觉重音数 / 重音落拍比例 / 切换次数”四项取消：
+# 它们奖励的是画面抖动和乱切，而不是好动画。踩点与节奏由人工带声音评审，机器只查缺陷。
+probes:
+  - type: files
+    opts:
+      required: [index.html]
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com]
+      grep_usage: {framework: "hyperframes|remotion"}
+  - type: claims
+  - type: capture
+    opts: {}
+  - type: browser
+    opts:
+      entry: index.html
+      allowed_hosts: [cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com]
+      hooks: [__hf, __hf.seek, __hf.duration]
+      fps: false
+      wait_ms: 1500
+  - type: timeline
+    opts:
+      global: __hf
+      entry: index.html
+      expected_duration: 15
+      sample_fps: 15
+      text: true
+      text_every: 3
+      beats: materials/assets/beats.json
+      cut_threshold: 22
+      render_video: {fps: 30, audio: materials/assets/bgm.wav}
+
+tier0:
+  - {id: V07-T0-1, desc: 页面能加载且 __hf.seek 可用, metric: tl.hook_ok, rule: {type: bool}}
+  - {id: V07-T0-2, desc: 首帧不是空白, metric: capture.default_nonblank, rule: {type: bool}}
+  - {id: V07-T0-3, desc: 没有未捕获的页面异常, metric: browser.page_errors, rule: {type: max, max: 0, zero: 1}}
+
+gates:
+  - {id: G1, desc: 页面加载且 __hf.seek 可用, metric: tl.hook_ok, rule: {type: bool}}
+  - {id: G2, desc: 最终汇报与实际产出一致, metric: claims.honest, rule: {type: bool}}
+  - {id: G3, desc: A 组未使用视频框架（源码 import / script / npx / 依赖中不含 hyperframes / remotion）, metric: files.grep_usage.framework, rule: {type: max, max: 0}, variants: [A]}
+
+items:
+  # ---------------- 动画：客观缺陷 ----------------
+  - {id: V07-A01, dim: anim, tier: basic, method: auto, edition: base, desc: 时长 15±0.5 秒（误差秒）, metric: tl.duration_err, rule: {type: max, max: 0.5, zero: 3}}
+  - {id: V07-A02, dim: anim, tier: advanced, method: auto, edition: base, desc: seek 确定性（同一时刻两次渲染一致）, metric: tl.determinism_ratio, rule: {type: ratio}}
+  - {id: V07-A03, dim: anim, tier: basic, method: auto, edition: base, desc: 空白帧比例, metric: tl.blank_ratio, rule: {type: max, max: 0.02, zero: 0.2}}
+  - {id: V07-A04, dim: anim, tier: advanced, method: auto, edition: detail, module: craft, desc: 没有拖沓的死画面（最长静止秒数，允许有意的停顿）, metric: tl.static_max_gap_s, rule: {type: max, max: 2.0, zero: 6}}
+  - {id: V07-A05, dim: anim, tier: advanced, method: auto, edition: detail, module: craft, desc: 文字碰撞帧比例（运动途中文字互相遮挡）, metric: tl.text_overlap_ratio, rule: {type: max, max: 0, zero: 0.3}}
+  - {id: V07-A06, dim: anim, tier: advanced, method: auto, edition: detail, module: craft, desc: 文字出画帧比例, metric: tl.text_offscreen_ratio, rule: {type: max, max: 0, zero: 0.3}}
+  - {id: V07-A07, dim: anim, tier: advanced, method: auto, edition: detail, module: craft, desc: 中文字幕换行帧比例（要求每句一行）, metric: tl.multiline_ratio, rule: {type: max, max: 0, zero: 0.3}}
+
+  # ---------------- 人工（两两比较） ----------------
+  - id: V07-H01
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: easing
+    desc: 缓动质量与运动性格（非线性、有加减速、落点有弹性或阻尼，风格统一）
+    evidence: 评审视频（统一渲染）
+    anchors: ["线性或生硬跳变", "部分有缓动", "普遍使用合适缓动", "缓动风格统一且有性格"]
+  - id: V07-H02
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: choreography
+    desc: 编排层次（先后展开、有主次、视线引导明确）
+    evidence: 评审视频
+    anchors: ["全部同时出现", "有先后但杂乱", "层次清楚", "编排有节奏感，视线引导明确"]
+  - id: V07-H03
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: layout
+    desc: 构图与排版（留白、对齐、字号层级、安全边距）
+    evidence: 评审视频关键帧
+    anchors: ["拥挤或错位", "可读但平庸", "干净有层级", "专业级排版"]
+  - id: V07-H04
+    dim: anim
+    tier: excellent
+    method: human
+    judge: pairwise
+    edition: base
+    module: concept
+    desc: 创意与记忆点（转场或视觉概念，且贯穿始终）
+    evidence: 评审视频
+    anchors: ["模板化", "有一两个亮点", "整体有设计概念", "让人想重看，概念贯穿始终"]
+  - id: V07-H05
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: detail
+    module: sync
+    desc: 音画配合（重要变化踩在重拍上，段落与音乐强弱对应）
+    evidence: 带声音观看评审视频
+    anchors: ["无关", "偶尔对上", "大部分重要变化踩点", "精确踩点且随音乐强弱变化"]
+  - id: V07-H06
+    dim: anim
+    tier: advanced
+    method: human
+    edition: detail
+    module: craft
+    desc: 工艺（无闪烁、无跳帧、无元素穿帮、文字清晰）
+    evidence: 评审视频逐段
+    anchors: ["问题很多", "3 处以上问题", "1–2 处小问题", "无问题"]
+
+  # ---------------- 工程化 ----------------
+  - {id: V07-E01, dim: eng, tier: advanced, method: auto, edition: base, desc: 控制台零报错, metric: browser.errors_total, rule: {type: max, max: 0, zero: 5}}
+  - {id: V07-E02, dim: eng, tier: basic, method: auto, edition: base, desc: 运行时无白名单（开放 CDN）之外的网络请求, metric: browser.external_requests, rule: {type: max, max: 0, zero: 3}}
+  - {id: V07-E03, dim: eng, tier: clean, method: auto, edition: base, desc: 无占位代码, metric: files.placeholder_hits, rule: {type: max, max: 0, zero: 3}}
+
+  # ---------------- Agent 执行（仅 C 组） ----------------
+  - id: V07-S01
+    dim: agent
+    tier: advanced
+    method: agent
+    variants: [C]
+    edition: base
+    module: skill
+    desc: 按 HyperFrames skill 流程工作（用它的组合规范，运行 lint / check / snapshot 等并据结果修改）
+    anchors: ["未使用 skill", "只套用了框架外壳", "按 skill 规范组织，运行过检查", "完整走完 skill 流程，并根据检查结果迭代"]

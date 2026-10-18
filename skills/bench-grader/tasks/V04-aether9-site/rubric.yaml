@@ -1,0 +1,189 @@
+id: V04
+extends: [creative-web, creative-3d, creative-rig, agent-acceptance]
+name: Aether-9 3D 产品官网（v2 愿望版）
+short: 可拆分的重型火箭官网：参数一致、部件树与逐件拆分、发射与遥测、滚动叙事、视觉设计
+deliverable_dir: aether9-site
+dims: {agent: 0.5, 3d: 1.0, ui: 1.0, eng: 0.5}
+condition: 无人值守；可访问 npm registry 与开放 CDN
+materials: []
+time_limit_min: 120   # 软时限：只记用时，不中断、不扣分
+
+# v1（T05）里的“React+TS strict”“依赖白名单”“单文件 ≤ 8MB”“PBR 占比 / 三角面 / 贴图数量”全部取消：
+# 它们限制或奖励手段，不奖励结果。v2 留下：参数一致（事实）、发射遥测（事实）、能不能拆（行为）、人工两两比较。
+capture:
+  views:
+    - {id: overview, label: 整箭全貌}
+    - {id: stage1_engines, label: 一级发动机群}
+    - {id: stage2, label: 二级}
+    - {id: gridfin_closeup, label: 栅格舵特写}
+    - {id: launch_pad, label: 发射台}
+  orbit: {frames: 8}
+  motion: {samples: 3, interval_ms: 600}
+  expected_parts:
+    - {id: s1_tank, module: stage1, re: "s1.*tank|stage.?1.*tank|booster.*tank|一级.*贮箱|一级.*箱"}
+    - {id: interstage, module: stage1, re: "interstage|级间"}
+    - {id: gridfin_actuator, module: stage1, re: "actuator|作动|grid.?fin.*(hinge|mount)"}
+    - {id: landing_leg, module: stage1, re: "landing.?leg|着陆腿|leg"}
+    - {id: thrust_structure, module: stage1, re: "thrust.?(structure|puck)|推力结构|engine.?mount|octaweb"}
+    - {id: s1_engine_detail, module: engines, re: "turbo.?pump|涡轮泵|nozzle|喷管|gimbal|摇摆|plumbing|管路"}
+    - {id: s2_tank, module: stage2, re: "s2.*tank|stage.?2.*tank|二级.*贮箱|二级.*箱"}
+    - {id: fairing, module: stage2, re: "fairing|整流罩"}
+    - {id: rcs, module: stage2, re: "rcs|thruster|姿控"}
+    - {id: separation, module: stage2, re: "separation|分离|pusher|clamp|分离机构"}
+    - {id: payload, module: stage2, re: "payload|载荷|satellite|卫星"}
+    - {id: pad, module: ground, re: "pad|tower|发射台|塔架"}
+
+probes:
+  - type: browser
+    opts:
+      hooks: [__bench.views, __bench.setView, __bench.listParts, __bench.explodePart, __bench.setExploded, __bench.listHotspots, __bench.openHotspot, __bench.launch, __bench.setTimeScale, __bench.getTelemetry, __bench.scrollToSection]
+      scene:
+        prefixes: [engine-s1-, engine-s2-sl-, engine-s2-vac-, gridfin-]
+      shot_sets:
+        sections:
+          wait_ms: 1800
+          steps:
+            - "window.__bench.scrollToSection('hero')"
+            - "window.__bench.scrollToSection('specs')"
+            - "window.__bench.scrollToSection('launch')"
+            - "window.__bench.scrollToSection('reuse')"
+            - "window.__bench.scrollToSection('cta')"
+      js_metrics:
+        hot: |
+          const ids = window.__bench.listHotspots() || []; const before = document.body.innerText;
+          const ok = ids.length ? window.__bench.openHotspot(ids[0]) : false; await sleep(900);
+          return {count: ids.length, opened: !!ok && document.body.innerText !== before};
+        explode: |
+          const sc = window.__scene; const find = (p) => { let o = null; sc.traverse(x => { if (!o && x.name && x.name.startsWith(p)) o = x; }); return o; };
+          const a = find('engine-s1-'), c = find('engine-s2-');
+          if (!a || !c) return {ratio: null};
+          const V = a.position.constructor; const pa = new V(), pc = new V();
+          a.getWorldPosition(pa); c.getWorldPosition(pc); const d0 = pa.distanceTo(pc);
+          window.__bench.setExploded(true); await sleep(2500); a.getWorldPosition(pa); c.getWorldPosition(pc); const d1 = pa.distanceTo(pc);
+          window.__bench.setExploded(false); await sleep(1500);
+          return {ratio: d1 / Math.max(d0, 1e-6)};
+        parts: |
+          const b = window.__bench; const sc = window.__scene;
+          const tree = (b.listParts && b.listParts()) || [];
+          const byName = {}; sc.traverse(o => { if (o.name && !byName[o.name]) byName[o.name] = o; });
+          const withNode = tree.filter(p => p.object3dName && byName[p.object3dName]);
+          const V = sc.position.constructor; const out = {total: tree.length, resolvable: withNode.length / Math.max(tree.length, 1), sampled: 0, moved: 0, restored: 0};
+          const step = Math.max(1, Math.floor(withNode.length / 12));
+          for (let i = 0; i < withNode.length && out.sampled < 12; i += step) {
+            const p = withNode[i], o = byName[p.object3dName]; const p0 = new V(), p1 = new V(), p2 = new V();
+            o.getWorldPosition(p0); b.explodePart(p.id, true); await sleep(1300); o.getWorldPosition(p1);
+            b.explodePart(p.id, false); await sleep(1300); o.getWorldPosition(p2);
+            out.sampled++; if (p0.distanceTo(p1) > 0.02) out.moved++; if (p0.distanceTo(p2) < 0.05) out.restored++;
+          }
+          out.moved_ratio = out.sampled ? out.moved / out.sampled : 0; out.restored_ratio = out.sampled ? out.restored / out.sampled : 0;
+          return out;
+        tel: |
+          const b = window.__bench; b.setTimeScale(20); b.launch(); const pts = [];
+          for (let i = 0; i < 110; i++) { await sleep(100); try { pts.push(b.getTelemetry()); } catch (e) {} }
+          let mono = pts.length > 10;
+          for (let i = 1; i < pts.length; i++) if (pts[i].t < pts[i-1].t - 1e-6 || pts[i].altitudeKm < pts[i-1].altitudeKm - 0.01) mono = false;
+          const sep = pts.find(p => p.stage === 2);
+          return {samples: pts.length, monotonic: mono, sep_t_err: sep ? Math.abs(sep.t - 160) : null, sep_alt_err: sep ? Math.abs(sep.altitudeKm - 70) : null};
+
+items:
+  # ---------------- 事实一致（参数表是契约，不是限制） ----------------
+  - {id: V04-D01, dim: 3d, tier: advanced, method: auto, edition: base, module: facts, desc: 一级发动机数量 = 21, metric: scene.named.engine-s1-, rule: {type: band, lo: 21, hi: 21, tol: 21}}
+  - {id: V04-D02, dim: 3d, tier: advanced, method: auto, edition: base, module: facts, desc: 二级海平面发动机 = 3, metric: scene.named.engine-s2-sl-, rule: {type: band, lo: 3, hi: 3, tol: 3}}
+  - {id: V04-D03, dim: 3d, tier: advanced, method: auto, edition: base, module: facts, desc: 二级真空发动机 = 3, metric: scene.named.engine-s2-vac-, rule: {type: band, lo: 3, hi: 3, tol: 3}}
+  - {id: V04-D04, dim: 3d, tier: advanced, method: auto, edition: base, module: facts, desc: 栅格舵 = 4, metric: scene.named.gridfin-, rule: {type: band, lo: 4, hi: 4, tol: 4}}
+  - {id: V04-D05, dim: 3d, tier: advanced, method: auto, edition: base, module: launch, desc: 遥测数据单调合理, metric: js.tel.monotonic, rule: {type: bool}}
+  - {id: V04-D06, dim: 3d, tier: excellent, method: auto, edition: detail, module: launch, desc: 级分离时间误差（秒，目标 T+160）, metric: js.tel.sep_t_err, rule: {type: max, max: 5, zero: 40}}
+  - {id: V04-D07, dim: 3d, tier: excellent, method: auto, edition: detail, module: launch, desc: 级分离高度误差（km，目标 70）, metric: js.tel.sep_alt_err, rule: {type: max, max: 8, zero: 40}}
+
+  # ---------------- “能拆”：部件树与逐件行为 ----------------
+  - {id: V04-P01, dim: 3d, tier: basic, method: auto, edition: base, module: parts, desc: 一键分级爆炸拉开两级（距离放大倍数）, metric: js.explode.ratio, rule: {type: linear, bad: 1.0, good: 1.3}}
+  - {id: V04-P02, dim: 3d, tier: advanced, method: auto, edition: base, module: parts, desc: 部件树里的每个部件都能在场景里找到对应对象, metric: js.parts.resolvable, rule: {type: ratio}}
+  - {id: V04-P03, dim: 3d, tier: advanced, method: auto, edition: detail, module: parts, desc: 抽样部件调用 explodePart 后真的离开了原位, metric: js.parts.moved_ratio, rule: {type: ratio}}
+  - {id: V04-P04, dim: 3d, tier: advanced, method: auto, edition: detail, module: parts, desc: 复位后回到原位, metric: js.parts.restored_ratio, rule: {type: ratio}}
+  - {id: V04-S01, dim: 3d, tier: advanced, method: auto, edition: detail, module: stage1, desc: 一级的结构部件（贮箱 / 级间段 / 作动机构 / 着陆腿 / 推力结构）在部件树里能找到名字, metric: capture.expected.stage1, rule: {type: ratio}}
+  - {id: V04-S02, dim: 3d, tier: advanced, method: auto, edition: detail, module: engines, desc: 发动机细节部件（涡轮泵 / 喷管 / 摇摆机构 / 管路）能找到名字, metric: capture.expected.engines, rule: {type: ratio}}
+  - {id: V04-S03, dim: 3d, tier: advanced, method: auto, edition: detail, module: stage2, desc: 二级部件（贮箱 / 整流罩 / 姿控 / 分离机构 / 载荷）能找到名字, metric: capture.expected.stage2, rule: {type: ratio}}
+  - {id: V04-S04, dim: 3d, tier: clean, method: auto, edition: detail, module: ground, desc: 有发射台 / 塔架这类场景部件, metric: capture.expected.ground, rule: {type: ratio}}
+
+  # ---------------- 前端 UI/UX ----------------
+  - {id: V04-U01, dim: ui, tier: basic, method: auto, edition: base, module: hotspots, desc: 热点数量 ≥ 4, metric: js.hot.count, rule: {type: min, min: 4, zero: 0}}
+  - {id: V04-U02, dim: ui, tier: basic, method: auto, edition: base, module: hotspots, desc: 打开热点后出现说明内容, metric: js.hot.opened, rule: {type: bool}}
+  - {id: V04-U03, dim: ui, tier: advanced, method: auto, edition: base, module: scroll, desc: 滚动叙事：5 个区块镜头画面各不相同, metric: shots.sections.distinct, rule: {type: linear, bad: 1, good: 5}}
+  - {id: V04-U04, dim: ui, tier: basic, method: auto, edition: base, module: mobile, desc: 手机宽度无横向溢出, metric: mobile.overflow_px, rule: {type: max, max: 0, zero: 200}}
+  - {id: V04-U05, dim: ui, tier: advanced, method: auto, edition: detail, module: mobile, desc: 手机端文字出界数, metric: mobile.text_offscreen, rule: {type: max, max: 0, zero: 5}}
+  - {id: V04-U06, dim: ui, tier: advanced, method: auto, edition: detail, module: layout, desc: 桌面端文字重叠数, metric: browser.text_overlaps, rule: {type: max, max: 0, zero: 5}}
+
+  # ---------------- 人工（两两比较为主） ----------------
+  - id: V04-H04
+    dim: 3d
+    tier: excellent
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 3D 真实感（金属 / 隔热层 / 焊缝 / 污渍与整体光照）
+    evidence: 命名视角截图 + 环绕视频
+    anchors: ["玩具感", "有质感但一眼假", "接近写实", "接近产品级渲染"]
+  - id: V04-H05
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: detail
+    module: parts
+    desc: 模型细节与比例（118 m × 9 m 的细长比、级间段、栅格舵与作动机构、21 台发动机布局与单台细节）
+    evidence: 近看视角与爆炸视图
+    anchors: ["比例错误", "大致像火箭", "比例正确、部件齐全", "细节丰富且工程感强，像真的设计图"]
+  - id: V04-H06
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: parts
+    desc: 点中任一部件：飞出、被说明、能复位；说明讲清它是什么、为什么这样设计
+    evidence: 逐个操作 5 个以上不同部件
+    anchors: ["不能逐件拆", "能拆但说明空洞", "多数部件可拆且说明准确", "几乎每个部件可拆，说明有工程洞见"]
+  - id: V04-H07
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: detail
+    module: launch
+    desc: 尾焰与发射特效（体积感、随推力变化、分离与回收过程）
+    evidence: 发射演示
+    anchors: ["无尾焰", "静态尾焰", "动态尾焰且随推力变化", "尾焰、烟雾、分离、回收都出彩，看完明白“可复用”的意义"]
+  - id: V04-H08
+    dim: ui
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 视觉设计与信息层级（首屏主张、区块节奏、留白、品牌感）
+    evidence: 桌面截图与滚动浏览
+    anchors: ["杂乱", "模板感", "清晰有层级", "有品牌感和记忆点"]
+  - id: V04-H09
+    dim: ui
+    tier: advanced
+    method: human
+    edition: detail
+    module: mobile
+    desc: 手机端体验（布局、触控、3D 性能可接受）
+    evidence: 手机截图，或用手机实际打开
+    anchors: ["不可用", "能用但别扭", "体验良好", "专门为手机优化过"]
+  - id: V04-H10
+    dim: ui
+    tier: excellent
+    method: human
+    edition: detail
+    module: novel
+    desc: 自选新颖交互的价值（是否真的帮用户理解产品）
+    evidence: 页面上的说明 + 实际操作
+    anchors: ["没有", "有但只是炫技", "新颖且有信息价值", "让人眼前一亮并明显加深理解"]
+  - id: V04-S05
+    dim: ui
+    tier: advanced
+    method: agent
+    edition: base
+    module: facts
+    desc: 内容准确：页面文案与遥测与参数表一致，没有编造参数
+    anchors: ["多处编造", "1–2 处不符", "全部准确", "全部准确且表达清楚"]

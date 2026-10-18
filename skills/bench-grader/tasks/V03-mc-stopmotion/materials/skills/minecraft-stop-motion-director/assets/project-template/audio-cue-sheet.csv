@@ -1,0 +1,8 @@
+time_start,time_end,shot_id,layer,cue,source_or_generation_notes,mix_notes
+0.000,7.000,S01,ambience,,,Establish location before music dominates
+0.000,7.000,S01,music,,,Sparse opening texture
+7.000,14.000,S02,foley,,,Sync footsteps to contact frames
+38.000,46.000,S06,sfx,,,Emphasize decisive turn or hero-prop activation
+38.000,46.000,S06,music,,,Climax or intentional pre-impact silence
+54.000,60.000,S08,ambience,,,Preserve environmental tail
+54.000,60.000,S08,music,,,Resolve or fade to ambience

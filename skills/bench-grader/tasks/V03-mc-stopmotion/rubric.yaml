@@ -1,0 +1,175 @@
+id: V03
+extends: [creative-web, creative-3d, creative-rig, agent-acceptance]
+name: Minecraft 定格短片（v2 愿望版）
+short: 按工作室 skill 制作 60 秒方块风格定格短片：Skill 遵循、叙事与镜头、角色骨架完整性（不散架 / 不穿模）、定格节奏
+deliverable_dir: mc-sol-luna
+dims: {agent: 0.8, 3d: 1.0, anim: 1.0, eng: 0.4}
+condition: 无人值守；工作目录预置 skills/minecraft-stop-motion-director/（工作室流程）
+materials: ["materials/skills/minecraft-stop-motion-director/（随每次运行复制到工作目录 skills/ 下）"]
+time_limit_min: 120   # 软时限：只记用时，不中断、不扣分
+
+# v1（T02）里数“镜头数 / 相机数 / 音频提示条数 / 字段填写率 / 网格数 / InstancedMesh / 贴图数量 / 光源数”的项全部取消：
+# 它们在奖励“按指标凑数”，而不是更好的片子。v2 只保留：契约（文件、校验、接口）+ 客观缺陷（散架、穿模、空白、不确定）+ 人工两两比较。
+capture:
+  views:
+    - {id: hero_front, label: 主角正面}
+    - {id: hero_side, label: 主角侧面}
+    - {id: hero_back, label: 主角背面}
+    - {id: closeup_face, label: 脸部特写}
+    - {id: wide_scene, label: 场景全景}
+  orbit: {frames: 8}
+  # 骨架完整性：在整条时间线上取 8 个时刻 seek 后审计（漂浮 / 穿模比例的最大值），而不只看静止姿态
+  motion: {seek: FILM.seek, times: [3, 10, 18, 26, 34, 42, 50, 57]}
+  expected_parts:
+    - {id: head, module: character, re: "head|头"}
+    - {id: body, module: character, re: "body|torso|身体|躯干"}
+    - {id: arm, module: character, re: "arm|手臂|hand|手"}
+    - {id: leg, module: character, re: "leg|腿|foot|脚"}
+
+probes:
+  - type: files
+    opts:
+      required: [index.html, project.json, shot-list.json, audio-cue-sheet.csv, qc-report.md, delivery-manifest.json]
+  - type: mcproject
+  - type: browser
+    opts:
+      query: "?t=20&paused=1"
+      hooks: [FILM, FILM.seek, FILM.getPose, FILM.cameraAt, FILM.shots, __scene]
+      audio: true
+  - type: timeline
+    opts:
+      global: FILM
+      entry: index.html
+      query: "?paused=1"
+      expected_duration: 60
+      sample_fps: 4
+      text: false
+      pose: true
+      camera: true
+      shots_json: shot-list.json
+      render_video: {fps: 24}
+
+# 门槛：沿用公共 G1/G2（入口 + 汇报诚实），再加 FILM.seek 可用
+gates:
+  - {id: G3, desc: 页面加载且 FILM.seek 可用, metric: tl.hook_ok, rule: {type: bool}}
+
+items:
+  # ---------------- Agent：Skill 遵循（契约内的可验证部分） ----------------
+  - {id: V03-S01, dim: agent, tier: basic, method: auto, edition: base, desc: Skill 要求的 6 个项目文件齐全, metric: files.required_ratio, rule: {type: ratio}}
+  - {id: V03-S02, dim: agent, tier: advanced, method: auto, edition: base, module: skill, desc: validate_project.py 校验通过（无 Errors）, metric: mc.validate_pass, rule: {type: bool}}
+  - {id: V03-S03, dim: agent, tier: advanced, method: auto, edition: detail, module: skill, desc: validate_project.py 警告数, metric: mc.validate_warnings, rule: {type: max, max: 0, zero: 10}}
+  - {id: V03-S04, dim: agent, tier: basic, method: auto, edition: detail, module: skill, desc: 生成了 contact sheet, metric: mc.contact_sheet, rule: {type: bool}}
+  - {id: V03-S05, dim: agent, tier: advanced, method: auto, edition: detail, module: skill, desc: delivery-manifest 的 verified 标记与实际文件一致, metric: mc.manifest_truthful_ratio, rule: {type: ratio}}
+  - {id: V03-S06, dim: agent, tier: advanced, method: auto, edition: detail, module: skill, desc: FILM.shots 与 shot-list.json 一致, metric: tl.shots_json_match, rule: {type: ratio}}
+  - {id: V03-S07, dim: agent, tier: advanced, method: auto, edition: detail, module: skill, desc: cameraAt 与镜头表 camera_id 一致, metric: tl.camera_match_ratio, rule: {type: ratio}}
+  - {id: V03-S08, dim: agent, tier: clean, method: auto, edition: detail, module: skill, desc: QC 未出现“全部打勾但问题表为空”, value_expr: "not (v['mc.qc_checked_ratio'] >= 0.99 and v['mc.qc_issue_rows'] == 0)", rule: {type: bool}}
+  - id: V03-S09
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: skill
+    desc: 按 Skill 的预演检查点工作（故事 → 分镜 → 关键帧 / contact sheet → 据此修改），而不是直接写最终代码
+    anchors: ["无任何预演证据", "只有模板文件", "有关键帧或 contact sheet 并据此调整", "有明确的检查点记录与据此做出的修改"]
+  - id: V03-S10
+    dim: agent
+    tier: advanced
+    method: agent
+    edition: detail
+    module: skill
+    desc: 故事结构与 Skill 的 8 拍 / 一句话戏剧句式相符（读 project.json 与 shot-list.json）
+    anchors: ["无结构，镜头随意罗列", "有分段但与 8 拍不对应", "8 拍清楚，戏剧句式成立", "每个镜头的 story_function 与画面一一对应，结尾呼应开头"]
+
+  # ---------------- 动画：时间线客观缺陷 ----------------
+  - {id: V03-A01, dim: anim, tier: basic, method: auto, edition: base, desc: 时长接近 60 秒（误差秒）, metric: tl.duration_err, rule: {type: max, max: 3, zero: 15}}
+  - {id: V03-A02, dim: anim, tier: advanced, method: auto, edition: base, desc: seek 确定性（同一时刻两次渲染一致）, metric: tl.determinism_ratio, rule: {type: ratio}}
+  - {id: V03-A03, dim: anim, tier: excellent, method: auto, edition: detail, module: pose, desc: 定格节奏：姿态保持若干帧才变化（保持比例）, metric: tl.pose_hold_ratio, rule: {type: band, lo: 0.4, hi: 0.75, tol: 0.4}}
+  - {id: V03-A04, dim: anim, tier: basic, method: auto, edition: base, desc: 角色确实在动（姿态变化次数）, metric: tl.pose_changes, rule: {type: min, min: 10, zero: 0}}
+  - {id: V03-A05, dim: anim, tier: advanced, method: auto, edition: detail, module: pose, desc: 没有长时间静止画面（最长静止秒数）, metric: tl.static_max_gap_s, rule: {type: max, max: 5, zero: 15}}
+  - {id: V03-A06, dim: anim, tier: basic, method: auto, edition: base, desc: 空白帧比例, metric: tl.blank_ratio, rule: {type: max, max: 0.03, zero: 0.25}}
+  - {id: V03-A07, dim: anim, tier: basic, method: auto, edition: base, desc: 首次交互前不创建音频, metric: audio.ctx_before_gesture, rule: {type: max, max: 0}}
+
+  # ---------------- 人工（两两比较为主） ----------------
+  - id: V03-H04
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 静音观看也能看懂故事（主角、目标、转折、结果），并有情绪起伏
+    evidence: 静音观看渲染视频 / 逐镜头
+    anchors: ["看不懂", "能看懂一部分", "主线清楚", "主线清楚且情绪有起伏"]
+  - id: V03-H05
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    module: story
+    desc: “推销”被 Minecraft 化：卖点靠玩法演示，而不是字幕口播；看完记得住 Sol 与 Luna 的区别
+    evidence: 渲染视频
+    anchors: ["纯文字广告", "有演示但大量依赖字幕", "主要卖点靠玩法演示", "演示巧妙，有笑点或反转"]
+  - id: V03-H06
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 方块世界的语法统一（地形、建筑、道具、角色像出自同一个世界），像素贴图质量
+    evidence: 命名视角截图 + 渲染视频
+    anchors: ["不像方块世界", "方块造型但贴图 / 比例混乱", "风格统一，一眼是 Minecraft 风格", "风格统一，贴图质量高，有原创设计感"]
+  - id: V03-H07
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: lighting
+    desc: 光照叙事：Sol 暖光 / Luna 冷光作为场景内实际光源照亮周围方块，并随剧情变化
+    evidence: 渲染视频
+    anchors: ["无光照设计", "有颜色但不是光源", "暖冷光源存在并照亮周围", "光色随剧情变化，冷暖叙事清晰"]
+  - id: V03-H08
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: camera
+    desc: 构图纵深与镜头克制（前中后景，推拉摇移有动机，不乱转）
+    evidence: 渲染视频
+    anchors: ["镜头乱飞或全程固定", "有变化但缺少动机", "构图有层次，运镜克制", "每个镜头都有明确叙事功能"]
+  - id: V03-H09
+    dim: 3d
+    tier: advanced
+    method: human
+    edition: detail
+    module: assembly
+    desc: 接触与穿插（对照 Skill 的失败清单：脚踩地、手握武器、无穿模、无悬浮道具）
+    evidence: 渲染视频逐镜头
+    anchors: ["大量穿模 / 悬浮", "3 处以上明显问题", "1–2 处小问题", "未发现问题"]
+  - id: V03-H10
+    dim: anim
+    tier: advanced
+    method: human
+    edition: detail
+    module: pose
+    desc: 关键动作有预备 → 动作 → 反应，并有强调停顿
+    evidence: 渲染视频中的挥砍 / 附魔 / 展示动作
+    anchors: ["动作生硬或瞬移", "有动作无预备 / 反应", "主要动作三段完整", "所有关键动作都有力量感和节奏"]
+  - id: V03-H11
+    dim: anim
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: detail
+    module: sound
+    desc: 声音设计：环境声先行、拟音与接触同步、音乐随剧情起伏、有留白
+    evidence: 带声音观看（点击页面启动音频）
+    anchors: ["无声或噪音", "只有单一背景音", "分层清楚且同步", "有设计感，高潮与留白处理得好"]
+  - id: V03-H12
+    dim: anim
+    tier: advanced
+    method: human
+    edition: detail
+    module: story
+    desc: 结尾画面呼应开头并带出新含义
+    evidence: 渲染视频首尾
+    anchors: ["无呼应", "牵强", "明确呼应", "呼应且带来情绪落点"]

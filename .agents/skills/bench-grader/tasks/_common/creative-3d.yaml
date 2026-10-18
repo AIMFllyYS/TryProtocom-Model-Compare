@@ -1,0 +1,46 @@
+# v2 创作类 3D 题公共模板（与 creative-web 一起 extends）。
+# 评测只检查“能不能被看见、被检查”，不对模型的建模手段打分：不数网格 / 三角面 / 材质种类。
+# 画面好不好看交给两两比较的人工项；机器只做两类客观检查：
+#   1) 命名视角能否逐个渲染出不同的画面；相机能否被拖动（capture 探针）
+#   2) 帧率（同一评测机、同一渲染器下才可比）
+probes:
+  - type: capture
+    opts: {}
+  - type: browser
+    opts:
+      hooks: [__bench, __bench.views, __bench.setView]
+      scene:
+        path: __scene
+        renderer: __renderer
+
+items:
+  - {id: "{T}-C01", dim: 3d, tier: basic, method: auto, edition: base, desc: 契约里的命名视角都能切换并渲染出非空白画面, metric: capture.views_rendered_ratio, rule: {type: ratio}}
+  - {id: "{T}-C02", dim: 3d, tier: basic, method: auto, edition: base, desc: 不同命名视角确实是不同的画面（不是同一张图换名字）, metric: capture.views_distinct_ratio, rule: {type: min, min: 0.8, zero: 0.3}}
+  - {id: "{T}-C03", dim: 3d, tier: basic, method: auto, edition: base, desc: 用鼠标拖动能转动镜头（环绕检查）, metric: capture.orbit_ok, rule: {type: bool}}
+  - {id: "{T}-C04", dim: 3d, tier: advanced, method: auto, edition: base, desc: 帧率（评测机统一测量，仅同一渲染器下可比）, metric: browser.fps, rule: {type: linear, bad: 10, good: 45}}
+  - id: "{T}-H01"
+    dim: 3d
+    tier: basic
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 整体观感：第一眼的冲击力与完成度（与同题其他作品两两比较）
+    evidence: 每个命名视角的截图 + 环绕视频
+    anchors: ["一眼就是失败品或几乎看不出主体", "能认出主体，但粗糙、比例或构图明显有问题", "完成度高、主体清晰、观感舒服", "令人惊艳，细节与气质都有明显个性"]
+  - id: "{T}-H02"
+    dim: 3d
+    tier: advanced
+    method: human
+    judge: pairwise
+    edition: base
+    desc: 材质、光照与氛围（与同题其他作品两两比较）
+    evidence: 命名视角截图
+    anchors: ["平涂 / 全黑 / 过曝", "有光影但材质单一", "材质区分明确，光影自然", "光照有氛围，材质细腻、有质感"]
+  - id: "{T}-H03"
+    dim: 3d
+    tier: basic
+    method: human
+    edition: base
+    desc: 每个命名视角的构图都对：镜头对准主体，主体完整、不被遮挡或裁切
+    evidence: 评分页的视角缩略图逐个检查
+    anchors: ["大多数视角构图错误", "约一半视角可用", "绝大多数视角构图正确", "每个视角都是精心取景"]
