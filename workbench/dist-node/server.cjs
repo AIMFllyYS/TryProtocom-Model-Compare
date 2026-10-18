@@ -38,12 +38,102 @@ var import_node_http2 = __toESM(require("node:http"), 1);
 var import_node_path8 = __toESM(require("node:path"), 1);
 var import_node_child_process5 = require("node:child_process");
 
+// shared/v2.ts
+var V1_VERSION = "v1.0";
+var versionOf = (r) => r.benchmark_version || V1_VERSION;
+var isV2 = (r) => versionOf(r).toLowerCase().startsWith("v2");
+var suiteOf = (t) => t.suite || "v1";
+function requiredTkeys(tasks, suite = "v2") {
+  const keys = [];
+  for (const t of tasks) {
+    if (suiteOf(t) !== suite) continue;
+    const vs = Object.keys(t.variants || {});
+    if (vs.length) keys.push(...vs.map((v) => t.id + v));
+    else keys.push(t.id);
+  }
+  return keys;
+}
+var psd = (xs) => {
+  if (xs.length < 2) return 0;
+  const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+  return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
+};
+var r1 = (x) => Math.round(x * 10) / 10;
+var tier0Ok = (r) => {
+  const s = r.score;
+  if (s.tier0_pass == null) return !!s.gate_pass && (s.total || 0) > 0;
+  return !!s.tier0_pass && !!s.gate_pass;
+};
+function stability(byTask, cfg) {
+  const sc = cfg.v2?.stability || {};
+  const wa = sc.availability_weight ?? 0.5, wc = sc.consistency_weight ?? 0.5, k = sc.consistency_k ?? 2;
+  const all = [...byTask.values()].flat();
+  if (!all.length) return { stability: null, availability: null, consistency: null, incidents: 0 };
+  const avail = 100 * all.filter(tier0Ok).length / all.length;
+  const sds = [...byTask.values()].filter((rs) => rs.length >= 2).map((rs) => psd(rs.map((r) => r.score.total)));
+  const cons = sds.length ? Math.max(0, Math.min(100, 100 - k * (sds.reduce((a, b) => a + b, 0) / sds.length))) : null;
+  return {
+    stability: cons == null ? null : r1((wa * avail + wc * cons) / (wa + wc)),
+    availability: r1(avail),
+    consistency: cons == null ? null : r1(cons),
+    incidents: all.filter((r) => r.incident).length
+  };
+}
+function applyView(runs, view, cfg, tasks) {
+  const info = { entrants: {}, excluded: [] };
+  if (view === "history") return { runs: runs.filter((r) => !isV2(r)), info };
+  const v2runs = runs.filter((r) => isV2(r));
+  const by = /* @__PURE__ */ new Map();
+  const key = (e, t) => `${e}\0${t}`;
+  for (const r of v2runs) {
+    const kk = key(r.entrant, r.tkey);
+    if (!by.has(kk)) by.set(kk, []);
+    by.get(kk).push(r);
+  }
+  for (const rs of by.values()) rs.sort((a, b) => (a.run_index ?? 0) - (b.run_index ?? 0) || a.run_id.localeCompare(b.run_id));
+  const entrants = [...new Set(v2runs.map((r) => r.entrant))].sort();
+  if (view === "simple") {
+    const out2 = [];
+    for (const e of entrants) {
+      const ns = [];
+      let retries = 0;
+      for (const kk of [...by.keys()].sort()) {
+        const [ee] = kk.split("\0");
+        if (ee !== e) continue;
+        const rs = by.get(kk);
+        const best = rs.reduce((a, b) => b.score.total > a.score.total ? b : a);
+        out2.push({ ...best, n_used: rs.length });
+        ns.push(rs.length);
+        retries += rs.filter((r) => r.incident).length;
+      }
+      info.entrants[e] = { n_min: Math.min(...ns), n_max: Math.max(...ns), star: Math.max(...ns) > 1, incident_retries: retries };
+    }
+    return { runs: out2, info };
+  }
+  const need = cfg.v2?.full_runs ?? 3;
+  const req = requiredTkeys(tasks, "v2");
+  const required = req.length ? req : [...new Set(v2runs.map((r) => r.tkey))].sort();
+  const out = [];
+  for (const e of entrants) {
+    const missing = required.filter((tk) => (by.get(key(e, tk))?.length ?? 0) < need).map((tk) => `${tk}\uFF08${by.get(key(e, tk))?.length ?? 0}/${need}\uFF09`);
+    if (missing.length) {
+      info.excluded.push({ entrant: e, missing });
+      continue;
+    }
+    const picked = /* @__PURE__ */ new Map();
+    for (const tk of required) picked.set(tk, by.get(key(e, tk)).slice(0, need));
+    for (const rs of picked.values()) out.push(...rs);
+    info.entrants[e] = stability(picked, cfg);
+  }
+  return { runs: out, info };
+}
+
 // shared/aggregate.ts
 var mean = (xs) => {
   const v = xs.filter((x) => typeof x === "number" && Number.isFinite(x));
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 };
-var psd = (xs) => {
+var psd2 = (xs) => {
   const v = xs.filter((x) => typeof x === "number");
   if (v.length < 2) return 0;
   const m = v.reduce((a, b) => a + b, 0) / v.length;
@@ -69,10 +159,12 @@ function mulberry32(seed) {
 }
 var entrantOf = (r) => `${r.model} @ ${r.harness}`;
 function aggregate(allRuns, spec, opts = {}) {
+  const view = opts.view ?? "history";
   const cfg = { ...spec.cfg, ...spec.config_full || {} };
-  const dims = spec.dims;
+  const dims = spec.dims.filter((d) => !d.only_views || d.only_views.includes(view));
   const qdims = dims.filter((d) => d.kind === "quality");
-  const runs = allRuns.filter((r) => r.graded && r.score);
+  const { runs, info: vinfo } = applyView(allRuns.filter((r) => r.graded && r.score), view, cfg, spec.tasks);
+  const suite = view === "history" ? "v1" : "v2";
   const byEt = /* @__PURE__ */ new Map();
   const k = (e, t) => `${e}\0${t}`;
   for (const r of runs) {
@@ -97,8 +189,9 @@ function aggregate(allRuns, spec, opts = {}) {
       entrant: e,
       task: tk,
       runs: rs.length,
+      n_used: rs[0].n_used ?? null,
       mean: r2(mean(totals) ?? 0),
-      sd: r2(psd(totals)),
+      sd: r2(psd2(totals)),
       min: Math.min(...totals),
       max: Math.max(...totals),
       pass_rate: r2(pr, 3),
@@ -176,7 +269,7 @@ function aggregate(allRuns, spec, opts = {}) {
     const dimsFull = { ...base.dims };
     dimsFull.cost = costS.length ? r2(mean(costS), 1) : null;
     dimsFull.speed = speedS.length ? r2(mean(speedS), 1) : null;
-    const suite = (xs, d) => xs.length ? xs.every((x) => x !== INF) ? r2(xs.reduce((a, b) => a + b, 0), d) : INF : null;
+    const suiteSum = (xs, d) => xs.length ? xs.every((x) => x !== INF) ? r2(xs.reduce((a, b) => a + b, 0), d) : INF : null;
     const row = {
       rank: "",
       entrant: e,
@@ -190,12 +283,18 @@ function aggregate(allRuns, spec, opts = {}) {
       runs: er.length,
       tasks: trs.length,
       pass_rate: r2(er.filter((r) => r.score.passed).length / er.length, 3),
-      suite_exp_cost_usd: suite(expC, 3),
-      suite_exp_min: suite(expM, 1),
+      suite_exp_cost_usd: suiteSum(expC, 3),
+      suite_exp_min: suiteSum(expM, 1),
       cost_coverage: `${costS.length}/${trs.length}`,
       complete: er.every((r) => r.score.complete),
       na_ratio: r2(mean(er.map((r) => r.score.na_ratio)) ?? 0, 3)
     };
+    const vi = vinfo.entrants[e] || {};
+    if (view === "simple") Object.assign(row, { n_min: vi.n_min, n_max: vi.n_max, star: vi.star, incident_retries: vi.incident_retries });
+    if (view === "full") {
+      dimsFull.stability = vi.stability ?? null;
+      Object.assign(row, { availability: vi.availability ?? null, consistency: vi.consistency ?? null, incidents: vi.incidents ?? 0 });
+    }
     const cc = cfg.composite;
     if (cc?.enabled && row.quality != null) row.composite = r2(cc.quality_weight * row.quality + cc.cost_weight * (dimsFull.cost ?? 0) + cc.speed_weight * (dimsFull.speed ?? 0));
     board.push(row);
@@ -230,7 +329,7 @@ function aggregate(allRuns, spec, opts = {}) {
     const allv = [...byE.values()].flat();
     const means = [...byE.values()].map((vs) => vs.reduce((a, b) => a + b, 0) / vs.length);
     const mu = allv.reduce((a, b) => a + b, 0) / allv.length;
-    const within = mean([...byE.values()].map(psd)) ?? 0;
+    const within = mean([...byE.values()].map(psd2)) ?? 0;
     const m = itemMeta.get(key);
     items.push({
       task: m.tk,
@@ -240,15 +339,15 @@ function aggregate(allRuns, spec, opts = {}) {
       method: m.method,
       desc: m.desc,
       mean: r2(mu, 3),
-      between_sd: r2(psd(means), 3),
+      between_sd: r2(psd2(means), 3),
       within_sd: r2(within, 3),
       n: allv.length,
-      flag: mu >= 0.95 ? "\u5929\u82B1\u677F" : mu <= 0.05 ? "\u5730\u677F" : means.length > 1 && psd(means) < 0.05 ? "\u533A\u5206\u5EA6\u4F4E" : "",
+      flag: mu >= 0.95 ? "\u5929\u82B1\u677F" : mu <= 0.05 ? "\u5730\u677F" : means.length > 1 && psd2(means) < 0.05 ? "\u533A\u5206\u5EA6\u4F4E" : "",
       by_entrant: Object.fromEntries([...byE.entries()].map(([en, vs]) => [en, r2(vs.reduce((a, b) => a + b, 0) / vs.length, 3)]))
     });
   }
   const uplift = [];
-  for (const t of spec.tasks.filter((t2) => Object.keys(t2.variants || {}).length)) {
+  for (const t of spec.tasks.filter((t2) => Object.keys(t2.variants || {}).length && suiteOf(t2) === suite)) {
     for (const e of entrants) {
       const a = taskRows.find((x) => x.entrant === e && x.task === t.id + "A");
       const c = taskRows.find((x) => x.entrant === e && x.task === t.id + "C");
@@ -282,7 +381,7 @@ function aggregate(allRuns, spec, opts = {}) {
     if (!sc.gate_pass || !sc.passed) failures.push({ entrant: r.entrant, task: r.tkey, run_id: r.run_id, total: sc.total, tags: [...new Set(tags)].join("|") || "\u80FD\u529B\u4E0D\u8DB3\uFF08\u672A\u8FBE\u6807\uFF09" });
   }
   const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0 };
-  for (const r of allRuns) {
+  for (const r of allRuns.filter((x) => view === "history" === !isV2(x))) {
     if (!r.graded || !r.score) {
       pending.ungraded++;
       continue;
@@ -291,7 +390,7 @@ function aggregate(allRuns, spec, opts = {}) {
     if ((r.usage?.missing || []).length) pending.usage_missing++;
     if (r.score.low_confidence) pending.low_confidence++;
   }
-  return { board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: (/* @__PURE__ */ new Date()).toISOString(), pending };
+  return { view, excluded: vinfo.excluded, board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: (/* @__PURE__ */ new Date()).toISOString(), pending };
 }
 
 // shared/activity.ts
@@ -348,7 +447,122 @@ var DELIVERABLES = {
       { path: "DECISIONS.md" }
     ]
   },
-  T08: { dir: "studyspot-legacy", kind: "repo", preview: "FIXES.md", note: "\u76F4\u63A5\u4FEE\u6539\u9884\u7F6E\u7684 studyspot-legacy/", files: [{ path: "FIXES.md", label: "FIXES.md \u4FEE\u590D\u8BB0\u5F55\uFF08\u65B0\u589E\uFF09" }, { path: "tests", dir: true, label: "tests/ \u56DE\u5F52\u6D4B\u8BD5" }] }
+  T08: { dir: "studyspot-legacy", kind: "repo", preview: "FIXES.md", note: "\u76F4\u63A5\u4FEE\u6539\u9884\u7F6E\u7684 studyspot-legacy/", files: [{ path: "FIXES.md", label: "FIXES.md \u4FEE\u590D\u8BB0\u5F55\uFF08\u65B0\u589E\uFF09" }, { path: "tests", dir: true, label: "tests/ \u56DE\u5F52\u6D4B\u8BD5" }] },
+  // ---------------- v2 愿望版（契约里的最小交付；其余自由发挥） ----------------
+  V01: { dir: "pelican", kind: "web", preview: "index.html", files: [{ path: "index.html", label: "\u5165\u53E3\u9875\u9762\uFF08window.__bench \u5951\u7EA6\uFF09" }] },
+  V02: { dir: "bicycle", kind: "web", preview: "index.html", files: [{ path: "index.html", label: "\u5165\u53E3\u9875\u9762\uFF08window.__bench \u5951\u7EA6\uFF09" }] },
+  V03: {
+    dir: "mc-sol-luna",
+    kind: "web",
+    preview: "index.html",
+    files: [
+      { path: "index.html", label: "\u5B9E\u65F6\u6E32\u67D3\u6210\u7247\uFF08window.FILM / window.__bench\uFF09" },
+      { path: "project.json" },
+      { path: "shot-list.json" },
+      { path: "audio-cue-sheet.csv" },
+      { path: "qc-report.md" },
+      { path: "delivery-manifest.json" },
+      { path: "keyframes", dir: true, label: "keyframes/ \u5173\u952E\u5E27" },
+      { path: "contact-sheet.jpg", optional: true, label: "contact-sheet.jpg\uFF08\u65E0\u6CD5\u622A\u56FE\u65F6\u5728 qc-report.md \u8BF4\u660E\uFF09" }
+    ]
+  },
+  V04: { dir: "aether9-site", kind: "web", preview: "index.html", files: [{ path: "index.html", label: "\u5165\u53E3\u9875\u9762\uFF08\u6784\u5EFA\u7ED3\u679C\u6216\u6E90\u6587\u4EF6\uFF0Cwindow.__bench \u5951\u7EA6\uFF09" }] },
+  V05: { dir: "mc-build", kind: "web", preview: "index.html", files: [{ path: "index.html", label: "\u5165\u53E3\u9875\u9762\uFF08window.__scene / window.__bench\uFF09" }] },
+  V06: { dir: "photoreal-building", kind: "web", preview: "index.html", files: [{ path: "index.html", label: "\u5165\u53E3\u9875\u9762\uFF08\u5B9E\u65F6\u6E32\u67D3\uFF0Cwindow.__bench\uFF09" }] },
+  V07: { dir: "tempo-promo", kind: "web", preview: "index.html", files: [{ path: "index.html", label: "\u53EF\u76F4\u63A5\u6253\u5F00\u7684\u6210\u7247\u9875\u9762\uFF08window.__hf\uFF09" }, { path: "*.mp4", any: [], optional: true, label: "\u5BFC\u51FA\u7684 MP4\uFF08\u53EF\u9009\uFF09" }] },
+  V08: { dir: "aether9-promo", kind: "video", preview: "final.mp4", files: [{ path: "final.mp4" }, { path: "subtitles.srt" }, { path: "script.md", label: "script.md \u65C1\u767D\u811A\u672C" }] },
+  // ---------------- v2 后端题族（契约里的最小交付） ----------------
+  B1: {
+    dir: "parking-quote",
+    kind: "api",
+    preview: "README.md",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "DECISIONS.md" },
+      { path: "lock", any: LOCKS, optional: true, label: "\u4F9D\u8D56\u6E05\u5355 / lock \u6587\u4EF6\uFF08\u6807\u51C6\u5E93\u5B9E\u73B0\u53EF\u4E0D\u63D0\u4F9B\uFF09" }
+    ]
+  },
+  B2: {
+    dir: "ledger",
+    kind: "api",
+    preview: "README.md",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "DECISIONS.md" },
+      { path: "lock", any: LOCKS, optional: true, label: "\u4F9D\u8D56\u6E05\u5355 / lock \u6587\u4EF6\uFF08\u6807\u51C6\u5E93\u5B9E\u73B0\u53EF\u4E0D\u63D0\u4F9B\uFF09" }
+    ]
+  },
+  B3: {
+    dir: "job-queue",
+    kind: "api",
+    preview: "README.md",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "DECISIONS.md" },
+      { path: "lock", any: LOCKS, optional: true, label: "\u4F9D\u8D56\u6E05\u5355 / lock \u6587\u4EF6\uFF08\u6807\u51C6\u5E93\u5B9E\u73B0\u53EF\u4E0D\u63D0\u4F9B\uFF09" }
+    ]
+  },
+  B4: {
+    dir: "blob-http",
+    kind: "api",
+    preview: "README.md",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "DECISIONS.md" },
+      { path: "lock", any: LOCKS, optional: true, label: "\u4F9D\u8D56\u6E05\u5355 / lock \u6587\u4EF6\uFF08\u6807\u51C6\u5E93\u5B9E\u73B0\u53EF\u4E0D\u63D0\u4F9B\uFF09" }
+    ]
+  },
+  B5: {
+    dir: "inventory-legacy",
+    kind: "repo",
+    preview: "FIXES.md",
+    note: "\u76F4\u63A5\u4FEE\u6539\u9884\u7F6E\u7684 inventory-legacy/",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "FIXES.md", label: "FIXES.md \u4FEE\u590D\u8BB0\u5F55\uFF08\u65B0\u589E\uFF09" },
+      { path: "tests", dir: true, label: "tests/ \u56DE\u5F52\u6D4B\u8BD5" }
+    ]
+  },
+  B6: {
+    dir: "teamnotes",
+    kind: "repo",
+    preview: "SECURITY-FIXES.md",
+    note: "\u76F4\u63A5\u4FEE\u6539\u9884\u7F6E\u7684 teamnotes/",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "SECURITY-FIXES.md", label: "SECURITY-FIXES.md \u5BA1\u8BA1\u4E0E\u52A0\u56FA\u8BB0\u5F55\uFF08\u65B0\u589E\uFF09" },
+      { path: "tests", dir: true, label: "tests/ \u5B89\u5168\u56DE\u5F52\u6D4B\u8BD5" }
+    ]
+  },
+  B7: {
+    dir: "reportdesk",
+    kind: "repo",
+    preview: "PERF-REPORT.md",
+    note: "\u76F4\u63A5\u4FEE\u6539\u9884\u7F6E\u7684 reportdesk/",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "PERF-REPORT.md", label: "PERF-REPORT.md \u6027\u80FD\u5206\u6790\uFF08\u65B0\u589E\uFF09" },
+      { path: "tests", dir: true, label: "tests/ \u6570\u5B57\u4E0D\u53D8\u7684\u56DE\u5F52\u6D4B\u8BD5" }
+    ]
+  },
+  B8: {
+    dir: "paydesk",
+    kind: "api",
+    preview: "README.md",
+    files: [
+      { path: "bench.json", label: "bench.json \u542F\u52A8\u7EA6\u5B9A" },
+      { path: "README.md" },
+      { path: "DECISIONS.md" },
+      { path: "lock", any: LOCKS, optional: true, label: "\u4F9D\u8D56\u6E05\u5355 / lock \u6587\u4EF6\uFF08\u6807\u51C6\u5E93\u5B9E\u73B0\u53EF\u4E0D\u63D0\u4F9B\uFF09" }
+    ]
+  }
 };
 var deliverableFor = (task, fallbackDir) => DELIVERABLES[task] || { dir: fallbackDir || "", kind: "web", files: [], preview: "index.html" };
 function evalDeliverable(d, exists, list) {
@@ -388,9 +602,14 @@ function runHeader(h) {
   const dir = d.dir || h.deliverableDir;
   const tag = `${h.taskId}${h.variant || ""}`;
   const L = [];
+  const v2 = h.suite === "v2";
   L.push(`# \u8FD0\u884C\u7EA6\u5B9A\uFF08${h.bench} \xB7 ${tag}${h.runIndex ? ` \xB7 \u7B2C ${h.runIndex} \u6B21\u8FD0\u884C` : ""}\uFF09`);
   L.push("");
   L.push("\u5F00\u59CB\u524D\u8BF7\u5B8C\u6574\u9605\u8BFB\u672C\u8282\uFF0C\u5B83\u4E0E\u4E0B\u9762\u7684\u9898\u76EE\u539F\u6587\u540C\u7B49\u91CD\u8981\u3002");
+  if (v2) {
+    L.push("");
+    L.push("\u4E0B\u9762\u7684\u9898\u76EE\u5206\u300C\u5951\u7EA6\u300D\u548C\u300C\u613F\u671B\u300D\u4E24\u90E8\u5206\uFF1A**\u5951\u7EA6**\u662F\u5FC5\u987B\u6EE1\u8DB3\u3001\u4F1A\u88AB\u811A\u672C\u68C0\u67E5\u7684\u6700\u5C0F\u4EA4\u4ED8\u7EA6\u5B9A\uFF1B**\u613F\u671B**\u662F\u6211\u60F3\u770B\u5230\u7684\u6837\u5B50\u2014\u2014\u7528\u4EC0\u4E48\u624B\u6BB5\u3001\u505A\u5230\u591A\u590D\u6742\u3001\u6709\u54EA\u4E9B\u989D\u5916\u8BBE\u8BA1\uFF0C\u90FD\u7531\u4F60\u81EA\u5DF1\u51B3\u5B9A\uFF0C\u6211\u4E0D\u9650\u5236\u4F60\u7684\u80FD\u529B\uFF0C\u4E5F\u4E0D\u4F1A\u66FF\u4F60\u5217\u6E05\u5355\u3002");
+  }
   L.push("");
   L.push(`1. **\u5DE5\u4F5C\u76EE\u5F55**\uFF1A${h.workspace ? `\`${h.workspace}\`` : "\uFF08\u590D\u5236\u65F6\u7531\u5DE5\u4F5C\u53F0\u521B\u5EFA\u5E76\u586B\u5165\u7EDD\u5BF9\u8DEF\u5F84\uFF09"}\u3002\u53EA\u5728\u8FD9\u4E2A\u76EE\u5F55\u91CC\u521B\u5EFA\u548C\u4FEE\u6539\u6587\u4EF6\uFF0C\u4E0D\u8981\u8BFB\u53D6\u6216\u6539\u52A8\u76EE\u5F55\u4E4B\u5916\u7684\u4EFB\u4F55\u5185\u5BB9\u3002`);
   if (d.kind === "repo") L.push(`2. **\u4EA4\u4ED8\u4F4D\u7F6E**\uFF1A\u76F4\u63A5\u4FEE\u6539\u5DE5\u4F5C\u76EE\u5F55\u4E2D\u5DF2\u6709\u7684 \`${dir}/\`\uFF08\u4E0D\u8981\u65B0\u5EFA\u526F\u672C\uFF0C\u4E0D\u8981\u91CD\u5199\u6574\u4E2A\u9879\u76EE\uFF09\u3002`);
@@ -402,9 +621,17 @@ function runHeader(h) {
     for (const f2 of req) L.push(`   - \`${dir}/${f2.any ? "" : f2.path}${f2.dir ? "/" : ""}\`${f2.any ? f2.label || "" : f2.label && f2.label !== f2.path ? ` \u2014\u2014 ${f2.label}` : ""}`);
     for (const f2 of opt) L.push(`   - \uFF08\u53EF\u9009\uFF09${f2.label || f2.path}`);
   }
-  L.push(`4. **\u7ED3\u675F\u65B9\u5F0F**\uFF1A\u5168\u90E8\u5B8C\u6210\u540E\uFF0C\u628A\u4F60\u7ED9\u6211\u7684\u6700\u540E\u4E00\u6761\u603B\u7ED3\u7684\u539F\u6587\uFF0C\u540C\u65F6\u4FDD\u5B58\u4E3A\u5DE5\u4F5C\u76EE\u5F55\u4E0B\u7684 \`${FINAL_FILE}\`\uFF08\u4E0E\u56DE\u590D\u5185\u5BB9\u4E00\u81F4\uFF0C\u53EA\u5199\u771F\u5B9E\u5B58\u5728\u7684\u6587\u4EF6\uFF09\u3002\u8FD9\u4E2A\u6587\u4EF6\u51FA\u73B0\u5373\u89C6\u4E3A\u672C\u6B21\u8FD0\u884C\u7ED3\u675F\u3002`);
-  if (h.timeLimit) L.push(`5. **\u65F6\u95F4\u4E0A\u9650**\uFF1A${h.timeLimit} \u5206\u949F\u3002`);
+  if (v2) {
+    L.push(`4. **\u7ED3\u675F\u65B9\u5F0F**\uFF1A\u5168\u90E8\u5B8C\u6210\u540E\uFF0C\u5728\u5DE5\u4F5C\u76EE\u5F55\u4E0B\u5199\u4E00\u4EFD \`${FINAL_FILE}\`\uFF1A\u5185\u5BB9\u3001\u957F\u5EA6\u548C\u683C\u5F0F\u90FD\u4E0D\u9650\uFF0C\u53EF\u4EE5\u8BF4\u8BF4\u4F60\u505A\u4E86\u4EC0\u4E48\u3001\u600E\u4E48\u8FD0\u884C\u3001\u6709\u54EA\u4E9B\u6CA1\u505A\u5B8C\u3001\u6700\u60F3\u8BA9\u6211\u770B\u7684\u5730\u65B9\uFF1B\u53EA\u5199\u771F\u5B9E\u5B58\u5728\u7684\u4E1C\u897F\u3002\u8FD9\u4E2A\u6587\u4EF6\u51FA\u73B0\u5373\u89C6\u4E3A\u672C\u6B21\u8FD0\u884C\u7ED3\u675F\u3002\u4E0D\u9700\u8981\u5728\u804A\u5929\u91CC\u8D34\u51FA\u4EE3\u7801\u2014\u2014\u5DE5\u4F5C\u76EE\u5F55\u91CC\u7684\u6587\u4EF6\u5C31\u662F\u4EA4\u4ED8\u3002`);
+    if (h.timeLimit) L.push(`5. **\u53C2\u8003\u65F6\u957F**\uFF1A${h.timeLimit} \u5206\u949F\uFF08\u8F6F\u65F6\u9650\uFF09\uFF1A\u8D85\u8FC7\u4E0D\u4F1A\u88AB\u4E2D\u65AD\uFF0C\u4E5F\u4E0D\u6263\u8D28\u91CF\u5206\uFF0C\u53EA\u8BB0\u5F55\u7528\u65F6\u3002\u8BF7\u4E0D\u8981\u4E3A\u8D76\u65F6\u95F4\u964D\u4F4E\u5B8C\u6210\u5EA6\u3002`);
+  } else {
+    L.push(`4. **\u7ED3\u675F\u65B9\u5F0F**\uFF1A\u5168\u90E8\u5B8C\u6210\u540E\uFF0C\u628A\u4F60\u7ED9\u6211\u7684\u6700\u540E\u4E00\u6761\u603B\u7ED3\u7684\u539F\u6587\uFF0C\u540C\u65F6\u4FDD\u5B58\u4E3A\u5DE5\u4F5C\u76EE\u5F55\u4E0B\u7684 \`${FINAL_FILE}\`\uFF08\u4E0E\u56DE\u590D\u5185\u5BB9\u4E00\u81F4\uFF0C\u53EA\u5199\u771F\u5B9E\u5B58\u5728\u7684\u6587\u4EF6\uFF09\u3002\u8FD9\u4E2A\u6587\u4EF6\u51FA\u73B0\u5373\u89C6\u4E3A\u672C\u6B21\u8FD0\u884C\u7ED3\u675F\u3002`);
+    if (h.timeLimit) L.push(`5. **\u65F6\u95F4\u4E0A\u9650**\uFF1A${h.timeLimit} \u5206\u949F\u3002`);
+  }
   if (h.materials.length) L.push(`${h.timeLimit ? 6 : 5}. **\u9884\u7F6E\u7D20\u6750**\uFF1A\u5DF2\u653E\u5728\u5DE5\u4F5C\u76EE\u5F55\u4E2D\uFF08${h.materials.map((m) => m.replace(/^materials\//, "")).join("\uFF1B")}\uFF09\uFF0C\u76F4\u63A5\u4F7F\u7528\uFF0C\u4E0D\u8981\u91CD\u65B0\u4E0B\u8F7D\u6216\u6539\u540D\u3002`);
+  if (v2) {
+    L.push(`${(h.timeLimit ? 5 : 4) + (h.materials.length ? 2 : 1)}. **\u81EA\u68C0**\uFF1A\u4F60\u53EF\u4EE5\u81EA\u7531\u4F7F\u7528\u6240\u5728\u73AF\u5883\u63D0\u4F9B\u7684\u4E00\u5207\u80FD\u529B\uFF08\u7EC8\u7AEF\u3001\u6D4F\u89C8\u5668\u3001\u622A\u56FE\u3001\u641C\u7D22\u2026\u2026\uFF09\u6765\u9A8C\u8BC1\u81EA\u5DF1\u7684\u4F5C\u54C1\u3002\u8BC4\u6D4B\u4F1A\u5728\u56FA\u5B9A\u7684\u673A\u5668\u4E0A\u7528\u771F\u5B9E\u6D4F\u89C8\u5668\u9010\u9879\u70B9\u51FB\u4F60\u7684\u4F5C\u54C1\uFF0C\u5EFA\u8BAE\u4F60\u81EA\u5DF1\u5148\u5B8C\u6574\u70B9\u4E00\u904D\u3002`);
+  }
   L.push("");
   L.push("---");
   L.push("");
@@ -1131,6 +1358,7 @@ function killTree(pid) {
 }
 
 // server/jobs.ts
+var isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 var Jobs = class {
   constructor(hub) {
     this.hub = hub;
@@ -1238,8 +1466,14 @@ var Jobs = class {
         try {
           j.result = await j.spec.after(code, j.out);
         } catch (e) {
-          j.error = e.message;
-          this.line(j, `[after] ${j.error}`);
+          const msg = e.message;
+          if (j.spec.afterFatal) {
+            j.error = msg;
+            this.line(j, `[after] ${msg}`);
+          } else {
+            this.line(j, `[after] \u6536\u5C3E\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u672C\u6B21\u7ED3\u679C\uFF09\uFF1A${msg}`);
+            j.result = { ...isPlainObject(j.result) ? j.result : {}, warning: `\u6536\u5C3E\u6B65\u9AA4\u5931\u8D25\uFF1A${msg}`, after_failed: true };
+          }
         }
       }
       this.finish(j, cancelled ? "cancelled" : code === 0 && !j.error ? "done" : "failed", code);
@@ -2066,6 +2300,8 @@ var StoreFile = class {
         ended_at: m.ended_at ?? null,
         timed_out: !!m.timed_out,
         failure_tag: m.failure_tag ?? null,
+        benchmark_version: m.benchmark_version ?? null,
+        incident: m.incident ?? null,
         graded: !!row.graded,
         score: row.score || null,
         usage: row.usage || {},
@@ -2556,12 +2792,13 @@ async function startServer(over = {}) {
     }
     return spec;
   }
-  let aggCache = null;
-  async function getAgg() {
+  const aggCache = /* @__PURE__ */ new Map();
+  async function getAgg(view = "history") {
     const key = store.data.updated_at + ":" + store.data.runs.length;
-    if (aggCache?.key === key) return aggCache.agg;
-    const agg = aggregate(store.data.runs, await loadSpec());
-    aggCache = { key, agg };
+    const hit = aggCache.get(view);
+    if (hit?.key === key) return hit.agg;
+    const agg = aggregate(store.data.runs, await loadSpec(), { view });
+    aggCache.set(view, { key, agg });
     return agg;
   }
   let syncing = null;
@@ -2589,7 +2826,7 @@ async function startServer(over = {}) {
     store.save();
     hub.emit({ type: "store", updated_at: store.data.updated_at });
   };
-  const graderJob = (kind, title, args, after, subject) => jobs.submit({ kind, title, cmd: py(), args: [bench, "--data", cfg.benchData, ...args], cwd: cfg.graderDir, after, subject });
+  const graderJob = (kind, title, args, after, subject, opts = {}) => jobs.submit({ kind, title, cmd: py(), args: [bench, "--data", cfg.benchData, ...args], cwd: cfg.graderDir, after, subject, afterFatal: opts.afterFatal });
   function gradeRuns(runDirs, opts = {}) {
     const args = ["grade", ...runDirs === "all" ? ["--all"] : runDirs];
     if (opts.fast) args.push("--fast");
@@ -2633,7 +2870,7 @@ async function startServer(over = {}) {
       if (opts.grade) gradeRuns([import_node_path8.default.join(cfg.benchData, "runs", rid)], { fast: opts.fast, refs: [ref] });
       else await sync();
       return { run_id: rid };
-    }, { refs: [ref] });
+    }, { refs: [ref] }, { afterFatal: true });
   }
   const openFolder = (p) => {
     const cmd = process.platform === "win32" ? "explorer" : process.platform === "darwin" ? "open" : "xdg-open";
@@ -2657,7 +2894,8 @@ async function startServer(over = {}) {
     deliverableDir: t.deliverable,
     timeLimit: t.time_limit,
     materials: t.materials,
-    condition: t.condition
+    condition: t.condition,
+    suite: t.suite === "v2" ? "v2" : "v1"
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
   const claimable = (vendor, model, tkey) => ws.listRuns().find((w) => w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
   async function promptFor(q) {
@@ -2672,7 +2910,7 @@ async function startServer(over = {}) {
     return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
   }
   const buildScript = import_node_path8.default.join(cfg.graderDir, "scripts", "build_materials.py");
-  const GENERATED_TASKS = /* @__PURE__ */ new Set(["T03", "T04"]);
+  const GENERATED_TASKS = /* @__PURE__ */ new Set(["T03", "T04", "V07", "V08"]);
   function missingMaterials(t) {
     const dir = taskDirOf(t);
     const out = [];
@@ -2944,7 +3182,11 @@ async function startServer(over = {}) {
   });
   R.get("/api/spec", async (req) => loadSpec(req.query.get("refresh") === "1"));
   R.get("/api/store", () => store.data);
-  R.get("/api/aggregate", () => getAgg());
+  R.get("/api/aggregate", (req) => {
+    const v = req.query.get("view") || "history";
+    if (!["history", "simple", "full"].includes(v)) throw new HttpError(400, `\u672A\u77E5\u699C\u5355\u89C6\u56FE\uFF1A${v}\uFF08\u53EF\u9009 history / simple / full\uFF09`);
+    return getAgg(v);
+  });
   R.post("/api/sync", () => sync());
   R.get("/api/models", () => store.data.models);
   R.post("/api/models", async (req) => {
@@ -3271,6 +3513,18 @@ async function startServer(over = {}) {
       }
       case "review":
         return graderJob("review", "\u751F\u6210\u8BC4\u5206\u5305\uFF08\u4EBA\u5DE5/agent/\u7528\u91CF\uFF09", ["review", ...b.task ? ["--task", b.task] : []], async () => sync());
+      case "ingest": {
+        if (b.what === "exploration") {
+          const dir = b.file ? import_node_path8.default.resolve(cfg.root, String(b.file)) : null;
+          return graderJob("ingest", "\u5BFC\u5165 Agent \u63A2\u7D22\u6D4B\u8BD5\u7ED3\u679C", ["ingest-exploration", ...dir ? ["--dir", dir] : []], async () => sync());
+        }
+        if (b.what === "sample") return graderJob("ingest", "\u62BD\u53D6 Agent \u6253\u5206\u7684\u4EBA\u5DE5\u590D\u6838\u6837\u672C", ["agent-sample", ...b.rate ? ["--rate", String(b.rate)] : []], async () => sync());
+        if (b.what === "calibration") return graderJob("ingest", "Agent\u2194\u4EBA\u5DE5\u4E00\u81F4\u6027\u6821\u51C6", ["agent-calibration"], async () => null);
+        const what = b.what === "pairwise" ? "ingest-pairwise" : "ingest-scores";
+        const file = import_node_path8.default.resolve(cfg.root, String(b.file || ""));
+        if (!b.file || !import_node_fs9.default.existsSync(file)) throw new HttpError(404, `\u627E\u4E0D\u5230\u8981\u5BFC\u5165\u7684\u6587\u4EF6\uFF1A${b.file || "(\u672A\u6307\u5B9A)"}`);
+        return graderJob("ingest", `\u5BFC\u5165\u8BC4\u5206\uFF1A${import_node_path8.default.basename(file)}`, [what, file, ...b.by ? ["--by", String(b.by)] : []], async () => sync());
+      }
       case "export": {
         const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace(/[:T]/g, "").replace(/^(\d{8})(\d{4})$/, "$1-$2");
         const out = import_node_path8.default.join(cfg.reportsDir, `${stamp}-${(b.label || "leaderboard").replace(/[^\w.-]+/g, "-")}`);
@@ -3279,7 +3533,7 @@ async function startServer(over = {}) {
             import_node_fs9.default.mkdirSync(out, { recursive: true });
             import_node_fs9.default.copyFileSync(cfg.storeFile, import_node_path8.default.join(out, "bench-store.snapshot.json"));
             return { dir: toRel(cfg.root, out) };
-          });
+          }, void 0, { afterFatal: true });
           return null;
         });
       }

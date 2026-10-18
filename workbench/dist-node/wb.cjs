@@ -181,7 +181,7 @@ Skills    wb skills sync   \u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF
 \u56DE\u6536\u7AD9    wb run stop <ref> [--reason \u2026]   \u5F7B\u5E95\u505C\u6B62\u5E76\u4F5C\u5E9F\uFF08\u5173\u6389\u8BE5\u76EE\u5F55\u7684\u5F00\u53D1\u670D\u52A1\u5668 / \u9884\u89C8\uFF1B\u5916\u90E8 Agent \u4F1A\u8BDD\u9700\u5728 harness \u91CC\u624B\u52A8\u505C\uFF09
           wb run discard <ref|run_id> [--reason \u2026] | wb run restore <ref|run:run_id> | wb trash
           wb trash purge <id>\u2026 --yes | wb trash purge --all --yes   \u6C38\u4E45\u5220\u9664\uFF08\u4EC5\u56DE\u6536\u7AD9\u5185\u6761\u76EE\uFF0C\u65E0\u6CD5\u6062\u590D\uFF09
-\u8BC4\u5206      wb grade [run_id\u2026|--all] [--task T05] [--fast] [--skip-graded] | wb review [--task T05]
+\u8BC4\u5206      wb grade [run_id\u2026|--all] [--task T05] [--fast] [--skip-graded] | wb review [--task T05] | wb ingest <pairwise|scores> <\u6587\u4EF6> | wb ingest <exploration|sample|calibration>
           wb pending [--method agent|human] [--task T05] | wb score <run_id> <item_id> <0-3> --note "\u8BC1\u636E" [--by agent]
           wb show <run_id> | wb sync
 \u7ED3\u679C      wb board | wb compare <\u5173\u952E\u8BCD> <\u5173\u952E\u8BCD>\u2026 | wb report <\u4F9B\u5E94\u5546>/<\u6A21\u578B> | wb export [--formats csv,md,xlsx,png,html]
@@ -311,6 +311,16 @@ Python ${s.python || "\u672A\u627E\u5230"}`);
       await maybeWait(await post("/api/jobs", { kind: "review", task: sub || str("task") }));
       return;
     }
+    case "ingest": {
+      const file = rest[0] || str("file");
+      if (["exploration", "sample", "calibration"].includes(sub || "")) {
+        await maybeWait(await post("/api/jobs", { kind: "ingest", what: sub, file, rate: str("rate") }));
+        return;
+      }
+      if (!["pairwise", "scores"].includes(sub || "") || !file) die("\u7528\u6CD5\uFF1Awb ingest <pairwise|scores> <\u6587\u4EF6> | wb ingest <exploration|sample|calibration>   \uFF08pairwise.csv \u6765\u81EA\u8BC4\u5206\u9875\u7684\u201C\u5BFC\u51FA pairwise.csv\u201D\uFF09");
+      await maybeWait(await post("/api/jobs", { kind: "ingest", what: sub, file, by: str("by") }));
+      return;
+    }
     case "export": {
       const j = await post("/api/jobs", { kind: "export", formats: str("formats"), label: str("label") });
       await maybeWait(j);
@@ -373,10 +383,13 @@ Python ${s.python || "\u672A\u627E\u5230"}`);
       });
     }
     case "board": {
-      const agg = await get("/api/aggregate");
+      const view = str("view") || "history";
+      const agg = await get(`/api/aggregate?view=${encodeURIComponent(view)}`);
       return out(agg.board, () => {
-        if (!agg.board.length) return console.log("\u8FD8\u6CA1\u6709\u5DF2\u8BC4\u5206\u7684\u8FD0\u884C\u3002");
-        table([["\u540D\u6B21", "\u53C2\u8D5B\u8005", "\u8D28\u91CF", "95% CI", "3D", "\u52A8\u753B", "UI", "\u540E\u7AEF", "\u5DE5\u7A0B", "\u9700\u6C42", "Agent", "\u6210\u672C", "\u901F\u5EA6", "\u8FBE\u6807\u7387", "\u8FD0\u884C", "\u5B8C\u6574"], ...agg.board.map((b) => [b.rank, b.entrant, fmt(b.quality, 2), `${fmt(b.ci_low)}\u2013${fmt(b.ci_high)}`, ...["3d", "anim", "ui", "be", "eng", "req", "agent", "cost", "speed"].map((d) => fmt(b.dims[d], 0)), fmt(b.pass_rate * 100, 0) + "%", b.runs, b.complete ? "\u662F" : "\u5426"])]);
+        for (const x of agg.excluded || []) console.log(`\u672A\u5165\u699C ${x.entrant}\uFF1A${x.missing.join("\u3001")}`);
+        if (!agg.board.length) return console.log(view === "history" ? "\u8FD8\u6CA1\u6709\u5DF2\u8BC4\u5206\u7684\u8FD0\u884C\u3002" : `v2 ${view === "full" ? "\u5B8C\u6574\u7248" : "\u7B80\u5316\u7248"}\u8FD8\u6CA1\u6709\u53EF\u5165\u699C\u7684\u8FD0\u884C\u3002`);
+        const extraH = view === "simple" ? ["n"] : view === "full" ? ["\u7A33\u5B9A\u6027", "\u53EF\u7528\u7387"] : [];
+        table([["\u540D\u6B21", "\u53C2\u8D5B\u8005", "\u8D28\u91CF", "95% CI", "3D", "\u52A8\u753B", "UI", "\u540E\u7AEF", "\u5DE5\u7A0B", "\u9700\u6C42", "Agent", "\u6210\u672C", "\u901F\u5EA6", ...extraH, "\u8FBE\u6807\u7387", "\u8FD0\u884C", "\u5B8C\u6574"], ...agg.board.map((b) => [b.rank + (view === "simple" && b.star ? "*" : ""), b.entrant, fmt(b.quality, 2), `${fmt(b.ci_low)}\u2013${fmt(b.ci_high)}`, ...["3d", "anim", "ui", "be", "eng", "req", "agent", "cost", "speed"].map((d) => fmt(b.dims[d], 0)), ...view === "simple" ? [b.n_min === b.n_max ? String(b.n_max) : `${b.n_min}\u2013${b.n_max}`] : view === "full" ? [fmt(b.dims.stability, 0), fmt(b.availability, 0)] : [], fmt(b.pass_rate * 100, 0) + "%", b.runs, b.complete ? "\u662F" : "\u5426"])]);
       });
     }
     case "compare": {
