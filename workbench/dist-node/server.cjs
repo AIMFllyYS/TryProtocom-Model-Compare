@@ -2496,6 +2496,35 @@ var isDir = (p) => {
   }
 };
 var RUN_DIR = /^r(\d+)$/;
+var VIDEO_NAME = /\.(mp4|webm|mov|m4v|mkv)$/i;
+function findVideo(root) {
+  const hits = [];
+  const walk = (dir, depth) => {
+    if (depth > 2) return;
+    let es = [];
+    try {
+      es = import_node_fs8.default.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of es) {
+      if (e.name === "node_modules" || e.name === ".git" || e.name === "assets") continue;
+      const fp = import_node_path7.default.join(dir, e.name);
+      if (e.isDirectory()) walk(fp, depth + 1);
+      else if (VIDEO_NAME.test(e.name)) hits.push(fp);
+    }
+  };
+  walk(root, 0);
+  hits.sort((a, b) => rankVideo(b) - rankVideo(a) || a.length - b.length);
+  return hits[0] || null;
+}
+function rankVideo(file) {
+  const name = import_node_path7.default.basename(file).toLowerCase();
+  if (name === "final.mp4") return 5;
+  if (/^final\./.test(name) && !/raw/.test(name)) return 4;
+  if (/raw/.test(name)) return 1;
+  return 2;
+}
 var Workspaces = class {
   constructor(modelDir) {
     this.modelDir = modelDir;
@@ -2602,7 +2631,8 @@ var Workspaces = class {
     run.has_deliverable = !!run.deliverable_dir && isDir(droot);
     const d = deliverableFor(run.task, run.deliverable_dir);
     const pv = d.preview && run.has_deliverable ? import_node_path7.default.join(droot, d.preview) : null;
-    run.entry = pv && import_node_fs8.default.existsSync(pv) ? import_node_path7.default.relative(f2.ws, pv).split(import_node_path7.default.sep).join("/") : this.detectEntry(run.has_deliverable ? droot : f2.ws, f2.ws);
+    const root = run.has_deliverable ? droot : f2.ws;
+    run.entry = pv && import_node_fs8.default.existsSync(pv) ? import_node_path7.default.relative(f2.ws, pv).split(import_node_path7.default.sep).join("/") : this.detectEntry(root, f2.ws, d.kind === "video");
     run.detect = this.detect(f2.ws, d, run.deliverable_dir);
     return run;
   }
@@ -2672,17 +2702,28 @@ var Workspaces = class {
     }
     return changed;
   }
-  /** 与 benchlib/review._entry 一致的入口优先级，另外识别视频 */
-  detectEntry(root, ws) {
+  /** 页面题先找 HTML。视频题先找成片，工程里的 index.html 不作为入口。 */
+  detectEntry(root, ws, preferVideo = false) {
     if (!isDir(root)) return null;
+    const rel = (p) => import_node_path7.default.relative(ws, p).split(import_node_path7.default.sep).join("/");
+    if (preferVideo) {
+      for (const c of ["final.mp4", "renders/final.mp4", "render/final.mp4", "renders/master.mp4"]) {
+        const p = import_node_path7.default.join(root, c);
+        if (import_node_fs8.default.existsSync(p)) return rel(p);
+      }
+      const found = findVideo(root);
+      if (found) return rel(found);
+    }
     for (const c of ["dist/index.html", "index.html", "final.mp4", "renders/final.mp4", "FIXES.md", "README.md"]) {
       const p = import_node_path7.default.join(root, c);
-      if (import_node_fs8.default.existsSync(p)) return import_node_path7.default.relative(ws, p).split(import_node_path7.default.sep).join("/");
+      if (import_node_fs8.default.existsSync(p)) return rel(p);
     }
-    try {
-      const v = import_node_fs8.default.readdirSync(root).find((x) => /\.(mp4|webm|mov)$/i.test(x));
-      if (v) return import_node_path7.default.relative(ws, import_node_path7.default.join(root, v)).split(import_node_path7.default.sep).join("/");
-    } catch {
+    if (!preferVideo) {
+      try {
+        const v = import_node_fs8.default.readdirSync(root).find((x) => /\.(mp4|webm|mov)$/i.test(x));
+        if (v) return rel(import_node_path7.default.join(root, v));
+      } catch {
+      }
     }
     return null;
   }

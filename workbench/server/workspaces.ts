@@ -26,6 +26,35 @@ const writeJson = (p: string, d: unknown) => { fs.mkdirSync(path.dirname(p), { r
 const isDir = (p: string) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
 const RUN_DIR = /^r(\d+)$/;
 
+const VIDEO_NAME = /\.(mp4|webm|mov|m4v|mkv)$/i;
+
+/** 视频题在交付目录里找成片：final.mp4 优先，跳过 raw、素材和依赖目录。 */
+function findVideo(root: string): string | null {
+  const hits: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > 2) return;
+    let es: fs.Dirent[] = [];
+    try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of es) {
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'assets') continue;
+      const fp = path.join(dir, e.name);
+      if (e.isDirectory()) walk(fp, depth + 1);
+      else if (VIDEO_NAME.test(e.name)) hits.push(fp);
+    }
+  };
+  walk(root, 0);
+  hits.sort((a, b) => rankVideo(b) - rankVideo(a) || a.length - b.length);
+  return hits[0] || null;
+}
+
+function rankVideo(file: string): number {
+  const name = path.basename(file).toLowerCase();
+  if (name === 'final.mp4') return 5;
+  if (/^final\./.test(name) && !/raw/.test(name)) return 4;
+  if (/raw/.test(name)) return 1;
+  return 2;
+}
+
 export class Workspaces {
   constructor(public modelDir: string) { fs.mkdirSync(modelDir, { recursive: true }); }
 
@@ -117,7 +146,8 @@ export class Workspaces {
     run.has_deliverable = !!run.deliverable_dir && isDir(droot);
     const d = deliverableFor(run.task, run.deliverable_dir);
     const pv = d.preview && run.has_deliverable ? path.join(droot, d.preview) : null;
-    run.entry = pv && fs.existsSync(pv) ? path.relative(f.ws, pv).split(path.sep).join('/') : this.detectEntry(run.has_deliverable ? droot : f.ws, f.ws);
+    const root = run.has_deliverable ? droot : f.ws;
+    run.entry = pv && fs.existsSync(pv) ? path.relative(f.ws, pv).split(path.sep).join('/') : this.detectEntry(root, f.ws, d.kind === 'video');
     run.detect = this.detect(f.ws, d, run.deliverable_dir);
     return run;
   }
@@ -166,17 +196,28 @@ export class Workspaces {
     return changed;
   }
 
-  /** 与 benchlib/review._entry 一致的入口优先级，另外识别视频 */
-  detectEntry(root: string, ws: string): string | null {
+  /** 页面题先找 HTML。视频题先找成片，工程里的 index.html 不作为入口。 */
+  detectEntry(root: string, ws: string, preferVideo = false): string | null {
     if (!isDir(root)) return null;
+    const rel = (p: string) => path.relative(ws, p).split(path.sep).join('/');
+    if (preferVideo) {
+      for (const c of ['final.mp4', 'renders/final.mp4', 'render/final.mp4', 'renders/master.mp4']) {
+        const p = path.join(root, c);
+        if (fs.existsSync(p)) return rel(p);
+      }
+      const found = findVideo(root);
+      if (found) return rel(found);
+    }
     for (const c of ['dist/index.html', 'index.html', 'final.mp4', 'renders/final.mp4', 'FIXES.md', 'README.md']) {
       const p = path.join(root, c);
-      if (fs.existsSync(p)) return path.relative(ws, p).split(path.sep).join('/');
+      if (fs.existsSync(p)) return rel(p);
     }
-    try {
-      const v = fs.readdirSync(root).find((x) => /\.(mp4|webm|mov)$/i.test(x));
-      if (v) return path.relative(ws, path.join(root, v)).split(path.sep).join('/');
-    } catch { /* ignore */ }
+    if (!preferVideo) {
+      try {
+        const v = fs.readdirSync(root).find((x) => /\.(mp4|webm|mov)$/i.test(x));
+        if (v) return rel(path.join(root, v));
+      } catch { /* ignore */ }
+    }
     return null;
   }
 

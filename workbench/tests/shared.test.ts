@@ -30,11 +30,14 @@ test('产物目录：全部题目顺序、变体分行、工作区关联去重�
   assert.deepEqual(artifactChoices(ws, runs).map((e) => e.key), ['ws:V/M/T01/r1', 'ws:V/M/T02/r1', 'run:orphan']);
 });
 
-test('预览按交付类型打开：网页题忽略评审视频，视频题打开成片', () => {
+test('预览按题目类型打开：视频题播成片，页面题打开 HTML', () => {
   const review = { review_video: 'bench-data/runs/x/review.mp4', capture_orbit: 'bench-data/runs/x/orbit.webm' };
   assert.deepEqual(choosePreview({ task: 'V01', ref: 'OpenAI/M/V01/r1', entry: 'pelican/index.html', artifacts: review }), { kind: 'static', body: { ref: 'OpenAI/M/V01/r1', entry: 'pelican/index.html' } });
   assert.deepEqual(choosePreview({ task: 'T02', ref: 'OpenAI/M/T02/r1', entry: 'mc-sol-luna/index.html', artifacts: review }), { kind: 'static', body: { ref: 'OpenAI/M/T02/r1', entry: 'mc-sol-luna/index.html' } });
-  assert.deepEqual(choosePreview({ task: 'V08', ref: 'OpenAI/M/V08/r1', entry: 'aether9-promo/final.mp4', artifacts: review }), { kind: 'video', path: 'model/OpenAI/M/V08/r1/aether9-promo/final.mp4' });
+  assert.deepEqual(choosePreview({ task: 'V07', ref: 'OpenAI/M/V07A/r1', entry: 'tempo-promo/tempo-promo.mp4', deliverableDir: 'tempo-promo', artifacts: review }), { kind: 'static', body: { ref: 'OpenAI/M/V07A/r1', entry: 'tempo-promo/index.html' } });
+  assert.deepEqual(choosePreview({ task: 'T03', ref: 'OpenAI/M/T03C/r1', entry: 'tempo-promo/index.html', artifacts: { video: 'bench-data/runs/t03/tempo.mp4' } }), { kind: 'static', body: { ref: 'OpenAI/M/T03C/r1', entry: 'tempo-promo/index.html' } });
+  assert.deepEqual(choosePreview({ task: 'V08', ref: 'OpenAI/M/V08/r1', entry: 'aether9-promo/index.html', deliverableDir: 'aether9-promo', artifacts: review }), { kind: 'video', path: 'model/OpenAI/M/V08/r1/aether9-promo/final.mp4' });
+  assert.deepEqual(choosePreview({ task: 'T04', ref: 'OpenAI/M/T04/r1', entry: 'aether9-promo/renders/master.mp4', artifacts: review }), { kind: 'video', path: 'model/OpenAI/M/T04/r1/aether9-promo/renders/master.mp4' });
   assert.deepEqual(choosePreview({ task: 'T04', artifacts: { ...review, video: 'bench-data/runs/t04/final.mp4' } }), { kind: 'video', path: 'bench-data/runs/t04/final.mp4' });
   assert.equal(choosePreview({ task: 'V07', artifacts: review, runDir: 'bench-data/runs/v07' }).kind, 'static');
   assert.equal(choosePreview({ task: 'V01', artifacts: { review_video: 'D:/abs/review.mp4' } }).kind, 'none');

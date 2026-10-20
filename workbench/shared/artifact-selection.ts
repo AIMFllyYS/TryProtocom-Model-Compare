@@ -10,25 +10,31 @@ export type PreviewChoice =
   | { kind: 'none'; reason: string };
 
 /**
- * 预览打开什么，只看这道题的交付类型：
- * 视频题打开成片；网页题打开 HTML。评分器另存的评审视频、环绕录像不代替网页。
+ * 预览按题目的交付类型决定，不按目录里碰巧有什么文件：
+ * T04 / V08 是成片，播 mp4，HyperFrames 工程里的 index.html 不顶替成片。
+ * 其余题打开页面。可选导出的 mp4、评分器的评审视频和环绕录像都不顶替页面。
  */
 export function choosePreview(p: {
   task?: string | null; ref?: string | null; entry?: string | null; deliverableDir?: string | null;
   artifacts?: Record<string, string> | null; runDir?: string | null;
 }): PreviewChoice {
-  const kind = deliverableFor(p.task || '').kind;
+  const spec = deliverableFor(p.task || '');
   const rel = (x: string) => !ABS_PATH.test(x);
-  if (kind === 'video') {
+  const dir = (p.deliverableDir || spec.dir || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (spec.kind === 'video') {
     if (p.ref && p.entry && VIDEO_EXT.test(p.entry)) return { kind: 'video', path: `model/${p.ref}/${p.entry}` };
-    const hit = Object.entries(p.artifacts || {}).find(([k, path]) => typeof path === 'string' && rel(path) && VIDEO_EXT.test(path)
+    const film = Object.entries(p.artifacts || {}).find(([k, path]) => typeof path === 'string' && rel(path) && VIDEO_EXT.test(path)
+      && !/review|orbit|评审/i.test(k)
       && (/^(video|final)$/i.test(k) || /(?:^|\/)final\.(mp4|webm|mov|m4v|mkv)$/i.test(path)));
-    if (hit) return { kind: 'video', path: hit[1] };
+    if (film) return { kind: 'video', path: film[1] };
+    const name = spec.preview && VIDEO_EXT.test(spec.preview) ? spec.preview : 'final.mp4';
+    if (p.ref && dir) return { kind: 'video', path: `model/${p.ref}/${dir}/${name}` };
+    return { kind: 'none', reason: '没有找到成片视频' };
   }
   if (p.ref && p.entry && !VIDEO_EXT.test(p.entry)) return { kind: 'static', body: { ref: p.ref, entry: p.entry } };
-  if (p.ref) return { kind: 'static', body: { ref: p.ref, entry: p.deliverableDir || '' } };
+  if (p.ref && spec.preview && !VIDEO_EXT.test(spec.preview) && dir) return { kind: 'static', body: { ref: p.ref, entry: `${dir}/${spec.preview}` } };
+  if (p.ref) return { kind: 'static', body: { ref: p.ref, entry: dir } };
   if (p.runDir && rel(p.runDir)) return { kind: 'static', body: { path: `${p.runDir}/output` } };
-  if (kind === 'video') return { kind: 'none', reason: '没有找到成片视频' };
   return { kind: 'none', reason: '这台电脑上没有该运行的产物文件（仅有存储文件中的分数）' };
 }
 
