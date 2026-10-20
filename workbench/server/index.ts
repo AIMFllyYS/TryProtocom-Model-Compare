@@ -9,7 +9,7 @@ import { aggregate } from '../shared/aggregate';
 import { petJobs } from '../shared/activity';
 import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { settleQuota } from '../shared/quota';
-import { parseModelInput, suggestHarness, harnessByName, harnessById, iconFor } from '../shared/vendors';
+import { parseModelInput, suggestHarness, harnessByName, harnessName, normalizeHarnessName, customHarnessNames, iconFor } from '../shared/vendors';
 import { detectHarnesses, openHarness, scanShell } from './harness';
 import { loadConfig, PREVIEW_PORT_RANGE, VERSION, type Config } from './config';
 import { listDir, readText, resolveSafe, sendRaw, toRel } from './fsapi';
@@ -157,13 +157,18 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     return { s, t };
   };
   const settings = () => store.data.settings;
+  const recommendHarness = (vendor: string | null | undefined, installed: string[]) => {
+    const preferred = settings().default_harness;
+    if (preferred && settings().custom_harnesses?.includes(preferred)) return { id: preferred, name: preferred };
+    return suggestHarness(vendor, installed, preferred);
+  };
   const renderPrompt = (s: SpecData, t: SpecTask, variant: string | null, wsAbs: string | null, index: number | null) => buildRunPrompt(t.prompt, {
     bench: `${s.cfg.name} ${s.cfg.version}`, taskId: t.id, taskName: t.name, variant, runIndex: index, workspace: wsAbs,
     deliverableDir: t.deliverable, timeLimit: t.time_limit, materials: t.materials, condition: t.condition, suite: t.suite === 'v2' ? 'v2' : 'v1',
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
   /** 可以直接拿来用的运行：已创建、没开始、没交付、没登记 */
   const claimable = (vendor: string, model: string, tkey: string): WorkspaceRun | undefined => ws.listRuns().find((w) =>
-    w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
+    w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final && fs.existsSync(ws.files(w.ref).prompt));
   async function promptFor(q: { vendor?: string | null; model?: string | null; task: string; variant?: string | null }) {
     const { s, t } = await findTask(q.task);
     const variant = q.variant || null;
@@ -227,21 +232,22 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const variant = b.variant || null;
     const tkey = t.id + (variant || '');
     const prof = store.data.models.find((m) => m.vendor === b.vendor && m.name === b.model);
-    const harness = b.harness || prof?.harness || harnessById(settings().default_harness)?.name || '';
+    const harness = b.harness || prof?.harness || harnessName(settings().default_harness);
     let run = claimable(b.vendor, b.model, tkey);
     if (!run || (b.index && run.index !== b.index)) {
       await ensureMaterials(t);
       run = ws.createRun({ vendor: b.vendor, model: b.model, task: t, variant, harness, taskDir: taskDirOf(t), index: b.index, prompt: (wsAbs, n) => renderPrompt(s, t, variant, wsAbs, n).text });
       store.log('ws-create', run.ref);
-    } else if (harness && !run.harness) run = ws.patchRun(run.ref, { harness });
+    } else if (harness && harness !== run.harness) run = ws.patchRun(run.ref, { harness });
     if (b.start !== false && !run.started_at) run = ws.patchRun(run.ref, { started_at: new Date().toISOString(), ended_at: null });
     if (b.quota_before != null) run = applyQuota(run.ref, { before: Number(b.quota_before), unit: b.quota_unit });
     const text = fs.readFileSync(ws.files(run.ref).prompt, 'utf8');
     let opened: string | null = null;
     if (b.open) {
       await scanShell();
-      const h = harnessByName(harness) || harnessById(settings().default_harness);
+      const h = harnessByName(harness);
       if (h) { try { opened = openHarness(h.id, run.workspace || null).how; } catch (e) { opened = `未能打开：${(e as Error).message}`; } }
+      else opened = `请手动打开 ${harness || 'harness'}，并进入提示词中的工作目录`;
     }
     refreshWorkspaces();
     return { run, text, opened };
@@ -432,7 +438,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     if (!b.harness && !store.data.models.some((m) => m.vendor === b.vendor && m.name === b.name)) {
       await scanShell();
       const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
-      b.harness = suggestHarness(b.vendor, installed, settings().default_harness)?.name || '';
+      b.harness = recommendHarness(b.vendor, installed)?.name || '';
     }
     const m = ws.upsertModel(b);
     store.log('model', `新增/更新模型 ${m.vendor}/${m.name}`);
@@ -581,6 +587,17 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
 
   // harness（Agent 软件）
   R.get('/api/harness', async (req) => { const force = req.query.get('refresh') === '1'; await scanShell(force); return detectHarnesses(force); });
+  R.post('/api/harness/custom', async (req) => {
+    const b = await readJson(req);
+    let name: string;
+    try { name = normalizeHarnessName(b.name); } catch (e) { throw new HttpError(400, (e as Error).message); }
+    const names = customHarnessNames([...(settings().custom_harnesses || []), name]);
+    name = names.find((n) => n.toLowerCase() === name.toLowerCase()) || name;
+    store.data.settings.custom_harnesses = names;
+    store.save();
+    hub.emit({ type: 'store', updated_at: store.data.updated_at });
+    return { name };
+  });
   R.post('/api/harness/open', async (req) => {
     const b = await readJson(req);
     const cwd = b.ref ? ws.files(b.ref).ws : null;
@@ -591,7 +608,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.get('/api/models/infer', (req) => {
     const p = parseModelInput(req.query.get('name') || '');
     const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
-    const h = suggestHarness(p.vendor, installed, settings().default_harness);
+    const h = recommendHarness(p.vendor, installed);
     const exists = store.data.models.some((m) => m.vendor === p.vendor && m.name === p.name);
     return { ...p, icon: iconFor(p.vendor, p.name), harness: h ? { id: h.id, name: h.name } : null, exists, vendors: ws.vendors() };
   });
@@ -865,6 +882,10 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   });
   R.post('/api/settings', async (req) => {
     const b = await readJson(req);
+    if ('custom_harnesses' in b) {
+      if (!Array.isArray(b.custom_harnesses)) throw new HttpError(400, '自定义 harness 必须是名称列表');
+      try { b.custom_harnesses = customHarnessNames(b.custom_harnesses.map(normalizeHarnessName)); } catch (e) { throw new HttpError(400, (e as Error).message); }
+    }
     store.data.settings = { ...store.data.settings, ...b };
     store.save();
     hub.emit({ type: 'store', updated_at: store.data.updated_at });

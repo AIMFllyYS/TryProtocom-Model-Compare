@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import type { ModelProfile, SpecTask, WorkspaceRun } from '../shared/types';
 import { deliverableFor, evalDeliverable, FINAL_FILE, type Deliverable, type DetectResult } from '../shared/deliverables';
 import { HttpError } from './http';
+import { TASK_DIR } from '../shared/workspace-ref';
 
 const BAD = /[<>:"/\\|?*\u0000-\u001f]/;
 export function checkName(kind: string, s: unknown): string {
@@ -23,7 +24,6 @@ export function checkName(kind: string, s: unknown): string {
 const readJson = <T>(p: string): T | null => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 const writeJson = (p: string, d: unknown) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(d, null, 2) + '\n', 'utf8'); };
 const isDir = (p: string) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
-const TASK_DIR = /^(T\d{2})([A-Z])?$/;
 const RUN_DIR = /^r(\d+)$/;
 
 export class Workspaces {
@@ -76,6 +76,9 @@ export class Workspaces {
           const n = Number(rm[1]);
           if (seen.has(n)) continue;
           seen.add(n);
+          // 旧解析错误留下的 Git 空壳不算运行；保留目录和编号，避免覆盖已有文件。
+          const base = path.join(td, `r${n}`);
+          if (!fs.existsSync(`${base}.run.json`) && isDir(base) && fs.readdirSync(base).every((name) => name === '.git')) continue;
           out.push(this.readRun(m.vendor, m.name, t, n));
         }
       }
@@ -191,6 +194,8 @@ export class Workspaces {
     checkName('供应商', vendor); checkName('模型', model);
     if (Object.keys(task.variants || {}).length && !input.variant) throw new HttpError(400, `${task.id} 需要选择变体（${Object.keys(task.variants).join(' / ')}）`);
     if (input.variant && !(task.variants || {})[input.variant]) throw new HttpError(400, `${task.id} 没有变体 ${input.variant}`);
+    // 在创建目录、复制素材或初始化 Git 之前验证，避免失败后留下空 rN/。
+    this.parseRef(`${vendor}/${model}/${task.id}${input.variant || ''}/r1`);
     if (!this.listModels().some((m) => m.vendor === vendor && m.name === model)) this.upsertModel({ vendor, name: model, harness: input.harness });
     const tkey = task.id + (input.variant || '');
     const td = path.join(this.modelPath(vendor, model), tkey);

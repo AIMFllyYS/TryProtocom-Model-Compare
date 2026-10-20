@@ -139,7 +139,8 @@ export interface TrashEntry {
 
 export interface WbSettings {
   tts_command?: string;
-  default_harness?: string;            // harness id，例如 deepseek-harness
+  default_harness?: string;            // 内置 harness id 或自定义名称
+  custom_harnesses?: string[];         // 自定义显示名，仅登记、手动使用
   prompt_header?: boolean;             // 复制提示词时附带统一运行约定（默认 true）
   open_harness?: boolean;              // 复制提示词后自动打开 harness（默认 false）
   auto_start?: boolean;                // 复制提示词即开始计时（默认 true）

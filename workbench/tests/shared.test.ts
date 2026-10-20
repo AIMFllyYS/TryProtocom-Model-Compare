@@ -1,5 +1,6 @@
 // 一次性自测：node --test（由 esbuild 打包后运行，不启动任何服务）
 import test from 'node:test';
+import './workspace-harness.test';
 import assert from 'node:assert/strict';
 import { inferVendor, parseModelInput, iconFor, suggestHarness, harnessGroup } from '../shared/vendors';
 import { runHeader, buildRunPrompt, reviewPrompt } from '../shared/prompt';

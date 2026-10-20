@@ -12,7 +12,7 @@ import { cls, copyText, fmt } from '../lib/format';
 import { Badge, Btn, Field, Modal, Seg, Select } from '../ui/kit';
 import { HarnessIcon, ModelAvatar } from '../ui/brand';
 import { toast } from '../ui/toast';
-import { findHarness, modelKey } from './pickers';
+import { findHarness, HarnessPicker, modelKey } from './pickers';
 
 interface PromptRes { text: string; warnings: string[]; ref: string | null; workspace: string | null; index: number | null; exists: boolean }
 interface Slot { t: SpecTask; v: string | null; key: string }
@@ -40,7 +40,7 @@ export function LaunchPad({ model, onClose, initialTask }: { model: ModelProfile
   const slot = slots[Math.max(0, sel)];
   const [pr, setPr] = useState<PromptRes | null>(null);
   const [stamp, setStamp] = useState<{ run: WorkspaceRun; opened: string | null; copied: boolean; text: string } | null>(null);
-  const [harness, setHarness] = useState(model.harness || findHarness(wb.store?.settings.default_harness)?.name || '');
+  const [harness, setHarness] = useState(model.harness || findHarness(wb.store?.settings.default_harness)?.name || wb.store?.settings.default_harness || '');
   useEffect(() => {
     if (!slot) return;
     setPr(null); setStamp(null);
@@ -58,7 +58,7 @@ export function LaunchPad({ model, onClose, initialTask }: { model: ModelProfile
       const r = await post<{ run: WorkspaceRun; text: string; opened: string | null }>('/api/ws/claim', { vendor: model.vendor, model: model.name, task: slot.t.id, variant: slot.v, index: pr.index, start: true, harness: hname, open: !!target });
       let copied = ok;
       if (r.text !== pr.text) copied = await copyText(r.text);
-      if (target && hname !== model.harness) { setHarness(hname); void post('/api/models', { ...model, harness: hname }); }
+      if (hname && hname !== model.harness) { setHarness(hname); void post('/api/models', { ...model, harness: hname }); }
       setStamp({ run: r.run, opened: r.opened, copied, text: r.text });
       await wb.refresh(['store']);
     } catch (e: any) { toast.error(e.message); }
@@ -88,6 +88,7 @@ export function LaunchPad({ model, onClose, initialTask }: { model: ModelProfile
         </div>
         <aside className="lp-dock" aria-label="harness 坞">
           <div className="lp-dock-h">发车坞</div>
+          <HarnessPicker value={harness} onChange={setHarness} block />
           {dock.map((h) => (
             <button key={h.id} data-drop={h.id} className={cls('dock-t', h.name === harness && 'pref')} onClick={() => void dispatch(h.id)} disabled={!pr || !!stamp}>
               <HarnessIcon name={h.name} size="md" />

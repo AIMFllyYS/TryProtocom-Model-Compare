@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Ban, Bot, Database, FileCode2, FolderOpen, Gauge, Info, Keyboard, MessageSquareText, RefreshCw, Save, Terminal, Wrench } from 'lucide-react';
 import type { JobInfo, WbSettings } from '../../shared/types';
-import { HARNESSES, harnessById, harnessHint } from '../../shared/vendors';
+import { HARNESSES, harnessByName, harnessName, harnessHint } from '../../shared/vendors';
+import { HarnessPicker } from '../components/pickers';
 import { get, post, desktop } from '../api';
 import { useWb } from '../state';
 import { JobTerm, useJobLines } from '../components/jobview';
@@ -80,8 +81,7 @@ function HarnessSettings() {
   return (
     <>
       <Card title="默认 harness" sub="新增模型时推荐；模型档案里的 harness 优先">
-        <Select value={s.default_harness || ''} onChange={(v) => void save({ default_harness: v }, '已设为默认 harness')} block searchable placeholder="选择默认 harness"
-          options={HARNESSES.map((h) => ({ value: h.id, label: h.name, icon: <HarnessIcon name={h.name} size="xs" />, group: wb.harness.find((x) => x.id === h.id)?.installed ? '本机已安装' : '未检测到' })).sort((a, b) => (a.group === b.group ? 0 : a.group === '本机已安装' ? -1 : 1))} />
+        <HarnessPicker value={harnessName(s.default_harness)} onChange={(v) => void save({ default_harness: harnessByName(v)?.id || v }, '已设为默认 harness')} block />
       </Card>
       <Card title="本机检测到的 harness" sub={`${inst.length} / ${HARNESSES.length}`} extra={<Btn size="sm" icon={<RefreshCw size={13} />} onClick={() => void get('/api/harness', { refresh: 1 }).then(() => wb.refresh(['harness']))}>重新检测</Btn>} pad={false}>
         <div className="tbl-wrap"><table className="tbl">

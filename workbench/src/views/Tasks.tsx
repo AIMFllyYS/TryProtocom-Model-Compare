@@ -51,7 +51,7 @@ function TaskView({ t }: { t: SpecTask }) {
   const [vendor, model] = wb.current ? [wb.current.split('/')[0], wb.current.split('/').slice(1).join('/')] : [null, null];
   const prof = wb.store?.models.find((m) => m.vendor === vendor && m.name === model);
   const [harness, setHarness] = useState(prof?.harness || '');
-  useEffect(() => { setHarness(prof?.harness || findHarness(wb.store?.settings.default_harness)?.name || ''); }, [prof?.harness, wb.current]); // eslint-disable-line
+  useEffect(() => { setHarness(prof?.harness || findHarness(wb.store?.settings.default_harness)?.name || wb.store?.settings.default_harness || ''); }, [prof?.harness, wb.current, wb.store?.settings.default_harness]); // eslint-disable-line
   const [pr, setPr] = useState<PromptRes | null>(null);
   const [copied, setCopied] = useState<{ ref: string; ws: string; opened?: string | null } | null>(null);
   const [busy, setBusy] = useState(false);

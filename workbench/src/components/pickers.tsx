@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, FolderPlus, Layers, Plus, Sparkles, Wand2 } from 'lucide-react';
 import type { ModelProfile } from '../../shared/types';
-import { HARNESSES, harnessById, harnessByName, VENDORS, vendorById } from '../../shared/vendors';
+import { HARNESSES, harnessById, harnessByName, customHarnessNames, normalizeHarnessName, VENDORS, vendorById } from '../../shared/vendors';
 import { get, post } from '../api';
 import { useWb } from '../state';
 import { cls } from '../lib/format';
@@ -42,14 +42,44 @@ export function ModelPicker({ value, onChange, size, glassy = true, block, place
 }
 
 export function HarnessPicker({ value, onChange, size, block, onlyInstalled = false }: { value: string; onChange: (name: string) => void; size?: 'xs' | 'sm' | 'lg'; block?: boolean; onlyInstalled?: boolean }) {
-  const { harness } = useWb();
+  const wb = useWb();
+  const { harness } = wb;
+  const [adding, setAdding] = useState(false);
+  const [custom, setCustom] = useState('');
+  const [busy, setBusy] = useState(false);
+  let error = '';
+  try { normalizeHarnessName(custom); } catch (e) { error = (e as Error).message; }
   const opts: Opt[] = HARNESSES.filter((h) => !onlyInstalled || harness.find((x) => x.id === h.id)?.installed).map((h) => {
     const inst = harness.find((x) => x.id === h.id)?.installed;
     return { value: h.name, label: h.name, group: inst ? '本机已安装' : '未检测到', desc: h.kind === 'cli' ? '命令行' : h.kind === 'ide' ? 'IDE' : '桌面应用', icon: <HarnessIcon name={h.name} size="xs" /> };
   }).sort((a, b) => (a.group === b.group ? 0 : a.group === '本机已安装' ? -1 : 1));
-  if (value && !opts.some((o) => o.value === value)) opts.unshift({ value, label: value, group: '自定义', icon: <HarnessIcon name={value} size="xs" /> });
-  return <Select value={value} onChange={onChange} options={opts} size={size} block={block} searchable label="Harness" placeholder="选择 harness"
-    render={(o) => o ? <><HarnessIcon name={String(o.value)} size="xs" /><span className="ellipsis">{o.label}</span></> : <span className="sel-ph">选择 harness</span>} />;
+  if (!onlyInstalled) {
+    const names = customHarnessNames([...(wb.store?.settings.custom_harnesses || []), ...(wb.store?.models || []).map((m) => m.harness || '').filter(Boolean), ...(wb.store?.workspaces || []).map((w) => w.harness).filter(Boolean), ...(wb.store?.runs || []).map((r) => r.harness).filter(Boolean)]);
+    opts.push(...names.map((name) => ({ value: name, label: name, group: '用户自定义', desc: '手动打开并粘贴提示词', icon: <HarnessIcon name={name} size="xs" /> })));
+  }
+  if (value && !opts.some((o) => o.value === value)) opts.unshift({ value, label: value, group: '当前选择', icon: <HarnessIcon name={value} size="xs" /> });
+  const save = async () => {
+    if (busy || error) return;
+    setBusy(true);
+    try {
+      const r = await post<{ name: string }>('/api/harness/custom', { name: custom });
+      await wb.refresh(['store']);
+      onChange(r.name); setAdding(false); setCustom('');
+      toast.ok('已保存自定义 harness');
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  return <>
+    <Select value={value} onChange={onChange} options={opts} size={size} block={block} searchable label="Harness" placeholder="选择 harness"
+      footer={!onlyInstalled ? <button type="button" className="opt" onClick={() => setAdding(true)}><Plus size={15} /><span className="opt-t">新增用户自定义…</span></button> : undefined}
+      render={(o) => o ? <><HarnessIcon name={String(o.value)} size="xs" /><span className="ellipsis">{o.label}</span></> : <span className="sel-ph">选择 harness</span>} />
+    {adding && <Modal open onClose={() => setAdding(false)} title="用户自定义 harness" width={460}
+      sub="保存后可在各处的 Harness 选择器中重复使用。"
+      footer={<><Btn tone="ghost" onClick={() => setAdding(false)}>取消</Btn><Btn tone="primary" disabled={busy || !!error} onClick={() => void save()}>{busy ? '保存中…' : '保存并使用'}</Btn></>}>
+      <Field label="Harness 名称" error={custom ? error : undefined} hint="例如 私有 Agent / 网页对话 + 本地中继。自定义项由你手动打开，再粘贴提示词。">
+        <input autoFocus maxLength={100} value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); void save(); } }} placeholder="填写你使用的 Agent 软件名称" aria-label="自定义 harness 名称" />
+      </Field>
+    </Modal>}
+  </>;
 }
 
 interface Infer { vendor: string | null; name: string; inferred: boolean; icon: string | null; harness: { id: string; name: string } | null; exists: boolean; vendors: string[] }

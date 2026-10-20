@@ -116,6 +116,9 @@ export const HARNESSES: HarnessDef[] = [
   // ---- Moonshot ----
   { id: 'kimi-code', name: 'Kimi Code', kind: 'app', icon: 'kimi', vendor: 'Moonshot', appId: /^com\.kimi\.code\.desktop$/i, note: MANUAL_DIR },
   { id: 'kimi-cli', name: 'Kimi CLI', kind: 'cli', icon: 'kimi', vendor: 'Moonshot', cmd: 'kimi' },
+  // ---- MiniMax ----
+  { id: 'minimax-code', name: 'MiniMax Code', kind: 'app', icon: 'minimax', vendor: 'MiniMax', appId: /^com\.minimax\.agent\.(cn|global)$/i, lnk: /^MiniMax Code$/i, note: MANUAL_DIR },
+  { id: 'minimax-code-cli', name: 'MiniMax Code CLI', kind: 'cli', icon: 'minimax', vendor: 'MiniMax', cmd: 'mcode' },
   // ---- Zhipu ----
   { id: 'zcode', name: 'ZCode', kind: 'app', icon: 'zai', vendor: 'Zhipu', appId: /^electron\.app\.ZCode$/i, lnk: /^ZCode$/i, note: MANUAL_DIR },
   // ---- Alibaba ----
@@ -171,6 +174,31 @@ export const harnessByName = (name: string | null | undefined) => {
   const n = String(name || '').trim().toLowerCase();
   return n ? HARNESSES.find((h) => h.name.toLowerCase() === n || h.id === n) : undefined;
 };
+
+/** 默认设置兼容内置 id 和用户填写的显示名；自定义名称只登记，不作为启动命令。 */
+export const harnessName = (value?: string | null) => harnessByName(value)?.name || String(value || '').trim();
+
+export function normalizeHarnessName(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('Harness 名称必须是文本');
+  const name = value.trim();
+  if (!name || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) throw new Error('Harness 名称需为 1–100 个字符，不能含换行或控制字符');
+  return harnessName(name);
+}
+
+/** 内置名称规范化，自定义名称不区分大小写去重，保留首次登记的拼写。 */
+export function customHarnessNames(names: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of names) {
+    let name: string;
+    try { name = normalizeHarnessName(raw); } catch { continue; } // 兼容历史档案中的空值或超长备注
+    const key = name.toLowerCase();
+    if (harnessByName(name) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
 
 /** harness 能力分组（v2 榜单对比时同组更公平）：不同类型的 harness 自带的工具与自检手段不同。 */
 export type HarnessGroupId = 'terminal' | 'ide' | 'desktop' | 'chat-relay' | 'other';

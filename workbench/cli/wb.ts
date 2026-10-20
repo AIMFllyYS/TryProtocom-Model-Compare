@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { WORKSPACE_REF, WORKSPACE_REF_PREFIX } from '../shared/workspace-ref';
 import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, SpecData, StoreRun, TrashEntry, WorkspaceRun } from '../shared/types';
 
 const HERE = __dirname; // workbench/dist-node
@@ -116,12 +117,12 @@ function toRootRel(p: string) {
   if (rel.startsWith('..') || path.isAbsolute(rel)) die(`路径不在工作台根目录内：${abs}`);
   return rel.split(path.sep).join('/');
 }
-const isRef = (s: string) => /^[^/\\]+\/[^/\\]+\/T\d{2}[A-Z]?\/r\d+$/.test(s);
+const isRef = (s: string) => WORKSPACE_REF.test(s);
 async function resolveRef(s: string): Promise<string> {
   if (isRef(s)) return s;
   const abs = path.resolve(s);
   const rel = path.relative(path.join(ROOT, 'model'), abs).split(path.sep).join('/');
-  const m = /^([^/]+\/[^/]+\/T\d{2}[A-Z]?\/r\d+)(\/|$)/.exec(rel);
+  const m = WORKSPACE_REF_PREFIX.exec(rel);
   if (m) return m[1];
   die(`不是工作区引用：${s}（格式 供应商/模型/题号/rN，例如 OpenAI/GPT-6.1-Sol/T05/r1）`);
 }

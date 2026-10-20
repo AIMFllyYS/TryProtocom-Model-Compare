@@ -794,6 +794,9 @@ var HARNESSES = [
   // ---- Moonshot ----
   { id: "kimi-code", name: "Kimi Code", kind: "app", icon: "kimi", vendor: "Moonshot", appId: /^com\.kimi\.code\.desktop$/i, note: MANUAL_DIR },
   { id: "kimi-cli", name: "Kimi CLI", kind: "cli", icon: "kimi", vendor: "Moonshot", cmd: "kimi" },
+  // ---- MiniMax ----
+  { id: "minimax-code", name: "MiniMax Code", kind: "app", icon: "minimax", vendor: "MiniMax", appId: /^com\.minimax\.agent\.(cn|global)$/i, lnk: /^MiniMax Code$/i, note: MANUAL_DIR },
+  { id: "minimax-code-cli", name: "MiniMax Code CLI", kind: "cli", icon: "minimax", vendor: "MiniMax", cmd: "mcode" },
   // ---- Zhipu ----
   { id: "zcode", name: "ZCode", kind: "app", icon: "zai", vendor: "Zhipu", appId: /^electron\.app\.ZCode$/i, lnk: /^ZCode$/i, note: MANUAL_DIR },
   // ---- Alibaba ----
@@ -849,6 +852,30 @@ var harnessByName = (name) => {
   const n = String(name || "").trim().toLowerCase();
   return n ? HARNESSES.find((h) => h.name.toLowerCase() === n || h.id === n) : void 0;
 };
+var harnessName = (value) => harnessByName(value)?.name || String(value || "").trim();
+function normalizeHarnessName(value) {
+  if (typeof value !== "string") throw new Error("Harness \u540D\u79F0\u5FC5\u987B\u662F\u6587\u672C");
+  const name = value.trim();
+  if (!name || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) throw new Error("Harness \u540D\u79F0\u9700\u4E3A 1\u2013100 \u4E2A\u5B57\u7B26\uFF0C\u4E0D\u80FD\u542B\u6362\u884C\u6216\u63A7\u5236\u5B57\u7B26");
+  return harnessName(name);
+}
+function customHarnessNames(names) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const raw of names) {
+    let name;
+    try {
+      name = normalizeHarnessName(raw);
+    } catch {
+      continue;
+    }
+    const key = name.toLowerCase();
+    if (harnessByName(name) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
 function suggestHarness(vendor, installed, preferred) {
   const ok = (h) => !!h && installed.includes(h.id);
   const pref = harnessById(preferred || "") || harnessByName(preferred || "");
@@ -2437,6 +2464,11 @@ var StoreFile = class {
 var import_node_fs8 = __toESM(require("node:fs"), 1);
 var import_node_path7 = __toESM(require("node:path"), 1);
 var import_node_child_process4 = require("node:child_process");
+
+// shared/workspace-ref.ts
+var TASK_DIR = /^(T\d{2}|V\d{2}|B[1-8])([A-Z])?$/;
+
+// server/workspaces.ts
 var BAD = /[<>:"/\\|?*\u0000-\u001f]/;
 function checkName(kind, s) {
   const v = String(s ?? "").trim();
@@ -2461,7 +2493,6 @@ var isDir = (p) => {
     return false;
   }
 };
-var TASK_DIR = /^(T\d{2})([A-Z])?$/;
 var RUN_DIR = /^r(\d+)$/;
 var Workspaces = class {
   constructor(modelDir) {
@@ -2517,6 +2548,8 @@ var Workspaces = class {
           const n = Number(rm[1]);
           if (seen.has(n)) continue;
           seen.add(n);
+          const base = import_node_path7.default.join(td, `r${n}`);
+          if (!import_node_fs8.default.existsSync(`${base}.run.json`) && isDir(base) && import_node_fs8.default.readdirSync(base).every((name) => name === ".git")) continue;
           out.push(this.readRun(m.vendor, m.name, t, n));
         }
       }
@@ -2667,6 +2700,7 @@ var Workspaces = class {
     checkName("\u6A21\u578B", model);
     if (Object.keys(task.variants || {}).length && !input.variant) throw new HttpError(400, `${task.id} \u9700\u8981\u9009\u62E9\u53D8\u4F53\uFF08${Object.keys(task.variants).join(" / ")}\uFF09`);
     if (input.variant && !(task.variants || {})[input.variant]) throw new HttpError(400, `${task.id} \u6CA1\u6709\u53D8\u4F53 ${input.variant}`);
+    this.parseRef(`${vendor}/${model}/${task.id}${input.variant || ""}/r1`);
     if (!this.listModels().some((m) => m.vendor === vendor && m.name === model)) this.upsertModel({ vendor, name: model, harness: input.harness });
     const tkey = task.id + (input.variant || "");
     const td = import_node_path7.default.join(this.modelPath(vendor, model), tkey);
@@ -2884,6 +2918,11 @@ async function startServer(over = {}) {
     return { s, t };
   };
   const settings = () => store.data.settings;
+  const recommendHarness = (vendor, installed) => {
+    const preferred = settings().default_harness;
+    if (preferred && settings().custom_harnesses?.includes(preferred)) return { id: preferred, name: preferred };
+    return suggestHarness(vendor, installed, preferred);
+  };
   const renderPrompt = (s, t, variant, wsAbs, index) => buildRunPrompt(t.prompt, {
     bench: `${s.cfg.name} ${s.cfg.version}`,
     taskId: t.id,
@@ -2897,7 +2936,7 @@ async function startServer(over = {}) {
     condition: t.condition,
     suite: t.suite === "v2" ? "v2" : "v1"
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
-  const claimable = (vendor, model, tkey) => ws.listRuns().find((w) => w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final);
+  const claimable = (vendor, model, tkey) => ws.listRuns().find((w) => w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final && import_node_fs9.default.existsSync(ws.files(w.ref).prompt));
   async function promptFor(q) {
     const { s, t } = await findTask(q.task);
     const variant = q.variant || null;
@@ -2958,27 +2997,27 @@ async function startServer(over = {}) {
     const variant = b.variant || null;
     const tkey = t.id + (variant || "");
     const prof = store.data.models.find((m) => m.vendor === b.vendor && m.name === b.model);
-    const harness = b.harness || prof?.harness || harnessById(settings().default_harness)?.name || "";
+    const harness = b.harness || prof?.harness || harnessName(settings().default_harness);
     let run = claimable(b.vendor, b.model, tkey);
     if (!run || b.index && run.index !== b.index) {
       await ensureMaterials(t);
       run = ws.createRun({ vendor: b.vendor, model: b.model, task: t, variant, harness, taskDir: taskDirOf(t), index: b.index, prompt: (wsAbs, n) => renderPrompt(s, t, variant, wsAbs, n).text });
       store.log("ws-create", run.ref);
-    } else if (harness && !run.harness) run = ws.patchRun(run.ref, { harness });
+    } else if (harness && harness !== run.harness) run = ws.patchRun(run.ref, { harness });
     if (b.start !== false && !run.started_at) run = ws.patchRun(run.ref, { started_at: (/* @__PURE__ */ new Date()).toISOString(), ended_at: null });
     if (b.quota_before != null) run = applyQuota(run.ref, { before: Number(b.quota_before), unit: b.quota_unit });
     const text = import_node_fs9.default.readFileSync(ws.files(run.ref).prompt, "utf8");
     let opened = null;
     if (b.open) {
       await scanShell();
-      const h = harnessByName(harness) || harnessById(settings().default_harness);
+      const h = harnessByName(harness);
       if (h) {
         try {
           opened = openHarness(h.id, run.workspace || null).how;
         } catch (e) {
           opened = `\u672A\u80FD\u6253\u5F00\uFF1A${e.message}`;
         }
-      }
+      } else opened = `\u8BF7\u624B\u52A8\u6253\u5F00 ${harness || "harness"}\uFF0C\u5E76\u8FDB\u5165\u63D0\u793A\u8BCD\u4E2D\u7684\u5DE5\u4F5C\u76EE\u5F55`;
     }
     refreshWorkspaces();
     return { run, text, opened };
@@ -3200,7 +3239,7 @@ async function startServer(over = {}) {
     if (!b.harness && !store.data.models.some((m2) => m2.vendor === b.vendor && m2.name === b.name)) {
       await scanShell();
       const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
-      b.harness = suggestHarness(b.vendor, installed, settings().default_harness)?.name || "";
+      b.harness = recommendHarness(b.vendor, installed)?.name || "";
     }
     const m = ws.upsertModel(b);
     store.log("model", `\u65B0\u589E/\u66F4\u65B0\u6A21\u578B ${m.vendor}/${m.name}`);
@@ -3364,6 +3403,21 @@ async function startServer(over = {}) {
     await scanShell(force);
     return detectHarnesses(force);
   });
+  R.post("/api/harness/custom", async (req) => {
+    const b = await readJson(req);
+    let name;
+    try {
+      name = normalizeHarnessName(b.name);
+    } catch (e) {
+      throw new HttpError(400, e.message);
+    }
+    const names = customHarnessNames([...settings().custom_harnesses || [], name]);
+    name = names.find((n) => n.toLowerCase() === name.toLowerCase()) || name;
+    store.data.settings.custom_harnesses = names;
+    store.save();
+    hub.emit({ type: "store", updated_at: store.data.updated_at });
+    return { name };
+  });
   R.post("/api/harness/open", async (req) => {
     const b = await readJson(req);
     const cwd = b.ref ? ws.files(b.ref).ws : null;
@@ -3374,7 +3428,7 @@ async function startServer(over = {}) {
   R.get("/api/models/infer", (req) => {
     const p = parseModelInput(req.query.get("name") || "");
     const installed = detectHarnesses().filter((h2) => h2.installed).map((h2) => h2.id);
-    const h = suggestHarness(p.vendor, installed, settings().default_harness);
+    const h = recommendHarness(p.vendor, installed);
     const exists = store.data.models.some((m) => m.vendor === p.vendor && m.name === p.name);
     return { ...p, icon: iconFor(p.vendor, p.name), harness: h ? { id: h.id, name: h.name } : null, exists, vendors: ws.vendors() };
   });
@@ -3656,6 +3710,14 @@ async function startServer(over = {}) {
   });
   R.post("/api/settings", async (req) => {
     const b = await readJson(req);
+    if ("custom_harnesses" in b) {
+      if (!Array.isArray(b.custom_harnesses)) throw new HttpError(400, "\u81EA\u5B9A\u4E49 harness \u5FC5\u987B\u662F\u540D\u79F0\u5217\u8868");
+      try {
+        b.custom_harnesses = customHarnessNames(b.custom_harnesses.map(normalizeHarnessName));
+      } catch (e) {
+        throw new HttpError(400, e.message);
+      }
+    }
     store.data.settings = { ...store.data.settings, ...b };
     store.save();
     hub.emit({ type: "store", updated_at: store.data.updated_at });

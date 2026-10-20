@@ -27,6 +27,12 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var import_node_fs = __toESM(require("node:fs"), 1);
 var import_node_path = __toESM(require("node:path"), 1);
 var import_node_child_process = require("node:child_process");
+
+// shared/workspace-ref.ts
+var WORKSPACE_REF = /^[^/\\]+\/[^/\\]+\/(?:T\d{2}|V\d{2}|B[1-8])[A-Z]?\/r[1-9]\d*$/;
+var WORKSPACE_REF_PREFIX = /^([^/\\]+\/[^/\\]+\/(?:T\d{2}|V\d{2}|B[1-8])[A-Z]?\/r[1-9]\d*)(\/|$)/;
+
+// cli/wb.ts
 var HERE = __dirname;
 var ROOT = findRoot();
 var RUNTIME = import_node_path.default.join(ROOT, "workbench", ".runtime", "runtime.json");
@@ -155,12 +161,12 @@ function toRootRel(p) {
   if (rel.startsWith("..") || import_node_path.default.isAbsolute(rel)) die(`\u8DEF\u5F84\u4E0D\u5728\u5DE5\u4F5C\u53F0\u6839\u76EE\u5F55\u5185\uFF1A${abs}`);
   return rel.split(import_node_path.default.sep).join("/");
 }
-var isRef = (s) => /^[^/\\]+\/[^/\\]+\/T\d{2}[A-Z]?\/r\d+$/.test(s);
+var isRef = (s) => WORKSPACE_REF.test(s);
 async function resolveRef(s) {
   if (isRef(s)) return s;
   const abs = import_node_path.default.resolve(s);
   const rel = import_node_path.default.relative(import_node_path.default.join(ROOT, "model"), abs).split(import_node_path.default.sep).join("/");
-  const m = /^([^/]+\/[^/]+\/T\d{2}[A-Z]?\/r\d+)(\/|$)/.exec(rel);
+  const m = WORKSPACE_REF_PREFIX.exec(rel);
   if (m) return m[1];
   die(`\u4E0D\u662F\u5DE5\u4F5C\u533A\u5F15\u7528\uFF1A${s}\uFF08\u683C\u5F0F \u4F9B\u5E94\u5546/\u6A21\u578B/\u9898\u53F7/rN\uFF0C\u4F8B\u5982 OpenAI/GPT-6.1-Sol/T05/r1\uFF09`);
 }
