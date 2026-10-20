@@ -1,6 +1,6 @@
 // 运行：看板（进行中 → 已交付待登记 → 待评分 → 已完成），详情含实时交付清单、登记评分、得分明细、预览打分与 AI 评审提示词。
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Bot, ChevronDown, ChevronRight, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
+import { Bot, ChevronRight, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
 import type { ItemScore, SpecItem, StoreRun, Usage, WorkspaceRun } from '../../shared/types';
 import { FINAL_FILE } from '../../shared/deliverables';
 import { get, post } from '../api';
@@ -22,8 +22,6 @@ import { ActivityBanner, ActivityStrip, activityOf, isBusy, useRunActivity } fro
 
 export interface Row { key: string; ws?: WorkspaceRun; run?: StoreRun }
 type Col = 'running' | 'delivered' | 'grading' | 'done';
-/** 看板每栏首批渲染的卡片数；超出后收进「加载更多」，避免一次挂载几百张卡片 */
-const BOARD_PAGE = 20;
 
 export function useRows(): Row[] {
   const { store } = useWb();
@@ -47,10 +45,10 @@ export const colOf = (r: Row): Col => {
   return 'running';
 };
 const COLS: { id: Col; label: string; icon: typeof Hourglass; hint: string }[] = [
-  { id: 'running', label: '进行中', icon: Hourglass, hint: '已复制提示词，等待模型交付' },
-  { id: 'delivered', label: '已交付 · 待登记', icon: FileCheck2, hint: '检测到 FINAL_MESSAGE.md 或已结束计时' },
-  { id: 'grading', label: '待评分', icon: Sparkles, hint: '自动评分 / Agent / 人工项未完成' },
-  { id: 'done', label: '已完成', icon: CircleCheck, hint: '按模型收起，默认只露最近一次' },
+  { id: 'running', label: '进行中', icon: Hourglass, hint: '按供应商收起，默认只露最近一次' },
+  { id: 'delivered', label: '已交付 · 待登记', icon: FileCheck2, hint: '按供应商收起，默认只露最近一次' },
+  { id: 'grading', label: '待评分', icon: Sparkles, hint: '按供应商收起，默认只露最近一次' },
+  { id: 'done', label: '已完成', icon: CircleCheck, hint: '按供应商收起，展开后按模型再分一层' },
 ];
 
 const whoOf = (r: Row) => ({ vendor: r.ws?.vendor || r.run?.vendor || '', model: r.ws?.model || r.run?.model || '未命名' });
@@ -61,18 +59,23 @@ const byTask = (a: Row, b: Row) => tkeyOf(a).localeCompare(tkeyOf(b), 'en', { nu
 interface ModelGroup { key: string; vendor: string; model: string; rows: Row[] }
 interface VendorNode { vendor: string; models: ModelGroup[] }
 
-/** 看板「已完成」：按出现顺序分组（列表已按时间从近到远），每组默认一张。 */
-function modelGroups(items: Row[]): ModelGroup[] {
+/** 看板：供应商 → 模型。顺序跟传入列表走（调用方已按时间从近到远排）。 */
+function boardVendors(items: Row[]): VendorNode[] {
   const order: string[] = [];
-  const map = new Map<string, ModelGroup>();
+  const map = new Map<string, Map<string, Row[]>>();
   for (const r of items) {
     const { vendor, model } = whoOf(r);
-    const key = `${vendor}\u0000${model}`;
-    let g = map.get(key);
-    if (!g) { g = { key, vendor, model, rows: [] }; map.set(key, g); order.push(key); }
-    g.rows.push(r);
+    const v = vendor || '未标注';
+    if (!map.has(v)) { map.set(v, new Map()); order.push(v); }
+    const models = map.get(v)!;
+    const key = `${v}\u0000${model}`;
+    if (!models.has(key)) models.set(key, []);
+    models.get(key)!.push(r);
   }
-  return order.map((k) => map.get(k)!);
+  return order.map((vendor) => ({
+    vendor,
+    models: [...map.get(vendor)!.entries()].map(([key, rows]) => ({ key, vendor, model: key.split('\u0000')[1], rows })),
+  }));
 }
 
 /** 列表：供应商 → 模型 → 按题号排列的运行。 */
@@ -115,13 +118,10 @@ function RunBoard({ rows }: { rows: Row[] }) {
   const [view, setView] = useLocal<'board' | 'list'>('runs.view', 'board');
   const [fModel, setFModel] = useLocal('runs.model', '');
   const [fTask, setFTask] = useLocal('runs.task', '');
-  // 性能：每栏先渲染 PAGE 张卡片，其余按批「加载更多」（避免一次挂载几百张卡片，卡住首帧）
-  const [shown, setShown] = useState<Record<string, number>>({});
   const [openModels, setOpenModels] = useState<Record<string, boolean>>({});
   const [openVendors, setOpenVendors] = useState<Record<string, boolean>>({});
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
-  useEffect(() => { setShown({}); }, [fModel, fTask]);
   const list = rows.filter((r) => {
     const m = r.ws ? `${r.ws.vendor}/${r.ws.model}` : `${r.run!.vendor || ''}/${r.run!.model}`;
     return (!fModel || m === fModel) && (!fTask || (r.ws?.task || r.run!.task) === fTask);
@@ -166,26 +166,11 @@ function RunBoard({ rows }: { rows: Row[] }) {
         <div className="kanban">
           {COLS.map((c) => {
             const items = list.filter((r) => colOf(r) === c.id);
-            const cap = shown[c.id] ?? BOARD_PAGE;
-            const head = items.slice(0, cap);
-            const rest = items.length - head.length;
             return (
               <div key={c.id} className="kan-col">
                 <div className="kan-h"><c.icon size={15} /><b>{c.label}</b><span className="badge">{items.length}</span></div>
                 <div className="kan-hint muted xs">{c.hint}</div>
-                {c.id === 'done'
-                  ? <DoneColumn items={items} nm={nm} acts={acts} open={openModels} setOpen={setOpenModels} force={fModel} />
-                  : (
-                    <>
-                      <div className="kan-list">{head.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}{!items.length && <div className="kan-empty">空</div>}</div>
-                      {rest > 0 && (
-                        <button type="button" className="kan-more" onClick={() => setShown((s) => ({ ...s, [c.id]: head.length + BOARD_PAGE }))}>
-                          <ChevronDown size={14} aria-hidden />加载更多<span className="kan-more-n">剩余 {rest}</span>
-                        </button>
-                      )}
-                      {rest <= 0 && items.length > BOARD_PAGE && <div className="kan-more-end muted xs">已显示全部 {items.length} 条</div>}
-                    </>
-                  )}
+                <BoardColumn col={c.id} items={items} nm={nm} acts={acts} open={openModels} setOpen={setOpenModels} force={fModel} />
               </div>
             );
           })}
@@ -212,23 +197,43 @@ function RunBoard({ rows }: { rows: Row[] }) {
   );
 }
 
-function DoneColumn({ items, nm, acts, open, setOpen, force }: { items: Row[]; nm: ReturnType<typeof useNamer>; acts: ReturnType<typeof useRunActions>; open: Record<string, boolean>; setOpen: (fn: (s: Record<string, boolean>) => Record<string, boolean>) => void; force: string }) {
-  const groups = modelGroups(items);
-  if (!groups.length) return <div className="kan-empty">空</div>;
+function BoardColumn({ col, items, nm, acts, open, setOpen, force }: { col: string; items: Row[]; nm: ReturnType<typeof useNamer>; acts: ReturnType<typeof useRunActions>; open: Record<string, boolean>; setOpen: (fn: (s: Record<string, boolean>) => Record<string, boolean>) => void; force: string }) {
+  const vendors = boardVendors(items);
+  if (!vendors.length) return <div className="kan-empty">空</div>;
+  const aliases = [...vendors.map((v) => v.vendor)].sort((a, b) => a.localeCompare(b, 'zh'));
+  const alias = (v: string) => `供应商 ${aliases.indexOf(v) < 26 ? String.fromCharCode(65 + aliases.indexOf(v)) : 'Z' + (aliases.indexOf(v) - 25)}`;
   return (
     <div className="kan-list">
-      {groups.map((g) => {
-        const expanded = !!force || !!open[g.key];
-        const shown = expanded ? g.rows : g.rows.slice(0, 1);
+      {vendors.map((v) => {
+        const vKey = `${col}\u0000${v.vendor}`;
+        const expanded = !!force || !!open[vKey];
+        const count = v.models.reduce((n, m) => n + m.rows.length, 0);
+        const meta = vendorById(v.vendor);
         return (
-          <div key={g.key} className="kan-group">
-            <button type="button" className="kan-group-h" aria-expanded={expanded} onClick={() => setOpen((s) => ({ ...s, [g.key]: !expanded }))}>
+          <div key={v.vendor} className="kan-group">
+            <button type="button" className="kan-group-h" aria-expanded={expanded} onClick={() => setOpen((s) => ({ ...s, [vKey]: !expanded }))}>
               <ChevronRight size={14} className={cls('disc', expanded && 'open')} />
-              <ModelAvatar vendor={g.vendor} model={g.model} size="xs" blind={nm.blind} />
-              <span className="b ellipsis grow">{nm.blind ? nm.model(g.vendor, g.model) : g.model}</span>
-              <span className="kan-group-n muted xs">{g.rows.length}</span>
+              {!nm.blind && <BrandIcon icon={meta?.icon} fallback={v.vendor || '?'} color={meta?.color} size="xs" />}
+              <span className="b ellipsis grow">{nm.blind ? alias(v.vendor) : (meta?.name || v.vendor)}</span>
+              <span className="kan-group-n muted xs">{count}</span>
             </button>
-            {shown.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}
+            {!expanded && <RunCard r={v.models[0].rows[0]} nm={nm} acts={acts} />}
+            {expanded && v.models.map((m) => {
+              const mKey = `${col}\u0000${m.key}`;
+              const mOpen = !!force || !!open[mKey];
+              const shown = mOpen ? m.rows : m.rows.slice(0, 1);
+              return (
+                <div key={m.key} className="kan-sub">
+                  <button type="button" className="kan-group-h sub" aria-expanded={mOpen} onClick={() => setOpen((s) => ({ ...s, [mKey]: !mOpen }))}>
+                    <ChevronRight size={13} className={cls('disc', mOpen && 'open')} />
+                    <ModelAvatar vendor={m.vendor} model={m.model} size="xs" blind={nm.blind} />
+                    <span className="ellipsis grow">{nm.model(m.vendor, m.model)}</span>
+                    <span className="kan-group-n muted xs">{m.rows.length}</span>
+                  </button>
+                  {shown.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}
+                </div>
+              );
+            })}
           </div>
         );
       })}

@@ -9,7 +9,7 @@ import { settleQuota, unitPrice } from '../shared/quota';
 import { activityOf, activityOfJob, isBusy, FAIL_WINDOW, parseProgress, petJobs } from '../shared/activity';
 import type { JobInfo } from '../shared/types';
 import type { StoreRun, WorkspaceRun, SpecTask } from '../shared/types';
-import { bestArtifactRun, artifactTaskKeys, artifactChoices, workspaceForRun } from '../shared/artifact-selection';
+import { bestArtifactRun, artifactTaskKeys, artifactChoices, workspaceForRun, choosePreview } from '../shared/artifact-selection';
 
 test('产物对比：最高分、同分较早轮次、零分、未评分与 harness/变体隔离', () => {
   const run = (id: string, total: number | null, index: number, extra: Partial<StoreRun> = {}) => ({ run_id: id, entrant: 'M @ H', tkey: 'T03A', run_index: index, score: total == null ? null : { total }, ...extra } as StoreRun);
@@ -28,6 +28,16 @@ test('产物目录：全部题目顺序、变体分行、工作区关联去重�
   assert.equal(workspaceForRun(runs[0], ws), ws[0]);
   assert.equal(workspaceForRun(runs[1], ws), ws[1]);
   assert.deepEqual(artifactChoices(ws, runs).map((e) => e.key), ['ws:V/M/T01/r1', 'ws:V/M/T02/r1', 'run:orphan']);
+});
+
+test('预览按交付类型打开：网页题忽略评审视频，视频题打开成片', () => {
+  const review = { review_video: 'bench-data/runs/x/review.mp4', capture_orbit: 'bench-data/runs/x/orbit.webm' };
+  assert.deepEqual(choosePreview({ task: 'V01', ref: 'OpenAI/M/V01/r1', entry: 'pelican/index.html', artifacts: review }), { kind: 'static', body: { ref: 'OpenAI/M/V01/r1', entry: 'pelican/index.html' } });
+  assert.deepEqual(choosePreview({ task: 'T02', ref: 'OpenAI/M/T02/r1', entry: 'mc-sol-luna/index.html', artifacts: review }), { kind: 'static', body: { ref: 'OpenAI/M/T02/r1', entry: 'mc-sol-luna/index.html' } });
+  assert.deepEqual(choosePreview({ task: 'V08', ref: 'OpenAI/M/V08/r1', entry: 'aether9-promo/final.mp4', artifacts: review }), { kind: 'video', path: 'model/OpenAI/M/V08/r1/aether9-promo/final.mp4' });
+  assert.deepEqual(choosePreview({ task: 'T04', artifacts: { ...review, video: 'bench-data/runs/t04/final.mp4' } }), { kind: 'video', path: 'bench-data/runs/t04/final.mp4' });
+  assert.equal(choosePreview({ task: 'V07', artifacts: review, runDir: 'bench-data/runs/v07' }).kind, 'static');
+  assert.equal(choosePreview({ task: 'V01', artifacts: { review_video: 'D:/abs/review.mp4' } }).kind, 'none');
 });
 
 test('供应商推断', () => {
