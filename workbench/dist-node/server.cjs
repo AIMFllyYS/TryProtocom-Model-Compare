@@ -39,10 +39,11 @@ var import_node_path8 = __toESM(require("node:path"), 1);
 var import_node_child_process5 = require("node:child_process");
 
 // shared/v2.ts
-var V1_VERSION = "v1.0";
-var versionOf = (r) => r.benchmark_version || V1_VERSION;
-var isV2 = (r) => versionOf(r).toLowerCase().startsWith("v2");
 var suiteOf = (t) => t.suite || "v1";
+function suiteOfRun(r, tasks) {
+  const hit = tasks.find((t) => r.task === t.id || r.tkey === t.id || Object.keys(t.variants || {}).some((v) => r.tkey === t.id + v));
+  return hit && suiteOf(hit) === "v2" ? "v2" : "v1";
+}
 function requiredTkeys(tasks, suite = "v2") {
   const keys = [];
   for (const t of tasks) {
@@ -81,8 +82,9 @@ function stability(byTask, cfg) {
 }
 function applyView(runs, view, cfg, tasks) {
   const info = { entrants: {}, excluded: [] };
-  if (view === "history") return { runs: runs.filter((r) => !isV2(r)), info };
-  const v2runs = runs.filter((r) => isV2(r));
+  const inV2 = (r) => suiteOfRun(r, tasks) === "v2";
+  if (view === "history") return { runs: runs.filter((r) => !inV2(r)), info };
+  const v2runs = runs.filter(inV2);
   const by = /* @__PURE__ */ new Map();
   const key = (e, t) => `${e}\0${t}`;
   for (const r of v2runs) {
@@ -381,7 +383,7 @@ function aggregate(allRuns, spec, opts = {}) {
     if (!sc.gate_pass || !sc.passed) failures.push({ entrant: r.entrant, task: r.tkey, run_id: r.run_id, total: sc.total, tags: [...new Set(tags)].join("|") || "\u80FD\u529B\u4E0D\u8DB3\uFF08\u672A\u8FBE\u6807\uFF09" });
   }
   const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0 };
-  for (const r of allRuns.filter((x) => view === "history" === !isV2(x))) {
+  for (const r of allRuns.filter((x) => suiteOfRun(x, spec.tasks) === "v2" === (view !== "history"))) {
     if (!r.graded || !r.score) {
       pending.ungraded++;
       continue;
@@ -623,7 +625,7 @@ function runHeader(h) {
   }
   if (v2) {
     L.push(`4. **\u7ED3\u675F\u65B9\u5F0F**\uFF1A\u5168\u90E8\u5B8C\u6210\u540E\uFF0C\u5728\u5DE5\u4F5C\u76EE\u5F55\u4E0B\u5199\u4E00\u4EFD \`${FINAL_FILE}\`\uFF1A\u5185\u5BB9\u3001\u957F\u5EA6\u548C\u683C\u5F0F\u90FD\u4E0D\u9650\uFF0C\u53EF\u4EE5\u8BF4\u8BF4\u4F60\u505A\u4E86\u4EC0\u4E48\u3001\u600E\u4E48\u8FD0\u884C\u3001\u6709\u54EA\u4E9B\u6CA1\u505A\u5B8C\u3001\u6700\u60F3\u8BA9\u6211\u770B\u7684\u5730\u65B9\uFF1B\u53EA\u5199\u771F\u5B9E\u5B58\u5728\u7684\u4E1C\u897F\u3002\u8FD9\u4E2A\u6587\u4EF6\u51FA\u73B0\u5373\u89C6\u4E3A\u672C\u6B21\u8FD0\u884C\u7ED3\u675F\u3002\u4E0D\u9700\u8981\u5728\u804A\u5929\u91CC\u8D34\u51FA\u4EE3\u7801\u2014\u2014\u5DE5\u4F5C\u76EE\u5F55\u91CC\u7684\u6587\u4EF6\u5C31\u662F\u4EA4\u4ED8\u3002`);
-    if (h.timeLimit) L.push(`5. **\u53C2\u8003\u65F6\u957F**\uFF1A${h.timeLimit} \u5206\u949F\uFF08\u8F6F\u65F6\u9650\uFF09\uFF1A\u8D85\u8FC7\u4E0D\u4F1A\u88AB\u4E2D\u65AD\uFF0C\u4E5F\u4E0D\u6263\u8D28\u91CF\u5206\uFF0C\u53EA\u8BB0\u5F55\u7528\u65F6\u3002\u8BF7\u4E0D\u8981\u4E3A\u8D76\u65F6\u95F4\u964D\u4F4E\u5B8C\u6210\u5EA6\u3002`);
+    if (h.timeLimit) L.push(`5. **\u53C2\u8003\u7528\u65F6**\uFF1A${h.timeLimit} \u5206\u949F\uFF08\u8F6F\u65F6\u9650\uFF0C\u6307\u4F60\u5B8C\u6210\u4EFB\u52A1\u7684\u5DE5\u4F5C\u65F6\u95F4\uFF0C\u4E0D\u662F\u6210\u7247\u65F6\u957F\uFF09\uFF1A\u8D85\u8FC7\u4E0D\u4F1A\u88AB\u4E2D\u65AD\uFF0C\u4E5F\u4E0D\u6263\u8D28\u91CF\u5206\uFF0C\u53EA\u8BB0\u5F55\u7528\u65F6\u3002\u8BF7\u4E0D\u8981\u4E3A\u8D76\u65F6\u95F4\u964D\u4F4E\u5B8C\u6210\u5EA6\u3002`);
   } else {
     L.push(`4. **\u7ED3\u675F\u65B9\u5F0F**\uFF1A\u5168\u90E8\u5B8C\u6210\u540E\uFF0C\u628A\u4F60\u7ED9\u6211\u7684\u6700\u540E\u4E00\u6761\u603B\u7ED3\u7684\u539F\u6587\uFF0C\u540C\u65F6\u4FDD\u5B58\u4E3A\u5DE5\u4F5C\u76EE\u5F55\u4E0B\u7684 \`${FINAL_FILE}\`\uFF08\u4E0E\u56DE\u590D\u5185\u5BB9\u4E00\u81F4\uFF0C\u53EA\u5199\u771F\u5B9E\u5B58\u5728\u7684\u6587\u4EF6\uFF09\u3002\u8FD9\u4E2A\u6587\u4EF6\u51FA\u73B0\u5373\u89C6\u4E3A\u672C\u6B21\u8FD0\u884C\u7ED3\u675F\u3002`);
     if (h.timeLimit) L.push(`5. **\u65F6\u95F4\u4E0A\u9650**\uFF1A${h.timeLimit} \u5206\u949F\u3002`);

@@ -1,6 +1,6 @@
 // 运行：看板（进行中 → 已交付待登记 → 待评分 → 已完成），详情含实时交付清单、登记评分、得分明细、预览打分与 AI 评审提示词。
-import { useEffect, useMemo, useState } from 'react';
-import { Bot, ChevronDown, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Bot, ChevronDown, ChevronRight, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
 import type { ItemScore, SpecItem, StoreRun, Usage, WorkspaceRun } from '../../shared/types';
 import { FINAL_FILE } from '../../shared/deliverables';
 import { get, post } from '../api';
@@ -9,7 +9,8 @@ import { go, href, useLocal, useRoute } from '../lib/router';
 import { cls, copyText, fmt, METHOD_LABEL, TIER_LABEL, wsStatus } from '../lib/format';
 import { Markdown } from '../lib/markdown';
 import { Badge, Btn, Card, CheckBox, CopyBtn, Empty, Field, IconBtn, Kv, Meter, Seg, Select, Tabs } from '../ui/kit';
-import { HarnessIcon, ModelAvatar } from '../ui/brand';
+import { BrandIcon, HarnessIcon, ModelAvatar } from '../ui/brand';
+import { vendorById } from '../../shared/vendors';
 import { toast } from '../ui/toast';
 import { DimChip, Score, TaskLabel, WsBadge, useNamer } from '../components/common';
 import { HarnessPicker, ModelPicker } from '../components/pickers';
@@ -49,8 +50,49 @@ const COLS: { id: Col; label: string; icon: typeof Hourglass; hint: string }[] =
   { id: 'running', label: '进行中', icon: Hourglass, hint: '已复制提示词，等待模型交付' },
   { id: 'delivered', label: '已交付 · 待登记', icon: FileCheck2, hint: '检测到 FINAL_MESSAGE.md 或已结束计时' },
   { id: 'grading', label: '待评分', icon: Sparkles, hint: '自动评分 / Agent / 人工项未完成' },
-  { id: 'done', label: '已完成', icon: CircleCheck, hint: '评分完整' },
+  { id: 'done', label: '已完成', icon: CircleCheck, hint: '按模型收起，默认只露最近一次' },
 ];
+
+const whoOf = (r: Row) => ({ vendor: r.ws?.vendor || r.run?.vendor || '', model: r.ws?.model || r.run?.model || '未命名' });
+const tkeyOf = (r: Row) => r.ws?.tkey || r.run?.tkey || r.ws?.task || r.run?.task || '';
+const byTask = (a: Row, b: Row) => tkeyOf(a).localeCompare(tkeyOf(b), 'en', { numeric: true })
+  || String(a.ws?.index ?? a.run?.run_index ?? 0).localeCompare(String(b.ws?.index ?? b.run?.run_index ?? 0), 'en', { numeric: true });
+
+interface ModelGroup { key: string; vendor: string; model: string; rows: Row[] }
+interface VendorNode { vendor: string; models: ModelGroup[] }
+
+/** 看板「已完成」：按出现顺序分组（列表已按时间从近到远），每组默认一张。 */
+function modelGroups(items: Row[]): ModelGroup[] {
+  const order: string[] = [];
+  const map = new Map<string, ModelGroup>();
+  for (const r of items) {
+    const { vendor, model } = whoOf(r);
+    const key = `${vendor}\u0000${model}`;
+    let g = map.get(key);
+    if (!g) { g = { key, vendor, model, rows: [] }; map.set(key, g); order.push(key); }
+    g.rows.push(r);
+  }
+  return order.map((k) => map.get(k)!);
+}
+
+/** 列表：供应商 → 模型 → 按题号排列的运行。 */
+function vendorTree(items: Row[]): VendorNode[] {
+  const vendors = new Map<string, Map<string, Row[]>>();
+  for (const r of items) {
+    const { vendor, model } = whoOf(r);
+    const v = vendor || '未标注';
+    if (!vendors.has(v)) vendors.set(v, new Map());
+    const models = vendors.get(v)!;
+    const key = `${v}\u0000${model}`;
+    if (!models.has(key)) models.set(key, []);
+    models.get(key)!.push(r);
+  }
+  return [...vendors.entries()].map(([vendor, models]) => ({
+    vendor,
+    models: [...models.entries()].map(([key, rs]) => ({ key, vendor, model: key.split('\u0000')[1], rows: [...rs].sort(byTask) }))
+      .sort((a, b) => a.model.localeCompare(b.model, 'zh')),
+  })).sort((a, b) => a.vendor.localeCompare(b.vendor, 'zh'));
+}
 
 export default function Runs() {
   const route = useRoute();
@@ -75,6 +117,8 @@ function RunBoard({ rows }: { rows: Row[] }) {
   const [fTask, setFTask] = useLocal('runs.task', '');
   // 性能：每栏先渲染 PAGE 张卡片，其余按批「加载更多」（避免一次挂载几百张卡片，卡住首帧）
   const [shown, setShown] = useState<Record<string, number>>({});
+  const [openModels, setOpenModels] = useState<Record<string, boolean>>({});
+  const [openVendors, setOpenVendors] = useState<Record<string, boolean>>({});
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   useEffect(() => { setShown({}); }, [fModel, fTask]);
@@ -129,13 +173,19 @@ function RunBoard({ rows }: { rows: Row[] }) {
               <div key={c.id} className="kan-col">
                 <div className="kan-h"><c.icon size={15} /><b>{c.label}</b><span className="badge">{items.length}</span></div>
                 <div className="kan-hint muted xs">{c.hint}</div>
-                <div className="kan-list">{head.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}{!items.length && <div className="kan-empty">空</div>}</div>
-                {rest > 0 && (
-                  <button type="button" className="kan-more" onClick={() => setShown((s) => ({ ...s, [c.id]: head.length + BOARD_PAGE }))}>
-                    <ChevronDown size={14} aria-hidden />加载更多<span className="kan-more-n">剩余 {rest}</span>
-                  </button>
-                )}
-                {rest <= 0 && items.length > BOARD_PAGE && <div className="kan-more-end muted xs">已显示全部 {items.length} 条</div>}
+                {c.id === 'done'
+                  ? <DoneColumn items={items} nm={nm} acts={acts} open={openModels} setOpen={setOpenModels} force={fModel} />
+                  : (
+                    <>
+                      <div className="kan-list">{head.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}{!items.length && <div className="kan-empty">空</div>}</div>
+                      {rest > 0 && (
+                        <button type="button" className="kan-more" onClick={() => setShown((s) => ({ ...s, [c.id]: head.length + BOARD_PAGE }))}>
+                          <ChevronDown size={14} aria-hidden />加载更多<span className="kan-more-n">剩余 {rest}</span>
+                        </button>
+                      )}
+                      {rest <= 0 && items.length > BOARD_PAGE && <div className="kan-more-end muted xs">已显示全部 {items.length} 条</div>}
+                    </>
+                  )}
               </div>
             );
           })}
@@ -144,20 +194,14 @@ function RunBoard({ rows }: { rows: Row[] }) {
         <Card pad={false}>
           <div className="tbl-wrap"><table className="tbl">
             <thead><tr><th>模型</th><th>题目</th><th>次</th><th>状态</th><th>交付</th><th>用时</th><th>harness</th><th className="num">得分</th><th aria-label="操作" /></tr></thead>
-            <tbody>{list.map((r) => {
-              const w = r.ws;
+            <tbody>{vendorTree(list).map((v) => {
+              const vOpen = openVendors[v.vendor] !== false;
+              const vCount = v.models.reduce((n, m) => n + m.rows.length, 0);
               return (
-                <tr key={r.key} className="clickable" tabIndex={0} onClick={() => go('runs', w ? [w.ref] : [], w ? undefined : { id: r.run!.run_id })} {...runHandlers(r, acts)}>
-                  <td><span className="row gap-s"><ModelAvatar vendor={w?.vendor || r.run!.vendor} model={w?.model || r.run!.model} size="xs" blind={nm.blind} />{w ? nm.model(w.vendor, w.model) : nm.blind ? nm.run(r.run!) : r.run!.model}</span></td>
-                  <td><TaskLabel task={w?.task || r.run!.task} variant={w?.variant || r.run?.variant} /></td>
-                  <td className="mono">{w ? `r${w.index}` : r.run!.run_index ?? ''}</td>
-                  <td>{w ? <WsBadge w={{ ...w, status: r.run?.graded ? 'graded' : r.run ? 'registered' : undefined }} /> : <Badge tone="accent">仅存储</Badge>}</td>
-                  <td>{w?.detect ? <span className="row gap-s"><Meter value={w.detect.done} max={Math.max(1, w.detect.total)} tone={w.detect.done === w.detect.total ? 'ok' : 'accent'} w={60} /><span className="xs muted">{w.detect.done}/{w.detect.total}</span></span> : '—'}</td>
-                  <td className="mono small">{w?.started_at ? fmt.clock((w.ended_at ? Date.parse(w.ended_at) : Date.now()) - Date.parse(w.started_at)) : fmt.min(r.run?.usage.wall_min)}</td>
-                  <td className="small">{w?.harness || r.run?.harness}</td>
-                  <td className="num">{r.run?.score ? <Score v={r.run.score.total} /> : '—'}</td>
-                  <td className="num"><IconBtn label="更多操作" size="xs" onClick={(e) => { e.stopPropagation(); acts.open(e.currentTarget, r); }}><Ellipsis size={14} /></IconBtn></td>
-                </tr>
+                <VendorRows key={v.vendor} node={v} open={vOpen} count={vCount} nm={nm} acts={acts}
+                  modelOpen={(k) => !!fModel || !!openModels[k]}
+                  onVendor={() => setOpenVendors((s) => ({ ...s, [v.vendor]: !vOpen }))}
+                  onModel={(k) => setOpenModels((s) => ({ ...s, [k]: !s[k] }))} />
               );
             })}</tbody>
           </table></div>
@@ -165,6 +209,86 @@ function RunBoard({ rows }: { rows: Row[] }) {
       )}
       <TrashDock rows={rows} />
     </div>
+  );
+}
+
+function DoneColumn({ items, nm, acts, open, setOpen, force }: { items: Row[]; nm: ReturnType<typeof useNamer>; acts: ReturnType<typeof useRunActions>; open: Record<string, boolean>; setOpen: (fn: (s: Record<string, boolean>) => Record<string, boolean>) => void; force: string }) {
+  const groups = modelGroups(items);
+  if (!groups.length) return <div className="kan-empty">空</div>;
+  return (
+    <div className="kan-list">
+      {groups.map((g) => {
+        const expanded = !!force || !!open[g.key];
+        const shown = expanded ? g.rows : g.rows.slice(0, 1);
+        return (
+          <div key={g.key} className="kan-group">
+            <button type="button" className="kan-group-h" aria-expanded={expanded} onClick={() => setOpen((s) => ({ ...s, [g.key]: !expanded }))}>
+              <ChevronRight size={14} className={cls('disc', expanded && 'open')} />
+              <ModelAvatar vendor={g.vendor} model={g.model} size="xs" blind={nm.blind} />
+              <span className="b ellipsis grow">{nm.blind ? nm.model(g.vendor, g.model) : g.model}</span>
+              <span className="kan-group-n muted xs">{g.rows.length}</span>
+            </button>
+            {shown.map((r) => <RunCard key={r.key} r={r} nm={nm} acts={acts} />)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RunLine({ r, acts }: { r: Row; acts: ReturnType<typeof useRunActions> }) {
+  const w = r.ws;
+  return (
+    <tr className="clickable tree-run" tabIndex={0} onClick={() => go('runs', w ? [w.ref] : [], w ? undefined : { id: r.run!.run_id })} {...runHandlers(r, acts)}>
+      <td />
+      <td><span className="tree-pad l3"><TaskLabel task={w?.task || r.run!.task} variant={w?.variant || r.run?.variant} /></span></td>
+      <td className="mono">{w ? `r${w.index}` : r.run!.run_index ?? ''}</td>
+      <td>{w ? <WsBadge w={{ ...w, status: r.run?.graded ? 'graded' : r.run ? 'registered' : undefined }} /> : <Badge tone="accent">仅存储</Badge>}</td>
+      <td>{w?.detect ? <span className="row gap-s"><Meter value={w.detect.done} max={Math.max(1, w.detect.total)} tone={w.detect.done === w.detect.total ? 'ok' : 'accent'} w={60} /><span className="xs muted">{w.detect.done}/{w.detect.total}</span></span> : '—'}</td>
+      <td className="mono small">{w?.started_at ? fmt.clock((w.ended_at ? Date.parse(w.ended_at) : Date.now()) - Date.parse(w.started_at)) : fmt.min(r.run?.usage.wall_min)}</td>
+      <td className="small">{w?.harness || r.run?.harness}</td>
+      <td className="num">{r.run?.score ? <Score v={r.run.score.total} /> : '—'}</td>
+      <td className="num"><IconBtn label="更多操作" size="xs" onClick={(e) => { e.stopPropagation(); acts.open(e.currentTarget, r); }}><Ellipsis size={14} /></IconBtn></td>
+    </tr>
+  );
+}
+
+function VendorRows({ node, open, count, nm, acts, modelOpen, onVendor, onModel }: {
+  node: VendorNode; open: boolean; count: number; nm: ReturnType<typeof useNamer>; acts: ReturnType<typeof useRunActions>;
+  modelOpen: (k: string) => boolean; onVendor: () => void; onModel: (k: string) => void;
+}) {
+  const v = vendorById(node.vendor);
+  return (
+    <>
+      <tr className="tree-vendor">
+        <td colSpan={9}>
+          <button type="button" className="tree-btn" aria-expanded={open} onClick={onVendor}>
+            <ChevronRight size={14} className={cls('disc', open && 'open')} />
+            <BrandIcon icon={v?.icon} fallback={node.vendor || '?'} color={v?.color} size="xs" />
+            <span className="b">{node.vendor || '未标注'}</span>
+            <span className="muted xs">{node.models.length} 个模型 · {count} 次</span>
+          </button>
+        </td>
+      </tr>
+      {open && node.models.map((m) => {
+        const mOpen = modelOpen(m.key);
+        return (
+          <Fragment key={m.key}>
+            <tr className="tree-model">
+              <td colSpan={9}>
+                <button type="button" className="tree-btn l2" aria-expanded={mOpen} onClick={() => onModel(m.key)}>
+                  <ChevronRight size={14} className={cls('disc', mOpen && 'open')} />
+                  <ModelAvatar vendor={m.vendor} model={m.model} size="xs" blind={nm.blind} />
+                  <span className="b ellipsis">{nm.model(m.vendor, m.model)}</span>
+                  <span className="muted xs">{m.rows.length} 次</span>
+                </button>
+              </td>
+            </tr>
+            {mOpen && m.rows.map((r) => <RunLine key={r.key} r={r} acts={acts} />)}
+          </Fragment>
+        );
+      })}
+    </>
   );
 }
 

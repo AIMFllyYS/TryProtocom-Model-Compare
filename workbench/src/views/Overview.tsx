@@ -27,11 +27,24 @@ export default function Overview() {
     const scores = rs.map((r) => r.run?.score?.total).filter((v): v is number => v != null);
     return { t, rs, done: rs.filter((r) => colOf(r) !== 'running').length, best: scores.length ? Math.max(...scores) : null, graded: rs.filter((r) => r.run?.graded).length };
   }), [tasks, mine]);
+  // 分组只是前端展示：T = 历史版（suite≠v2）；V = v2 创作；B = v2 后端。归组靠 suite 与前缀，不写死题号。
+  const groups = useMemo(() => {
+    const defs = [
+      { key: 'T', name: '历史版', sub: '独立榜单', test: (t: (typeof tasks)[number]) => t.suite !== 'v2' },
+      { key: 'V', name: 'v2 · 创作', sub: '动画 / 网页 / 3D', test: (t: (typeof tasks)[number]) => t.suite === 'v2' && !t.id.startsWith('B') },
+      { key: 'B', name: 'v2 · 后端', sub: '黑盒接口与变异检验', test: (t: (typeof tasks)[number]) => t.suite === 'v2' && t.id.startsWith('B') },
+    ];
+    return defs.map((g) => {
+      const items = perTask.filter((p) => g.test(p.t));
+      const prog = items.length ? items.reduce((s, p) => s + Math.min(need, p.done), 0) / (items.length * need) : 0;
+      return { ...g, items, prog };
+    }).filter((g) => g.items.length);
+  }, [perTask, need, tasks]);
   const running = rows.filter((r) => colOf(r) === 'running' && r.ws?.started_at);
   const delivered = rows.filter((r) => colOf(r) === 'delivered');
   const pend = wb.agg?.pending;
   const humanRun = rows.find((r) => r.run?.score?.items.some((i) => i.status === 'pending' && i.method === 'human'));
-  const nextTask = perTask.find((p) => p.done < need);
+  const nextTask = groups.flatMap((g) => g.items).find((p) => p.done < need);
   const progress = tasks.length ? perTask.reduce((s, p) => s + Math.min(need, p.done), 0) / (tasks.length * need) : 0;
 
   let cta: { icon: typeof Plus; title: string; sub: string; label: string; run: () => void } | null = null;
@@ -67,13 +80,26 @@ export default function Overview() {
           </div>
         )}
         {prof && (
-          <div className="ov-tasks">
-            {perTask.map((p) => (
-              <a key={p.t.id} className={cls('ov-task', p.done >= need && 'full', p.done > 0 && 'some')} href={href('tasks', [p.t.id])}>
-                <div className="row"><b className="mono">{p.t.id}</b><span className="grow" />{p.best != null ? <Score v={p.best} /> : null}</div>
-                <div className="ellipsis small">{p.t.name.replace(/（.*?）/g, '')}</div>
-                <div className="tt-dots">{Array.from({ length: need }, (_, i) => <i key={i} className={cls(i < p.graded ? 'graded' : i < p.done && 'on')} />)}</div>
-              </a>
+          <div className="ov-groups">
+            {groups.map((g) => (
+              <div key={g.key} className="ov-group">
+                <div className="ov-group-h">
+                  <span className="ov-group-k mono">{g.key}</span>
+                  <b>{g.name}</b>
+                  <span className="muted small">{g.sub} · {g.items.length} 题</span>
+                  <span className="grow" />
+                  <span className="muted small mono">{Math.round(g.prog * 100)}%</span>
+                </div>
+                <div className="ov-tasks">
+                  {g.items.map((p) => (
+                    <a key={p.t.id} className={cls('ov-task', p.done >= need && 'full', p.done > 0 && 'some')} href={href('tasks', [p.t.id])}>
+                      <div className="row"><b className="mono">{p.t.id}</b><span className="grow" />{p.best != null ? <Score v={p.best} /> : null}</div>
+                      <div className="ellipsis small">{p.t.name.replace(/（.*?）/g, '')}</div>
+                      <div className="tt-dots">{Array.from({ length: need }, (_, i) => <i key={i} className={cls(i < p.graded ? 'graded' : i < p.done && 'on')} />)}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

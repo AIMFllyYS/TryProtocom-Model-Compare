@@ -182,6 +182,21 @@
 .kan-more svg { color: var(--text-3); }
 .kan-more-n { margin-left: 2px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-3); }
 .kan-more-end { padding: 6px 0 2px; text-align: center; }
+.kan-group { display: flex; flex-direction: column; gap: 8px; }
+.kan-group-h { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-l); cursor: pointer; font: inherit; color: inherit; text-align: left; background: var(--fill-2); box-shadow: inset 0 0 0 .5px var(--hair); transition: background var(--t-fast); }
+.kan-group-h:hover { background: var(--fill-3); }
+.kan-group-h:focus-visible { outline: 0; box-shadow: 0 0 0 .5px var(--edge), 0 0 0 3px color-mix(in oklab, var(--accent) 38%, transparent); }
+.kan-group-n { font-variant-numeric: tabular-nums; }
+.disc { color: var(--text-3); transition: transform var(--t-fast) var(--ease); flex: none; }
+.disc.open { transform: rotate(90deg); }
+.tree-vendor td, .tree-model td { padding-top: 4px; padding-bottom: 4px; background: var(--fill-1); }
+.tree-model td { background: transparent; }
+.tree-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 2px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--r-s); }
+.tree-btn:hover { background: var(--fill-2); }
+.tree-btn:focus-visible { outline: 0; box-shadow: 0 0 0 .5px var(--edge), 0 0 0 3px color-mix(in oklab, var(--accent) 38%, transparent); }
+.tree-btn.l2 { padding-left: 28px; }
+.tree-pad.l3 { padding-left: 18px; }
+.tree-run td:first-child { width: 28px; }
 .run-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 13px 14px; border-radius: var(--r-l); color: inherit; text-decoration: none !important; transition: transform var(--t) var(--ease-out); animation: sheet-in var(--t) var(--ease) both; }
 .run-card:hover { transform: translateY(-1px); }
 .rc-deliv { display: flex; align-items: center; gap: 10px; }
@@ -322,6 +337,9 @@
 .ov-cur { display: flex; align-items: center; gap: 20px; }
 .ov-cta { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--r-xl); }
 .ov-cta-ic { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 15px; flex: none; color: var(--accent-ink); background: var(--accent-soft); }
+.ov-groups { display: flex; flex-direction: column; gap: 14px; }
+.ov-group-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ov-group-k { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: var(--fill-2); font-size: 12px; font-weight: 600; }
 .ov-tasks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 1200px) { .ov-tasks { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .ov-task { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--r-l); color: inherit; text-decoration: none !important; background: var(--fill-1); box-shadow: inset 0 0 0 .5px var(--hair); transition: transform var(--t) var(--ease-out), background var(--t); }
