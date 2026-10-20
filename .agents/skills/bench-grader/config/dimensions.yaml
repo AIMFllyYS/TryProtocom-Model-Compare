@@ -36,6 +36,12 @@ dimensions:
     kind: quality
     weight: 1.0
     desc: skill 遵循、自我验证（运行/截图/测试）、出错后修复、汇报与实际一致
+  - id: stability
+    name: 稳定性
+    kind: quality
+    weight: 0
+    only_views: [full]
+    desc: 仅 v2 完整版（每题测满 3 次）出现。= 50% 可用率（Tier0 通过的运行占比）+ 50% 一致性（100 − 2 × 各题运行分标准差的均值）；失误计入，不剔除。不进质量总分。
   - id: cost
     name: 成本效率
     kind: efficiency

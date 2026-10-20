@@ -2,7 +2,7 @@
 // 输入只依赖可移植存储文件中的 StoreRun，因此在没有 bench-data 的电脑上也能出榜。
 // 与 Python 版的唯一差异：bootstrap 使用 mulberry32 随机数，置信区间数值会有极小抖动。
 import type { Aggregate, BoardRow, BoardView, Dimension, FullConfig, ItemAnalysisRow, SpecData, StoreRun, TaskRow } from './types';
-import { applyView, isV2, suiteOf } from './v2';
+import { applyView, suiteOf, suiteOfRun } from './v2';
 
 const mean = (xs: (number | null | undefined)[]): number | null => {
   const v = xs.filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
@@ -217,7 +217,7 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
   }
 
   const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0 };
-  for (const r of allRuns.filter((x) => (view === 'history') === !isV2(x))) {
+  for (const r of allRuns.filter((x) => (suiteOfRun(x, spec.tasks) === 'v2') === (view !== 'history'))) {
     if (!r.graded || !r.score) { pending.ungraded++; continue; }
     for (const it of r.score.items) if (it.status === 'pending') it.method === 'human' ? pending.human++ : pending.agent++;
     if ((r.usage?.missing || []).length) pending.usage_missing++;

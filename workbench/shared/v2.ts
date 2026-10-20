@@ -8,6 +8,12 @@ export const versionOf = (r: Pick<StoreRun, 'benchmark_version'>) => r.benchmark
 export const isV2 = (r: Pick<StoreRun, 'benchmark_version'>) => versionOf(r).toLowerCase().startsWith('v2');
 export const suiteOf = (t: Pick<SpecTask, 'suite'>) => t.suite || 'v1';
 
+/** 一次运行属于哪套题库。以题目的 suite 为准，不看分数上的版本号：旧提示词的分数不能进 v2 榜。认不出的题一律算历史版。 */
+export function suiteOfRun(r: Pick<StoreRun, 'task' | 'tkey'>, tasks: SpecTask[]): 'v1' | 'v2' {
+  const hit = tasks.find((t) => r.task === t.id || r.tkey === t.id || Object.keys(t.variants || {}).some((v) => r.tkey === t.id + v));
+  return hit && suiteOf(hit) === 'v2' ? 'v2' : 'v1';
+}
+
 /** 某题库要求测满的 tkey（带 A/C 变体的题展开成 T03A / T03C） */
 export function requiredTkeys(tasks: SpecTask[], suite = 'v2'): string[] {
   const keys: string[] = [];
@@ -56,8 +62,9 @@ export interface ViewInfo {
 /** runs 必须已是“已评分”的运行。简化版里被选中的运行带 n_used（用了几次）。 */
 export function applyView(runs: StoreRun[], view: BoardView, cfg: FullConfig, tasks: SpecTask[]): { runs: (StoreRun & { n_used?: number })[]; info: ViewInfo } {
   const info: ViewInfo = { entrants: {}, excluded: [] };
-  if (view === 'history') return { runs: runs.filter((r) => !isV2(r)), info };
-  const v2runs = runs.filter((r) => isV2(r));
+  const inV2 = (r: StoreRun) => suiteOfRun(r, tasks) === 'v2';
+  if (view === 'history') return { runs: runs.filter((r) => !inV2(r)), info };
+  const v2runs = runs.filter(inV2);
   const by = new Map<string, StoreRun[]>();
   const key = (e: string, t: string) => `${e}\u0000${t}`;
   for (const r of v2runs) {

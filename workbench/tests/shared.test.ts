@@ -239,7 +239,7 @@ test('榜单三视图：历史版不含 v2、简化版取最高并标 n、完整
     score: { gate_pass: true, total, dims: { visual: total }, dim_weights: { visual: 1 }, tiers: {}, items: [], na_ratio: 0, low_confidence: false, pending: [], complete: true, passed: total >= 60, tier0_pass: true, gate_fail: [] },
     ...extra,
   }) as unknown as StoreRun;
-  const runs: StoreRun[] = [mk('h1', 'old', 'T01', 1, 80)];
+  const runs: StoreRun[] = [mk('h1', 'old', 'T01', 1, 80), mk('leak', 'old', 'T01', 2, 100, { benchmark_version: 'v2.0-draft' })];
   for (const i of [1, 2, 3]) runs.push(mk(`a${i}-1`, 'full', 'V01', i, [90, 30, 90][i - 1], i === 2 ? { score: { ...mk('x', 'x', 'V01', 1, 30).score!, tier0_pass: false } } : {}), mk(`a${i}-2`, 'full', 'V02', i, 70));
   runs.push(mk('p1', 'part', 'V01', 1, 50), mk('p2', 'part', 'V01', 2, 80), mk('p3', 'part', 'V02', 1, 60));
 
@@ -248,6 +248,8 @@ test('榜单三视图：历史版不含 v2、简化版取最高并标 n、完整
   assert.equal(hist.board[0].dims.stability, undefined);
 
   const simple = aggregate(runs, spec, { bootstrap: 20, view: 'simple' });
+  assert.ok(!simple.entrants.includes('old'), '历史题的分数不能进 v2，即使版本号写成了 v2');
+  assert.ok(!simple.tasks.some((t) => t.task === 'T01'));
   const part = simple.board.find((b) => b.entrant === 'part')!;
   assert.equal(part.n_max, 2); assert.equal(part.n_min, 1); assert.equal(part.star, true);
   assert.equal(simple.tasks.find((t) => t.entrant === 'part' && t.task === 'V01')!.mean, 80, '每题取最高');

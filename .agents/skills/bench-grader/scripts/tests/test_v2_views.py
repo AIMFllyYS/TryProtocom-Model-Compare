@@ -65,6 +65,14 @@ def test_history_excludes_v2():
     assert [r["tkey"] for r in out] == ["T01"]
 
 
+def test_old_scores_stay_on_history_even_if_stamped_v2():
+    runs = [_run("m", "T01", 1, 90, version="v2.0-draft"), _run("m", "V01", 1, 70, version=None)]
+    hist, _ = v2.apply_view(runs, "history", CFG)
+    simple, _ = v2.apply_view(runs, "simple", CFG)
+    assert [r["tkey"] for r in hist] == ["T01"]
+    assert [r["tkey"] for r in simple] == ["V01"]
+
+
 def test_simple_takes_best_and_marks_n():
     runs = [_run("m", "V01", 1, 50), _run("m", "V01", 2, 80, incident=None), _run("m", "V01", 3, 60), _run("m", "V02", 1, 70)]
     out, info = v2.apply_view(runs, "simple", CFG)

@@ -34,6 +34,29 @@ def suite_of(task_id: str) -> str:
         return "v1"
 
 
+def suite_of_run(run: dict) -> str:
+    """一次运行属于哪套题库。以题目 rubric 的 suite 为准，不看分数文件上的版本号。
+
+    历史测评都是在旧提示词上打的分。即便后来被写成 v2.0，也不能进入 v2 榜。
+    认不出的题号一律算历史版，避免旧数据漏进新榜。
+    """
+    meta = run.get("meta") or {}
+    cands: list[str] = []
+    for raw in (meta.get("task"), run.get("tkey")):
+        if isinstance(raw, str) and raw and raw not in cands:
+            cands.append(raw)
+    tkey = run.get("tkey") or ""
+    if isinstance(tkey, str) and len(tkey) > 1 and tkey[-1].isalpha():
+        base = tkey[:-1]
+        if base and base not in cands:
+            cands.append(base)
+    known = task_dirs()
+    for cand in cands:
+        if cand in known:
+            return suite_of(cand)
+    return "v1"
+
+
 def suite_tasks(suite: str) -> list[str]:
     return [tid for tid in task_dirs() if suite_of(tid) == suite]
 
@@ -76,8 +99,8 @@ def apply_view(runs: list[dict], view: str, cfg: dict) -> tuple[list[dict], dict
     if view not in VIEWS:
         raise ValueError(f"unknown view {view!r}; expected one of {VIEWS}")
     if view == "history":
-        return [r for r in runs if not is_v2(r["meta"])], {"entrants": {}, "excluded": []}
-    v2runs = [r for r in runs if is_v2(r["meta"]) and not r["meta"].get("discarded")]
+        return [r for r in runs if suite_of_run(r) != "v2"], {"entrants": {}, "excluded": []}
+    v2runs = [r for r in runs if suite_of_run(r) == "v2" and not r["meta"].get("discarded")]
     by = defaultdict(list)
     for r in v2runs:
         by[(r["entrant"], r["tkey"])].append(r)
