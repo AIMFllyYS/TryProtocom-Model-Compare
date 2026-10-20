@@ -2,7 +2,7 @@ id: V08
 suite: v2
 kind: motion
 name: Aether-9 发布宣传片（v2 愿望版，HyperFrames 端到端）
-short: 用 HyperFrames + skills 从事实表到 20 秒成片：规格、混音、字幕、事实准确、叙事与吸引力
+short: 用 HyperFrames + skills 从事实表到成片（推荐约 20 秒，不限时长）：规格、混音、字幕、事实准确、叙事与吸引力
 deliverable_dir: aether9-promo
 dims: {anim: 1.0, agent: 1.0, eng: 0.5}
 condition: 无人值守；预装 HyperFrames 与官方 skills、统一 TTS 命令；工作目录预置 assets/（事实表、2 首 BGM、4 个音效）
@@ -16,7 +16,7 @@ probes:
       required: [final.mp4, subtitles.srt, script.md]
   - type: claims
   - type: video
-    opts: {file: final.mp4, srt: subtitles.srt, expected_duration: 20, asr: true, script: script.md}
+    opts: {file: final.mp4, srt: subtitles.srt, asr: true, script: script.md}
 
 tier0:
   - {id: V08-T0-1, desc: 交付了可解析的 final.mp4, metric: video.exists, rule: {type: bool}}
@@ -30,7 +30,6 @@ gates:
 items:
   # ---------------- 工程化（成片规格） ----------------
   - {id: V08-E01, dim: eng, tier: basic, method: auto, edition: base, desc: 交付物齐全（成片、字幕、脚本）, metric: files.required_ratio, rule: {type: ratio}}
-  - {id: V08-E02, dim: eng, tier: basic, method: auto, edition: base, desc: 时长 20±1 秒（误差秒）, metric: video.duration_err, rule: {type: max, max: 1, zero: 5}}
   - {id: V08-E03, dim: eng, tier: basic, method: auto, edition: base, desc: 分辨率 1920×1080, value_expr: "v['video.width'] == 1920 and v['video.height'] == 1080", rule: {type: bool}}
   - {id: V08-E04, dim: eng, tier: basic, method: auto, edition: base, desc: 帧率 30fps, metric: video.fps, rule: {type: band, lo: 29.9, hi: 30.1, tol: 10}}
   - {id: V08-E05, dim: eng, tier: basic, method: auto, edition: base, desc: 视频编码 H.264, metric: video.h264, rule: {type: bool}}
@@ -56,7 +55,7 @@ items:
     judge: pairwise
     edition: base
     module: narrative
-    desc: 叙事与吸引力（开头抓人、有取舍、有起伏，像一支能发 B 站的宣传片）
+    desc: 叙事与吸引力（开头抓人、有取舍、有起伏，让人想看完并转发）
     evidence: final.mp4
     anchors: ["像草稿", "及格", "好看", "想转发"]
   - id: V08-H02
@@ -95,9 +94,9 @@ items:
     judge: pairwise
     edition: detail
     module: visual
-    desc: 统一的视觉语言（色彩、字体、图形、质感像同一个品牌）
+    desc: 视觉语言自洽（色彩、字体、图形、质感前后一致，有记忆点）
     evidence: final.mp4
-    anchors: ["每个镜头各一套风格", "基本统一但平庸", "统一且好看", "品牌感强，有记忆点"]
+    anchors: ["每个镜头各一套语言", "基本自洽但平庸", "自洽且好看", "整体语言鲜明，有强记忆点"]
 
   # ---------------- Agent 执行 ----------------
   - id: V08-S01

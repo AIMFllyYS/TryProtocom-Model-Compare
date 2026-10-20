@@ -2,7 +2,7 @@ id: V07
 suite: v2
 kind: motion
 name: Tempo 动效短片（v2 愿望版，A 手写 / C 用 Skill）
-short: 同一份 15 秒产品动画：A 组纯手写、C 组用 HyperFrames skills；机器只查缺陷，缓动 / 编排 / 踩点 / 创意交给两两比较
+short: 同一份产品动画（推荐约 15 秒，不限时长）：A 组纯手写、C 组用 HyperFrames skills；机器只查缺陷，缓动 / 编排 / 踩点 / 创意交给两两比较
 deliverable_dir: tempo-promo
 dims: {anim: 1.0}
 variants:
@@ -35,7 +35,6 @@ probes:
     opts:
       global: __hf
       entry: index.html
-      expected_duration: 15
       sample_fps: 15
       text: true
       text_every: 3
@@ -55,7 +54,6 @@ gates:
 
 items:
   # ---------------- 动画：客观缺陷 ----------------
-  - {id: V07-A01, dim: anim, tier: basic, method: auto, edition: base, desc: 时长 15±0.5 秒（误差秒）, metric: tl.duration_err, rule: {type: max, max: 0.5, zero: 3}}
   - {id: V07-A02, dim: anim, tier: advanced, method: auto, edition: base, desc: seek 确定性（同一时刻两次渲染一致）, metric: tl.determinism_ratio, rule: {type: ratio}}
   - {id: V07-A03, dim: anim, tier: basic, method: auto, edition: base, desc: 空白帧比例, metric: tl.blank_ratio, rule: {type: max, max: 0.02, zero: 0.2}}
   - {id: V07-A04, dim: anim, tier: advanced, method: auto, edition: detail, module: craft, desc: 没有拖沓的死画面（最长静止秒数，允许有意的停顿）, metric: tl.static_max_gap_s, rule: {type: max, max: 2.0, zero: 6}}
@@ -71,9 +69,9 @@ items:
     judge: pairwise
     edition: base
     module: easing
-    desc: 缓动质量与运动性格（非线性、有加减速、落点有弹性或阻尼，风格统一）
+    desc: 缓动质量与运动性格（非线性、有加减速、落点有质感，运动性格自洽）
     evidence: 评审视频（统一渲染）
-    anchors: ["线性或生硬跳变", "部分有缓动", "普遍使用合适缓动", "缓动风格统一且有性格"]
+    anchors: ["线性或生硬跳变", "部分有缓动", "普遍使用合适缓动", "运动性格自洽且有辨识度"]
   - id: V07-H02
     dim: anim
     tier: advanced
@@ -111,7 +109,7 @@ items:
     judge: pairwise
     edition: detail
     module: sync
-    desc: 音画配合（重要变化踩在重拍上，段落与音乐强弱对应）
+    desc: 音画配合（使用了音乐时：重要变化踩在重拍上，段落与音乐强弱对应；自行合成或不用音乐则按其自身声画关系评）
     evidence: 带声音观看评审视频
     anchors: ["无关", "偶尔对上", "大部分重要变化踩点", "精确踩点且随音乐强弱变化"]
   - id: V07-H06

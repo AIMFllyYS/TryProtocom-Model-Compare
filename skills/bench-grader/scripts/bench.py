@@ -238,8 +238,8 @@ def cmd_validate(a):
                 print(f"{tid}: 未注册的探针类型 {p.get('type')}")
                 bad += 1
         mo = cap.get("motion") or {}
-        if mo and not (mo.get("samples") or (mo.get("seek") and mo.get("times"))):
-            print(f"{tid}: capture.motion 需要 samples，或同时给出 seek 与 times")
+        if mo and not (mo.get("samples") or (mo.get("seek") and (mo.get("times") or mo.get("fractions")))):
+            print(f"{tid}: capture.motion 需要 samples，或同时给出 seek 与 times/fractions")
             bad += 1
         for c in cap.get("contacts") or []:
             if not (c.get("a") and c.get("b")):

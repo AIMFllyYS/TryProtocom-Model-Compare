@@ -1,7 +1,7 @@
 id: V03
 extends: [creative-web, creative-3d, creative-rig, agent-acceptance]
 name: Minecraft 定格短片（v2 愿望版）
-short: 按工作室 skill 制作 60 秒方块风格定格短片：Skill 遵循、叙事与镜头、角色骨架完整性（不散架 / 不穿模）、定格节奏
+short: 按工作室 skill 制作约 1 分钟的 Minecraft 风格短片（打造神器 → 保卫村庄 → 英雄与交易）：Skill 遵循、三幕叙事、角色骨架完整性（不散架 / 不穿模）、节奏
 deliverable_dir: mc-sol-luna
 dims: {agent: 0.8, 3d: 1.0, anim: 1.0, eng: 0.4}
 condition: 无人值守；工作目录预置 skills/minecraft-stop-motion-director/（工作室流程）
@@ -19,7 +19,7 @@ capture:
     - {id: wide_scene, label: 场景全景}
   orbit: {frames: 8}
   # 骨架完整性：在整条时间线上取 8 个时刻 seek 后审计（漂浮 / 穿模比例的最大值），而不只看静止姿态
-  motion: {seek: FILM.seek, times: [3, 10, 18, 26, 34, 42, 50, 57]}
+  motion: {seek: FILM.seek, fractions: [0.05, 0.17, 0.3, 0.43, 0.57, 0.7, 0.83, 0.95]}
   expected_parts:
     - {id: head, module: character, re: "head|头"}
     - {id: body, module: character, re: "body|torso|身体|躯干"}
@@ -41,7 +41,6 @@ probes:
       global: FILM
       entry: index.html
       query: "?paused=1"
-      expected_duration: 60
       sample_fps: 4
       text: false
       pose: true
@@ -81,7 +80,6 @@ items:
     anchors: ["无结构，镜头随意罗列", "有分段但与 8 拍不对应", "8 拍清楚，戏剧句式成立", "每个镜头的 story_function 与画面一一对应，结尾呼应开头"]
 
   # ---------------- 动画：时间线客观缺陷 ----------------
-  - {id: V03-A01, dim: anim, tier: basic, method: auto, edition: base, desc: 时长接近 60 秒（误差秒）, metric: tl.duration_err, rule: {type: max, max: 3, zero: 15}}
   - {id: V03-A02, dim: anim, tier: advanced, method: auto, edition: base, desc: seek 确定性（同一时刻两次渲染一致）, metric: tl.determinism_ratio, rule: {type: ratio}}
   - {id: V03-A03, dim: anim, tier: excellent, method: auto, edition: detail, module: pose, desc: 定格节奏：姿态保持若干帧才变化（保持比例）, metric: tl.pose_hold_ratio, rule: {type: band, lo: 0.4, hi: 0.75, tol: 0.4}}
   - {id: V03-A04, dim: anim, tier: basic, method: auto, edition: base, desc: 角色确实在动（姿态变化次数）, metric: tl.pose_changes, rule: {type: min, min: 10, zero: 0}}
@@ -106,9 +104,9 @@ items:
     judge: pairwise
     edition: base
     module: story
-    desc: “推销”被 Minecraft 化：卖点靠玩法演示，而不是字幕口播；看完记得住 Sol 与 Luna 的区别
+    desc: 三幕叙事完整：①快切蒙太奇展示主角从零开始（砍树、挖矿、烧炼、合成）打造出两件神器；②真实的村庄保卫战（对手含劫掠兽与卫道士，神器参战）；③胜利后成为村庄英雄并与村民交易。节奏偏快、高燃；字幕只作辅助
     evidence: 渲染视频
-    anchors: ["纯文字广告", "有演示但大量依赖字幕", "主要卖点靠玩法演示", "演示巧妙，有笑点或反转"]
+    anchors: ["缺少一幕或看不出故事", "三幕都有但有一幕很弱 / 主要靠字幕说明", "三幕清楚，画面本身讲得明白", "三幕清楚，节奏高燃，保卫战真实有力，结局有成就感"]
   - id: V03-H06
     dim: 3d
     tier: advanced
@@ -124,9 +122,9 @@ items:
     method: human
     edition: detail
     module: lighting
-    desc: 光照叙事：Sol 暖光 / Luna 冷光作为场景内实际光源照亮周围方块，并随剧情变化
+    desc: 光照为剧情服务：神器、火把、熔炉等作为场景内实际光源照亮周围方块，光色与明暗随剧情变化
     evidence: 渲染视频
-    anchors: ["无光照设计", "有颜色但不是光源", "暖冷光源存在并照亮周围", "光色随剧情变化，冷暖叙事清晰"]
+    anchors: ["无光照设计", "有颜色但不是光源", "光源存在并照亮周围", "光色随剧情变化，光照叙事清晰"]
   - id: V03-H08
     dim: 3d
     tier: advanced
@@ -170,6 +168,6 @@ items:
     method: human
     edition: detail
     module: story
-    desc: 结尾画面呼应开头并带出新含义
+    desc: 结尾有情绪落点（与开头形成对照或呼应，并带出新的含义）
     evidence: 渲染视频首尾
-    anchors: ["无呼应", "牵强", "明确呼应", "呼应且带来情绪落点"]
+    anchors: ["结尾仓促 / 无落点", "有结尾但缺乏情绪", "结尾清楚，有情绪落点", "与开头呼应并带来强烈情绪落点"]

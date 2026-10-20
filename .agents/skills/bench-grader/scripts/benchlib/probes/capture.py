@@ -336,8 +336,15 @@ def scene_audit_probe(ctx: RunContext, opts: dict) -> None:
         series.append(first)
         motion = cfg.get("motion") or {}
         try:
-            if motion.get("seek") and motion.get("times"):
-                for t in motion["times"]:
+            times = motion.get("times")
+            if motion.get("seek") and not times and motion.get("fractions"):
+                # 时长由作品自己决定：按 <seek 所在对象>.duration 的比例取点
+                owner = ".".join(str(motion["seek"]).split(".")[:-1]) or "window"
+                dur = page.evaluate("(p) => { let o = window; for (const k of p.split('.')) { if (!k || k === 'window') continue; o = o && o[k]; } return o && typeof o.duration === 'number' ? o.duration : null; }", owner)
+                if isinstance(dur, (int, float)) and dur > 0:
+                    times = [round(float(f) * float(dur), 3) for f in motion["fractions"]]
+            if motion.get("seek") and times:
+                for t in times:
                     page.evaluate(_SEEK_JS, {"path": motion["seek"], "t": t})
                     page.wait_for_timeout(int(motion.get("settle_ms", 350)))
                     r = page.evaluate(RIG_JS, {**args, "contacts": []})
