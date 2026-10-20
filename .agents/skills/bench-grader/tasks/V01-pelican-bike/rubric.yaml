@@ -1,7 +1,7 @@
 id: V01
 extends: [creative-web, creative-3d, creative-rig, agent-acceptance]
 name: 鹈鹕骑自行车（v2 愿望版）
-short: 一只鹈鹕骑自行车：只给最小契约，其余全凭模型发挥；看整体冲击力、生物与机械的可信度、骑行动作与细节
+short: 一只鹈鹕骑自行车，页面必须能在 2.5D（SVG）和 3D（Three.js）之间切换；风格不限，看两种模式是否都成立、生物与机械是否可信
 deliverable_dir: pelican
 dims: {agent: 0.5, 3d: 1.0, anim: 0.5, eng: 0.4}
 condition: 无人值守；无需任何素材
@@ -25,7 +25,25 @@ capture:
   motion: {samples: 4, interval_ms: 500}
   orbit: {frames: 8}
 
+probes:
+  - type: browser
+    opts:
+      hooks: [__bench.setMode, __bench.getMode]
+      scene:
+        setup: ["window.__bench.setMode('3d')"]
+      js_metrics:
+        modes: |
+          const b = window.__bench;
+          if (!b || typeof b.setMode !== 'function' || typeof b.getMode !== 'function') return {api: false, svg: false, webgl: false};
+          const big = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 80 && r.height > 80 && s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) !== 0; };
+          const look = async (mode) => { await b.setMode(mode); await sleep(900); const svg = [...document.querySelectorAll('svg')].some(big); const canvas = [...document.querySelectorAll('canvas')].some(big); return { mode: b.getMode(), svg, canvas }; };
+          const flat = await look('2.5d');
+          const solid = await look('3d');
+          return { api: true, svg: flat.mode === '2.5d' && flat.svg, webgl: solid.mode === '3d' && solid.canvas };
+
 items:
+  - {id: V01-M01, dim: 3d, tier: basic, method: auto, edition: base, desc: 能切到 2.5D，并且画面上是一块可见的 SVG, metric: js.modes.svg, rule: {type: bool}}
+  - {id: V01-M02, dim: 3d, tier: basic, method: auto, edition: base, desc: 能切到 3D，并且画面上是一块可见的画布, metric: js.modes.webgl, rule: {type: bool}}
   - {id: V01-R04, dim: 3d, tier: excellent, method: auto, edition: detail, module: contact, desc: 关键接触成立（脚—踏板、翅膀—车把、身体—车座、车轮—地面）, metric: rig.contacts_ok_ratio, rule: {type: ratio}}
   - id: V01-H04
     dim: anim
@@ -79,3 +97,11 @@ items:
     desc: 翅膀与羽毛：翅膀如何扶把或保持平衡，羽毛的层次（初级、次级、覆羽）与质感
     evidence: 三分之四与正面视角
     anchors: ["翅膀是两块板，羽毛无层次", "翅膀有形状，羽毛平涂", "羽毛有明显层次，翅膀位置合理", "羽毛层次丰富、有质感，翅膀动作有表现力"]
+  - id: V01-H10
+    dim: 3d
+    tier: basic
+    method: human
+    edition: base
+    desc: 2.5D 与 3D 都能看：切换按钮明显，两种模式是同一只鹈鹕骑同一辆车，切换后骑行相位还在，不从头重播
+    evidence: 页面上实际来回切换
+    anchors: ["只有一种模式，或切换后是另一个场景", "两种都有，但不是同一瞬间，或切换会重头播放", "两种都是同一只鹈鹕骑车，状态大体延续", "来回切换顺畅，骑行相位和速度都保持着"]

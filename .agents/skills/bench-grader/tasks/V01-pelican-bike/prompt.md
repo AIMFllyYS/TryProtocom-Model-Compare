@@ -11,11 +11,17 @@
 window.__bench = {
   views: ['side', 'front', 'three_quarter', 'top', 'closeup_head', 'closeup_legs'],
   setView(id) {},      // 把镜头切到这个命名视角（可以做过渡动画，1 秒内完成）。取景由你决定，让主体好看
+  setMode(m) {},       // '2.5d' | '3d'。切过去就停在这一帧的骑行状态上，不要从头重播
+  getMode() {},        // 返回当前模式
   listParts() {},      // 可选，但鼓励：返回部件树 [{ id, name, parent }]，方便检查你把东西拆得多细
 };
 ```
 
-- 如果用 Three.js，请同时暴露 `window.__scene`（THREE.Scene）和 `window.__renderer`（THREE.WebGLRenderer）。
+- 页面必须同时有两种模式，并有一个一眼能看见的切换按钮。评测的人要能来回看这两种画面：
+  - **2.5D**：用 SVG 画出来，分层、有纵深，不是一张静态图。
+  - **3D**：用 Three.js 画出来，并暴露 `window.__scene`（THREE.Scene）和 `window.__renderer`（THREE.WebGLRenderer）。
+  - 两种模式是同一只鹈鹕、同一辆车、同一个骑行瞬间。切换时保持骑行相位和速度，不从头重播。怎么过渡由你决定。
+- 两种模式里都要能拖动镜头、滚轮缩放，`setView` 在当前模式里也能用。
 - 完成时在工作目录写 `FINAL_MESSAGE.md`，说明做了什么、怎么看、哪里最想让我多看两眼。
 
 ## 愿望
