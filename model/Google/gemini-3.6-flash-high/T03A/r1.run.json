@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.6-flash-high",
+  "task": "T03",
+  "variant": "A",
+  "tkey": "T03A",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-04T13:16:43.187Z",
+  "started_at": "2026-10-04T13:16:49.325Z",
+  "ended_at": "2026-10-04T15:47:59.024Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": null,
+  "ref": "Google/gemini-3.6-flash-high/T03A/r1",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-04T15:47:59.024Z",
+    "reason": "Dispatcher and CLI PIDs exited; partial tempo-promo only, no FINAL_MESSAGE/grader_run_id. User requested ending completed/abandoned task sessions; preserve recoverably.",
+    "stopped": true,
+    "from": "进行中",
+    "set_ended": true
+  }
+}

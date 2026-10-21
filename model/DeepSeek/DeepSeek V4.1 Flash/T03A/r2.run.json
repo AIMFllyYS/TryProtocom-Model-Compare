@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash",
+  "task": "T03",
+  "variant": "A",
+  "tkey": "T03A",
+  "index": 2,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-01T14:40:02.968Z",
+  "started_at": "2026-10-01T14:40:02.972Z",
+  "ended_at": "2026-10-01T15:06:17.603Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": "T03A-789347b7",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash/T03A/r2",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

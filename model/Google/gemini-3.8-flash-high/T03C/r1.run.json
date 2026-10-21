@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T03",
+  "variant": "C",
+  "tkey": "T03C",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-03T15:27:39.351Z",
+  "started_at": "2026-10-03T15:40:22.960Z",
+  "ended_at": "2026-10-03T15:50:55.093Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": null,
+  "ref": "Google/gemini-3.8-flash-high/T03C/r1",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-03T15:50:55.093Z",
+    "reason": "Interrupted after sibling T03A received UNAUTHENTICATED 401; partial output preserved, no final message or grader registration.",
+    "stopped": true,
+    "from": "进行中",
+    "set_ended": true
+  }
+}

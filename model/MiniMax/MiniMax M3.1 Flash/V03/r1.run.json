@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "V03",
+  "variant": null,
+  "tkey": "V03",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T03:50:56.732Z",
+  "started_at": "2026-10-20T03:50:56.851Z",
+  "ended_at": "2026-10-20T06:42:34.847Z",
+  "deliverable_dir": "mc-sol-luna",
+  "grader_run_id": "V03-bfa46b55",
+  "ref": "MiniMax/MiniMax M3.1 Flash/V03/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

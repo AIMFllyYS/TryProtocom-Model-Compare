@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T08",
+  "variant": null,
+  "tkey": "T08",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:50:50.649Z",
+  "started_at": "2026-10-08T12:56:39.450Z",
+  "ended_at": "2026-10-08T13:08:35.312Z",
+  "deliverable_dir": "studyspot-legacy",
+  "grader_run_id": "T08-204c58a1",
+  "ref": "Anthropic/Claude-Haiku-5.5/T08/r1",
+  "usage": {
+    "wall_min": 11.931033333333334,
+    "active_min": 11.931033333333334
+  },
+  "notes": "Original full repaired seed project transferred unchanged; final summary is the visible original reply. Independent regression validation and official grading; no operator implementation edit or hidden feedback.",
+  "auto_finished": true
+}

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.1-pro-high",
+  "task": "T07",
+  "variant": null,
+  "tkey": "T07",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T20:38:03.663Z",
+  "started_at": "2026-10-02T20:38:05.622Z",
+  "ended_at": "2026-10-02T20:42:12.779148+00:00",
+  "deliverable_dir": "studyspot-api",
+  "grader_run_id": "T07-22cdffce",
+  "ref": "Google/gemini-3.1-pro-high/T07/r1",
+  "usage": {
+    "wall_min": 4.1192858
+  },
+  "notes": "",
+  "auto_finished": true
+}

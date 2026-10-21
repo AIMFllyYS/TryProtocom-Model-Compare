@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7",
+  "task": "T04",
+  "variant": null,
+  "tkey": "T04",
+  "index": 1,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-15T10:26:41.853Z",
+  "started_at": "2026-10-15T10:26:41.857Z",
+  "ended_at": "2026-10-15T10:53:01.179Z",
+  "deliverable_dir": "aether9-promo",
+  "grader_run_id": "T04-e574fdc0",
+  "ref": "xAI/grok-4.7/T04/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

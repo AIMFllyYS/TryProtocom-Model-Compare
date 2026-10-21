@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "Devin",
+  "model": "SWE 2 Max",
+  "task": "V04",
+  "variant": null,
+  "tkey": "V04",
+  "index": 1,
+  "harness": "Devin",
+  "created_at": "2026-10-20T11:51:54.921Z",
+  "started_at": "2026-10-20T11:51:54.924Z",
+  "ended_at": "2026-10-20T12:42:44.456Z",
+  "deliverable_dir": "aether9-site",
+  "grader_run_id": "V04-694f1d69",
+  "ref": "Devin/SWE 2 Max/V04/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

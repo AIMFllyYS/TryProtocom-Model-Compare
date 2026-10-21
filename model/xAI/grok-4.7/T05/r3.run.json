@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7",
+  "task": "T05",
+  "variant": null,
+  "tkey": "T05",
+  "index": 3,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-03T00:33:23.520Z",
+  "started_at": "2026-10-03T00:33:24.172Z",
+  "ended_at": "2026-10-03T01:34:13.896131+00:00",
+  "deliverable_dir": "aether9-site",
+  "grader_run_id": "T05-a37c4bbb",
+  "ref": "xAI/grok-4.7/T05/r3",
+  "usage": {
+    "wall_min": 60.82873551666667,
+    "input_tokens": 389804,
+    "output_tokens": 246721,
+    "cache_read_tokens": 10900864,
+    "cost_usd": 2.713234
+  },
+  "notes": "",
+  "auto_finished": true
+}

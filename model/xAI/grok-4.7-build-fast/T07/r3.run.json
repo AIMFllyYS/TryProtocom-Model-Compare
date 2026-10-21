@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7-build-fast",
+  "task": "T07",
+  "variant": null,
+  "tkey": "T07",
+  "index": 3,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-03T03:17:27.406Z",
+  "started_at": "2026-10-03T03:17:27.940Z",
+  "ended_at": "2026-10-05T03:36:10.649Z",
+  "deliverable_dir": "studyspot-api",
+  "grader_run_id": null,
+  "ref": "xAI/grok-4.7-build-fast/T07/r3",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-05T03:36:10.649Z",
+    "reason": "User-paused benchmark; stale running record had no active model CLI or FINAL_MESSAGE.",
+    "stopped": true,
+    "from": "进行中",
+    "set_ended": true
+  }
+}

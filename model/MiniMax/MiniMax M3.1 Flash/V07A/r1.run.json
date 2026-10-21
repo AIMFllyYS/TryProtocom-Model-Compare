@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "V07",
+  "variant": "A",
+  "tkey": "V07A",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T03:51:28.451Z",
+  "started_at": "2026-10-20T03:51:28.454Z",
+  "ended_at": "2026-10-20T04:17:51.046Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": "V07A-f62acb91",
+  "ref": "MiniMax/MiniMax M3.1 Flash/V07A/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

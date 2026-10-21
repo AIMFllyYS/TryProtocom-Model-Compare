@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "B1",
+  "variant": null,
+  "tkey": "B1",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-20T04:36:01.339Z",
+  "started_at": "2026-10-20T04:36:01.341Z",
+  "ended_at": null,
+  "deliverable_dir": "parking-quote",
+  "grader_run_id": null,
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/B1/r1",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-20T05:48:25.706Z",
+    "reason": "移入回收站",
+    "stopped": false,
+    "from": "进行中"
+  }
+}

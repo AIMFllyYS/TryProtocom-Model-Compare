@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T17:48:02.085Z",
+  "started_at": "2026-10-02T17:48:02.540Z",
+  "ended_at": "2026-10-02T17:54:52.937909+00:00",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-8543aa66",
+  "ref": "Google/gemini-3.8-flash-high/T01/r1",
+  "usage": {
+    "wall_min": 6.83996515
+  },
+  "notes": "PREPARATION_ONLY / 准备试跑，非正式夜间样本。CLI=Antigravity 1.2.15；model=gemini-3.8-flash-high；effort=high。验收结束后移入可恢复回收站以排除正式排行。",
+  "auto_finished": true,
+  "discarded": {
+    "at": "2026-10-02T18:14:08.097Z",
+    "reason": "准备试跑验收，非正式夜间测评样本；证据已保存，可恢复。",
+    "stopped": false,
+    "from": "待评分"
+  }
+}

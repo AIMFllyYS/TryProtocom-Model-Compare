@@ -1,6 +1,14 @@
 {
   "schema": 1,
+  "created_at": "2026-09-29T22:02:48.491Z",
   "vendor": "OpenAI",
   "name": "GPT-6.1-Sol",
-  "created_at": "2026-09-29T22:02:48.491Z"
+  "harness": "Codex 桌面版",
+  "billing": {
+    "mode": "subscription",
+    "unit": "%",
+    "plan": "ChatGPT Pro 20x",
+    "monthly_fee": 1000,
+    "monthly_quota": 100
+  }
 }

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T08",
+  "variant": null,
+  "tkey": "T08",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T17:48:01.070Z",
+  "started_at": "2026-10-02T17:48:01.734Z",
+  "ended_at": "2026-10-02T17:55:28.897708+00:00",
+  "deliverable_dir": "studyspot-legacy",
+  "grader_run_id": "T08-49c67c68",
+  "ref": "Google/gemini-3.8-flash-high/T08/r1",
+  "usage": {
+    "wall_min": 7.452728466666667,
+    "input_tokens": 233767,
+    "output_tokens": 80048,
+    "cache_read_tokens": 3318976
+  },
+  "notes": "PREPARATION_ONLY / 准备试跑，非正式夜间样本。CLI=Antigravity 1.2.15；model=gemini-3.8-flash-high；effort=high。验收结束后移入可恢复回收站以排除正式排行。",
+  "auto_finished": true,
+  "discarded": {
+    "at": "2026-10-02T18:14:07.555Z",
+    "reason": "准备试跑验收，非正式夜间测评样本；证据已保存，可恢复。",
+    "stopped": false,
+    "from": "已完成"
+  }
+}

@@ -1,0 +1,218 @@
+{
+  "board": [
+    {
+      "rank": "1=",
+      "entrant": "grok-4.7 @ Grok CLI",
+      "model": "grok-4.7",
+      "vendor": "xAI",
+      "harness": "Grok CLI",
+      "quality": 86.93,
+      "ci_low": 82.98,
+      "ci_high": 91.36,
+      "dims": {
+        "3d": 80.55,
+        "anim": 77.29,
+        "eng": 91.98,
+        "agent": 96.34,
+        "ui": 67.47,
+        "be": 99.63,
+        "req": 95.24,
+        "cost": 66.2,
+        "speed": 41.1
+      },
+      "runs": 15,
+      "tasks": 5,
+      "pass_rate": 1,
+      "suite_exp_cost_usd": 6.28,
+      "suite_exp_min": 221,
+      "cost_coverage": "4/5",
+      "complete": false,
+      "na_ratio": 0.005
+    }
+  ],
+  "tasks": [
+    {
+      "entrant": "grok-4.7 @ Grok CLI",
+      "task": "T01",
+      "runs": 3,
+      "mean": 88.52,
+      "sd": 0.99,
+      "min": 87.18,
+      "max": 89.53,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 52.28,
+      "exp_cost_usd": null,
+      "exp_min": 52.28,
+      "dims": {
+        "3d": 84.86,
+        "anim": 90.04,
+        "eng": 98.41
+      },
+      "dim_weights": {
+        "3d": 1,
+        "anim": 0.5,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 97.53333333333335,
+        "advanced": 86.06666666666666,
+        "excellent": 82.76666666666667,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 34.5
+    },
+    {
+      "entrant": "grok-4.7 @ Grok CLI",
+      "task": "T02",
+      "runs": 3,
+      "mean": 82.58,
+      "sd": 2.77,
+      "min": 78.94,
+      "max": 85.65,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": true,
+      "low_confidence": false,
+      "mean_cost_usd": 2.0022,
+      "mean_min": 54.76,
+      "exp_cost_usd": 2.0022,
+      "exp_min": 54.76,
+      "dims": {
+        "agent": 94.16,
+        "3d": 71.67,
+        "anim": 70.92,
+        "eng": 100
+      },
+      "dim_weights": {
+        "agent": 1,
+        "3d": 1,
+        "anim": 1,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 99.76666666666667,
+        "advanced": 78.16666666666667,
+        "excellent": 78.46666666666667,
+        "clean": 100
+      },
+      "cost_score": 58.8,
+      "speed_score": 33.2
+    },
+    {
+      "entrant": "grok-4.7 @ Grok CLI",
+      "task": "T05",
+      "runs": 3,
+      "mean": 83.08,
+      "sd": 9.83,
+      "min": 73.29,
+      "max": 96.52,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": 2.4429,
+      "mean_min": 60.72,
+      "exp_cost_usd": 2.4429,
+      "exp_min": 60.72,
+      "dims": {
+        "3d": 85.11,
+        "ui": 67.47,
+        "eng": 94.8
+      },
+      "dim_weights": {
+        "3d": 1,
+        "ui": 1,
+        "eng": 1
+      },
+      "tiers": {
+        "basic": 100,
+        "advanced": 80.16666666666666,
+        "excellent": 77.76666666666667,
+        "clean": 100
+      },
+      "cost_score": 54.5,
+      "speed_score": 30.3
+    },
+    {
+      "entrant": "grok-4.7 @ Grok CLI",
+      "task": "T07",
+      "runs": 3,
+      "mean": 94.26,
+      "sd": 2.85,
+      "min": 90.27,
+      "max": 96.79,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": true,
+      "low_confidence": false,
+      "mean_cost_usd": 0.9632,
+      "mean_min": 31.59,
+      "exp_cost_usd": 0.9632,
+      "exp_min": 31.59,
+      "dims": {
+        "be": 99.26,
+        "eng": 79.94,
+        "req": 95.24
+      },
+      "dim_weights": {
+        "be": 1,
+        "eng": 1,
+        "req": 0.5
+      },
+      "tiers": {
+        "basic": 96.3,
+        "advanced": 93.39999999999999,
+        "excellent": 93.3,
+        "clean": 100
+      },
+      "cost_score": 74.7,
+      "speed_score": 48.6
+    },
+    {
+      "entrant": "grok-4.7 @ Grok CLI",
+      "task": "T08",
+      "runs": 3,
+      "mean": 98.28,
+      "sd": 1.22,
+      "min": 97.42,
+      "max": 100,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": true,
+      "low_confidence": false,
+      "mean_cost_usd": 0.8721,
+      "mean_min": 21.67,
+      "exp_cost_usd": 0.8721,
+      "exp_min": 21.67,
+      "dims": {
+        "be": 100,
+        "eng": 93.97,
+        "agent": 98.52
+      },
+      "dim_weights": {
+        "be": 1,
+        "eng": 1,
+        "agent": 1
+      },
+      "tiers": {
+        "basic": 100,
+        "advanced": 96.39999999999999,
+        "excellent": 100,
+        "clean": null
+      },
+      "cost_score": 76.8,
+      "speed_score": 59.1
+    }
+  ],
+  "generated_at": "2026-10-04T18:14:17.936Z"
+}

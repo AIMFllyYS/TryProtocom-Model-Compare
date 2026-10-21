@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "B1",
+  "variant": null,
+  "tkey": "B1",
+  "index": 3,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T02:57:38.298Z",
+  "started_at": "2026-10-20T02:57:38.301Z",
+  "ended_at": "2026-10-20T03:34:18.383Z",
+  "deliverable_dir": "parking-quote",
+  "grader_run_id": "B1-33b7939f",
+  "ref": "MiniMax/MiniMax M3.1 Flash/B1/r3",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

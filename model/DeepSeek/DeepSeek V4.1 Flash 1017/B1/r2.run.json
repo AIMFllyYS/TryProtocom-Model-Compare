@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "B1",
+  "variant": null,
+  "tkey": "B1",
+  "index": 2,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-20T10:19:20.927Z",
+  "started_at": "2026-10-20T10:19:20.929Z",
+  "ended_at": "2026-10-20T10:35:46.354Z",
+  "deliverable_dir": "parking-quote",
+  "grader_run_id": "B1-a455d54f",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/B1/r2",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

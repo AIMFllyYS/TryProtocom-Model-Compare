@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7",
+  "task": "T07",
+  "variant": null,
+  "tkey": "T07",
+  "index": 2,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-02T23:03:29.970Z",
+  "started_at": "2026-10-02T23:03:30.989Z",
+  "ended_at": "2026-10-02T23:30:38.893400+00:00",
+  "deliverable_dir": "studyspot-api",
+  "grader_run_id": "T07-b4bf9eb4",
+  "ref": "xAI/grok-4.7/T07/r2",
+  "usage": {
+    "wall_min": 27.131739999999997,
+    "input_tokens": 188369,
+    "output_tokens": 138485,
+    "cache_read_tokens": 3215104,
+    "cost_usd": 0.957168
+  },
+  "notes": "",
+  "auto_finished": true
+}

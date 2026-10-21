@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7-build-fast",
+  "task": "T02",
+  "variant": null,
+  "tkey": "T02",
+  "index": 2,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-03T02:51:35.502Z",
+  "started_at": "2026-10-03T02:51:35.992Z",
+  "ended_at": "2026-10-05T03:36:08.954Z",
+  "deliverable_dir": "mc-sol-luna",
+  "grader_run_id": null,
+  "ref": "xAI/grok-4.7-build-fast/T02/r2",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-05T03:36:08.954Z",
+    "reason": "User-paused benchmark; stale running record had no active model CLI or FINAL_MESSAGE.",
+    "stopped": true,
+    "from": "进行中",
+    "set_ended": true
+  }
+}

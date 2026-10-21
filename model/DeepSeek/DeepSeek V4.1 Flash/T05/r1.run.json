@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash",
+  "task": "T05",
+  "variant": null,
+  "tkey": "T05",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-02T05:14:36.710Z",
+  "started_at": "2026-10-02T05:14:36.733Z",
+  "ended_at": "2026-10-02T06:00:32.345Z",
+  "deliverable_dir": "aether9-site",
+  "grader_run_id": "T05-65c310ef",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash/T05/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T02",
+  "variant": null,
+  "tkey": "T02",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:50:47.107Z",
+  "started_at": "2026-10-08T11:13:27.446Z",
+  "ended_at": "2026-10-08T11:59:22.256Z",
+  "deliverable_dir": "mc-sol-luna",
+  "grader_run_id": "T02-b9601e0b",
+  "ref": "Anthropic/Claude-Haiku-5.5/T02/r1",
+  "usage": {
+    "wall_min": 45.9135,
+    "active_min": 45.9135
+  },
+  "notes": "Original complete HTML film/project/shot/cue/QC/manifest plus eight keyframes mechanically transferred; no operator implementation changes; human scoring user-only.",
+  "auto_finished": true
+}

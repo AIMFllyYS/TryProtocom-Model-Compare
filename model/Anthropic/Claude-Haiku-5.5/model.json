@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "created_at": "2026-10-08T04:58:37.426Z",
+  "vendor": "Anthropic",
+  "name": "Claude-Haiku-5.5",
+  "harness": "Claude Web Chat + local command relay",
+  "notes": "Formal first pass: Haiku 5.5 / Extra; Claude Web Chat + mechanical local command relay; ZIP input materials; user-only human scoring, operator Agent review; campaign began 2026-10-08."
+}

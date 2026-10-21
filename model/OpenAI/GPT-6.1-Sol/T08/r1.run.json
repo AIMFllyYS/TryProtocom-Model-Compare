@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "OpenAI",
+  "model": "GPT-6.1-Sol",
+  "task": "T08",
+  "variant": null,
+  "tkey": "T08",
+  "index": 1,
+  "harness": "Codex 桌面版",
+  "created_at": "2026-10-01T03:55:50.328Z",
+  "started_at": "2026-10-01T03:55:50.335Z",
+  "ended_at": "2026-10-01T04:13:00.792Z",
+  "deliverable_dir": "studyspot-legacy",
+  "grader_run_id": "T08-da38fa61",
+  "ref": "OpenAI/GPT-6.1-Sol/T08/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

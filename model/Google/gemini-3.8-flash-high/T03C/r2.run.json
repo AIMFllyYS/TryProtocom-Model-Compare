@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T03",
+  "variant": "C",
+  "tkey": "T03C",
+  "index": 2,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-04T10:52:24.785Z",
+  "started_at": "2026-10-04T11:07:36.597Z",
+  "ended_at": "2026-10-04T11:20:36.301771+00:00",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": "T03C-ff185888",
+  "ref": "Google/gemini-3.8-flash-high/T03C/r2",
+  "usage": {
+    "wall_min": 12.995079516666667,
+    "input_tokens": 912963,
+    "output_tokens": 82645,
+    "cache_read_tokens": 13218564
+  },
+  "notes": "",
+  "auto_finished": true
+}

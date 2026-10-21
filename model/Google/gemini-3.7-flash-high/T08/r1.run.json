@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.7-flash-high",
+  "task": "T08",
+  "variant": null,
+  "tkey": "T08",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T19:30:09.369Z",
+  "started_at": "2026-10-02T19:30:10.366Z",
+  "ended_at": "2026-10-02T19:35:38.712877+00:00",
+  "deliverable_dir": "studyspot-legacy",
+  "grader_run_id": "T08-8f6fa3bf",
+  "ref": "Google/gemini-3.7-flash-high/T08/r1",
+  "usage": {
+    "wall_min": 5.47244795,
+    "input_tokens": 273941,
+    "output_tokens": 69485,
+    "cache_read_tokens": 3594079
+  },
+  "notes": "",
+  "auto_finished": true
+}

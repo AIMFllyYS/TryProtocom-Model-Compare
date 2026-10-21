@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7",
+  "task": "T06",
+  "variant": null,
+  "tkey": "T06",
+  "index": 1,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-04T18:14:16.910Z",
+  "started_at": null,
+  "ended_at": null,
+  "deliverable_dir": "studyspot-web",
+  "grader_run_id": null,
+  "ref": "xAI/grok-4.7/T06/r1",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-13T22:37:44.834Z",
+    "reason": "移入回收站",
+    "stopped": false,
+    "from": "未开始"
+  }
+}

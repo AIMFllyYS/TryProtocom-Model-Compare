@@ -14,12 +14,25 @@ workbench/*.tsbuildinfo
 # 这样另一台电脑只要装了 Node.js 就能直接运行，无需 npm install。
 
 # ---- 模型工作区：只提交档案与留档（model.json、rN.run.json、rN.prompt.md、rN.final.md、_report/），
-#      不提交模型在 rN/ 里产出的完整工作目录（可能含 node_modules、视频等大文件）----
+#      不提交模型在 rN/ 里产出的完整工作目录（含 node_modules、视频渲染、内嵌 git 根，体积可达 GB 级）----
+#      T=v1 前端/动画题，B=后端题，V=v2 愿望版题；三类前缀都要写全——只写 T* 会让 V/B 的 rN/
+#      以“内嵌 git 仓库”形式卡死 git add（fatal: does not have a commit checked out）。
+#      注意：实测本机 git 的字符类（[TBV]）对字母不生效，只能逐前缀列举。
 model/*/*/T*/r*/
+model/*/*/B*/r*/
+model/*/*/V*/r*/
 !model/*/*/T*/r*.run.json
+!model/*/*/B*/r*.run.json
+!model/*/*/V*/r*.run.json
 !model/*/*/T*/r*.prompt.md
+!model/*/*/B*/r*.prompt.md
+!model/*/*/V*/r*.prompt.md
 !model/*/*/T*/r*.final.md
+!model/*/*/B*/r*.final.md
+!model/*/*/V*/r*.final.md
 !model/*/*/T*/r*.transcript.json
+!model/*/*/B*/r*.transcript.json
+!model/*/*/V*/r*.transcript.json
 
 # ---- bench-grader 工作数据（含交付物副本，体积大）；可移植结果在 data/bench-store.json ----
 bench-data/
@@ -31,9 +44,17 @@ GOAL_PROGRESS.md
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
 .DS_Store
 Thumbs.db
 *.log
+
+# ---- 评测过程笔记与临时产物（含缓存与存储备份，不进仓库）----
+notes/
+output/
+bilibili-*.png
+# rN.cli.stdout.jsonl：CLI 原始流式日志（单文件可达 20MB+，全库曾约 200MB），不进仓库
+model/*/*/*/r*.cli.stdout.jsonl
 
 
 # ---- T03/T04 音频素材：由 build_materials.py 确定性生成，发车时缺了会自动生成，不进仓库 ----

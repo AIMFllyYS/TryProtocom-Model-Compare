@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "B7",
+  "variant": null,
+  "tkey": "B7",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T05:48:11.768Z",
+  "started_at": "2026-10-20T05:48:11.770Z",
+  "ended_at": "2026-10-20T06:47:22.959Z",
+  "deliverable_dir": "reportdesk",
+  "grader_run_id": "B7-1a291ce5",
+  "ref": "MiniMax/MiniMax M3.1 Flash/B7/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

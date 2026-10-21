@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:43:42.555Z",
+  "started_at": "2026-10-08T05:48:15.254Z",
+  "ended_at": "2026-10-08T05:54:52.225Z",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": null,
+  "ref": "Anthropic/Claude-Haiku-5.5/T01/r1",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-08T05:54:52.225Z",
+    "reason": "Environment isolation invalid: Claude web had evaluator bench-grader skill enabled and Memory enabled. Interrupted before deliverable; preserved as preflight, excluded from formal coverage. UI stop/re",
+    "stopped": true,
+    "from": "进行中",
+    "set_ended": true
+  }
+}

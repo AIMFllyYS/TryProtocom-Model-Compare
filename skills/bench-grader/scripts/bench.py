@@ -253,6 +253,16 @@ def cmd_validate(a):
                 bad += 1
         for it in r.get("gates", []) + r.get("tier0", []) + r.get("items", []):
             problems = []
+            if "value_expr" in it:
+                # 冒烟测试：空指标下跑表达式。KeyError 等=指标缺失（评分时按 na/missing 处理），
+                # 其余异常（白名单外的函数名、语法错误）是 rubric 写法错误，必须拦在校验阶段。
+                from benchlib.scoring import EXPR_ENV, EXPR_OK_ERRORS
+                try:
+                    eval(it["value_expr"], {"__builtins__": {}}, {**EXPR_ENV, "v": {}})
+                except EXPR_OK_ERRORS:
+                    pass
+                except Exception as ex:  # noqa: BLE001
+                    problems.append(f"value_expr 无法求值：{type(ex).__name__}: {ex}")
             if it in r.get("tier0", []) and not (("metric" in it or "value_expr" in it) and "rule" in it):
                 problems.append("Tier0 项缺 metric/rule")
             if it in r.get("items", []):

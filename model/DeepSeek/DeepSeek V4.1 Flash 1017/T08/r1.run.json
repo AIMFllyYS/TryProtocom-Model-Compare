@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "T08",
+  "variant": null,
+  "tkey": "T08",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-17T13:54:03.967Z",
+  "started_at": "2026-10-17T13:54:03.972Z",
+  "ended_at": "2026-10-17T14:10:38.215Z",
+  "deliverable_dir": "studyspot-legacy",
+  "grader_run_id": "T08-e07a546b",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/T08/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

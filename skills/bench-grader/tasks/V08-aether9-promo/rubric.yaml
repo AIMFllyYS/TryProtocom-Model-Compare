@@ -15,12 +15,13 @@ probes:
     opts:
       required: [final.mp4, subtitles.srt, script.md]
   - type: claims
+    opts: {ignore: [bench_tts.py]}   # 评测环境预装的统一 TTS 命令（提示词里要求使用），不是交付声明
   - type: video
     opts: {file: final.mp4, srt: subtitles.srt, asr: true, script: script.md}
 
 tier0:
   - {id: V08-T0-1, desc: 交付了可解析的 final.mp4, metric: video.exists, rule: {type: bool}}
-  - {id: V08-T0-2, desc: 成片有声音且时长不少于 5 秒, value_expr: "bool(v['video.has_audio']) and (v['video.duration'] or 0) >= 5", rule: {type: bool}}
+  - {id: V08-T0-2, desc: 成片有声音且时长不少于 5 秒, value_expr: "bool(v['video.has_audio']) and (v['video.duration'] or 0) >= 5", rule: {type: bool}}  # has_audio 探针输出已是布尔值
   - {id: V08-T0-3, desc: 黑帧总时长不超过成片的一半, value_expr: "(v['video.black_s'] or 0) <= 0.5 * max(v['video.duration'] or 1, 1)", rule: {type: bool}}
 
 gates:

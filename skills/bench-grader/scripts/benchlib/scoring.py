@@ -16,6 +16,12 @@ from .common import Metrics, bench_config, load_json
 TIER_WEIGHT = {"basic": 1, "advanced": 2, "excellent": 3, "clean": 1}
 TIER_LABEL = {"basic": "基础", "advanced": "进阶", "excellent": "卓越", "clean": "扣分项"}
 
+# value_expr 的 eval 白名单（__builtins__ 为空，只暴露这些安全函数）。
+EXPR_ENV = {"min": min, "max": max, "abs": abs, "len": len, "sum": sum, "all": all, "any": any,
+            "round": round, "bool": bool, "int": int, "float": float}
+# _value 会把指标缺失导致的异常归为 na/missing；其余异常（如白名单外的名字）属于 rubric 写法错误，不应被吞掉。
+EXPR_OK_ERRORS = (KeyError, TypeError, ZeroDivisionError, ValueError)
+
 
 def _clamp(x: float) -> float:
     return max(0.0, min(1.0, x))
@@ -63,9 +69,9 @@ def _value(item: dict, metrics: Metrics):
     vals = metrics.values
     if "value_expr" in item:
         try:
-            v = eval(item["value_expr"], {"__builtins__": {}}, {"v": vals, "min": min, "max": max, "abs": abs, "len": len, "sum": sum, "all": all, "any": any, "round": round})
+            v = eval(item["value_expr"], {"__builtins__": {}}, {**EXPR_ENV, "v": vals})
             return v, "scored"
-        except (KeyError, TypeError, ZeroDivisionError, ValueError):
+        except EXPR_OK_ERRORS:
             na = next((metrics.is_na(k) for k in _expr_keys(item["value_expr"]) if metrics.is_na(k)), None)
             return None, "na" if na else "missing"
     key = item["metric"]

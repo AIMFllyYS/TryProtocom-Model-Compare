@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "V06",
+  "variant": null,
+  "tkey": "V06",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-20T23:28:47.491Z",
+  "started_at": "2026-10-20T23:28:47.494Z",
+  "ended_at": "2026-10-21T03:54:52.102Z",
+  "deliverable_dir": "photoreal-building",
+  "grader_run_id": "V06-2f0c8799",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/V06/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true
+}

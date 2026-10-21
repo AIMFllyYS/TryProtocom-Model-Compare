@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "vendor": "Devin",
+  "model": "SWE 2 Max",
+  "task": "B1",
+  "variant": null,
+  "tkey": "B1",
+  "index": 1,
+  "harness": "Devin",
+  "created_at": "2026-10-20T13:33:28.753Z",
+  "started_at": "2026-10-20T13:33:28.758Z",
+  "ended_at": "2026-10-20T23:25:09.850Z",
+  "deliverable_dir": "parking-quote",
+  "grader_run_id": "B1-da007ba5",
+  "ref": "Devin/SWE 2 Max/B1/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true
+}

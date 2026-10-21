@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "V05",
+  "variant": null,
+  "tkey": "V05",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-20T14:29:22.711Z",
+  "started_at": "2026-10-20T14:29:22.716Z",
+  "ended_at": "2026-10-20T15:30:42.193Z",
+  "deliverable_dir": "mc-build",
+  "grader_run_id": "V05-c3aadd8f",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/V05/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

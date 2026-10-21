@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T02:59:30.375Z",
+  "started_at": "2026-10-20T02:59:30.376Z",
+  "ended_at": "2026-10-20T03:33:05.455Z",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-884a6187",
+  "ref": "MiniMax/MiniMax M3.1 Flash/T01/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

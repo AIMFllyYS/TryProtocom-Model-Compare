@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T04",
+  "variant": null,
+  "tkey": "T04",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:50:49.443Z",
+  "started_at": "2026-10-08T12:02:59.013Z",
+  "ended_at": "2026-10-08T12:28:58.215Z",
+  "deliverable_dir": "aether9-promo",
+  "grader_run_id": "T04-0e597d65",
+  "ref": "Anthropic/Claude-Haiku-5.5/T04/r1",
+  "usage": {
+    "wall_min": 25.9867,
+    "active_min": 25.9867
+  },
+  "notes": "Original movie/subtitles/script/full source mechanically transferred; no operator code edits. Model chose espeak-ng rather than specified local zh-CN-YunxiNeural command despite command-relay availability; deviation preserved, not substituted by operator. Human scoring user-only.",
+  "auto_finished": true
+}

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "T05",
+  "variant": null,
+  "tkey": "T05",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-17T11:01:31.878Z",
+  "started_at": "2026-10-17T11:01:31.881Z",
+  "ended_at": "2026-10-17T11:49:37.614Z",
+  "deliverable_dir": "aether9-site",
+  "grader_run_id": "T05-db4a493d",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/T05/r1",
+  "usage": {
+    "cost_usd": 0.58
+  },
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

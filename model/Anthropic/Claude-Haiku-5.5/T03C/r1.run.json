@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T03",
+  "variant": "C",
+  "tkey": "T03C",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:50:48.131Z",
+  "started_at": "2026-10-08T11:34:40.172Z",
+  "ended_at": "2026-10-08T12:29:32.660Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": "T03C-627cb29e",
+  "ref": "Anthropic/Claude-Haiku-5.5/T03C/r1",
+  "usage": {
+    "wall_min": 54.8748,
+    "active_min": 54.8748
+  },
+  "notes": "One original C sample: sandbox authored/checked under 0.8.141; operator supplied frozen 0.8.97 environment facts and executed model-requested public commands. Model corrected runtime seeking in same chat/time limit; local frozen lint/check/snapshot/render verified. No hidden grading feedback and no operator source edits. Human scoring user-only.",
+  "auto_finished": true
+}

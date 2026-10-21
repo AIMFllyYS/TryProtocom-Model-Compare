@@ -1,0 +1,288 @@
+{
+  "board": [
+    {
+      "rank": "4=",
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "model": "gemini-3.8-flash-high",
+      "vendor": "Google",
+      "harness": "Antigravity CLI",
+      "quality": 78.81,
+      "ci_low": 77.02,
+      "ci_high": 80.63,
+      "dims": {
+        "3d": 81.86,
+        "anim": 47.11,
+        "eng": 83.39,
+        "agent": 93.67,
+        "ui": 70,
+        "be": 94.71,
+        "req": 80.95,
+        "cost": null,
+        "speed": 72.9
+      },
+      "runs": 17,
+      "tasks": 7,
+      "pass_rate": 0.941,
+      "suite_exp_cost_usd": null,
+      "suite_exp_min": "inf",
+      "cost_coverage": "0/7",
+      "complete": false,
+      "na_ratio": 0.004
+    }
+  ],
+  "tasks": [
+    {
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "task": "T01",
+      "runs": 3,
+      "mean": 75.8,
+      "sd": 2.23,
+      "min": 72.87,
+      "max": 78.28,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 7.65,
+      "exp_cost_usd": null,
+      "exp_min": 7.65,
+      "dims": {
+        "3d": 75.46,
+        "anim": 53.72,
+        "eng": 92.06
+      },
+      "dim_weights": {
+        "3d": 1,
+        "anim": 0.5,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 91.03333333333335,
+        "advanced": 72.03333333333333,
+        "excellent": 63.9,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 88.1
+    },
+    {
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "task": "T02",
+      "runs": 3,
+      "mean": 84.91,
+      "sd": 3.14,
+      "min": 80.72,
+      "max": 88.29,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 9.35,
+      "exp_cost_usd": null,
+      "exp_min": 9.35,
+      "dims": {
+        "agent": 90.29,
+        "3d": 77.11,
+        "anim": 70.44,
+        "eng": 100
+      },
+      "dim_weights": {
+        "agent": 1,
+        "3d": 1,
+        "anim": 1,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 100,
+        "advanced": 80.60000000000001,
+        "excellent": 74.60000000000001,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 82.5
+    },
+    {
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "task": "T03A",
+      "runs": 1,
+      "mean": 0,
+      "sd": 0,
+      "min": 0,
+      "max": 0,
+      "pass_rate": 0,
+      "pass_at_k": false,
+      "gate_fail_runs": 1,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 14.59,
+      "exp_cost_usd": null,
+      "exp_min": "inf",
+      "dims": {
+        "anim": 0,
+        "eng": 0
+      },
+      "dim_weights": {
+        "anim": 1,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 75,
+        "advanced": 69.4,
+        "excellent": 100,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 0
+    },
+    {
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "task": "T03C",
+      "runs": 1,
+      "mean": 71.8,
+      "sd": 0,
+      "min": 71.8,
+      "max": 71.8,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 13,
+      "exp_cost_usd": null,
+      "exp_min": 13,
+      "dims": {
+        "anim": 67.57,
+        "agent": null,
+        "eng": 100
+      },
+      "dim_weights": {
+        "anim": 1,
+        "agent": 0.5,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 66.7,
+        "advanced": 77,
+        "excellent": 40,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 73.3
+    },
+    {
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "task": "T05",
+      "runs": 3,
+      "mean": 89.9,
+      "sd": 2.71,
+      "min": 87.22,
+      "max": 93.62,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 9.68,
+      "exp_cost_usd": null,
+      "exp_min": 9.68,
+      "dims": {
+        "3d": 93.02,
+        "ui": 70,
+        "eng": 96.97
+      },
+      "dim_weights": {
+        "3d": 1,
+        "ui": 1,
+        "eng": 1
+      },
+      "tiers": {
+        "basic": 100,
+        "advanced": 84.56666666666666,
+        "excellent": 100,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 81.6
+    },
+    {
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "task": "T07",
+      "runs": 3,
+      "mean": 84.72,
+      "sd": 4.54,
+      "min": 78.33,
+      "max": 88.44,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": true,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 6.42,
+      "exp_cost_usd": null,
+      "exp_min": 6.42,
+      "dims": {
+        "be": 89.43,
+        "eng": 73.97,
+        "req": 80.95
+      },
+      "dim_weights": {
+        "be": 1,
+        "eng": 1,
+        "req": 0.5
+      },
+      "tiers": {
+        "basic": 93.3,
+        "advanced": 82.60000000000001,
+        "excellent": 80.03333333333335,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 93
+    },
+    {
+      "entrant": "gemini-3.8-flash-high @ Antigravity CLI",
+      "task": "T08",
+      "runs": 3,
+      "mean": 99.07,
+      "sd": 0.66,
+      "min": 98.61,
+      "max": 100,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": true,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 6.67,
+      "exp_cost_usd": null,
+      "exp_min": 6.67,
+      "dims": {
+        "be": 100,
+        "eng": 100,
+        "agent": 97.04
+      },
+      "dim_weights": {
+        "be": 1,
+        "eng": 1,
+        "agent": 1
+      },
+      "tiers": {
+        "basic": 100,
+        "advanced": 98.06666666666666,
+        "excellent": 100,
+        "clean": null
+      },
+      "cost_score": null,
+      "speed_score": 92
+    }
+  ],
+  "generated_at": "2026-10-04T11:38:15.778Z"
+}

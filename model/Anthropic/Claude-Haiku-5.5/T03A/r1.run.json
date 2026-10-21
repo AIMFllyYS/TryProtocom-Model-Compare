@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T03",
+  "variant": "A",
+  "tkey": "T03A",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:50:47.585Z",
+  "started_at": "2026-10-08T11:17:25.321Z",
+  "ended_at": "2026-10-08T11:31:10.146Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": "T03A-49a2cf78",
+  "ref": "Anthropic/Claude-Haiku-5.5/T03A/r1",
+  "usage": {
+    "wall_min": 13.747083333333334,
+    "active_min": 13.747083333333334
+  },
+  "notes": "Complete handwritten A condition with original HTML and optional MP4 copied byte-for-byte; no video Skill attachment, no operator implementation changes; human review user-only.",
+  "auto_finished": true
+}

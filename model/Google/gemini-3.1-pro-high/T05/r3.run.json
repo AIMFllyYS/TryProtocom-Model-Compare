@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.1-pro-high",
+  "task": "T05",
+  "variant": null,
+  "tkey": "T05",
+  "index": 3,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T21:03:49.869Z",
+  "started_at": "2026-10-02T21:03:50.497Z",
+  "ended_at": "2026-10-02T21:09:46.051285+00:00",
+  "deliverable_dir": "aether9-site",
+  "grader_run_id": "T05-d097250c",
+  "ref": "Google/gemini-3.1-pro-high/T05/r3",
+  "usage": {
+    "wall_min": 5.92590475,
+    "input_tokens": 169800,
+    "output_tokens": 33675,
+    "cache_read_tokens": 1343384
+  },
+  "notes": "",
+  "auto_finished": true
+}

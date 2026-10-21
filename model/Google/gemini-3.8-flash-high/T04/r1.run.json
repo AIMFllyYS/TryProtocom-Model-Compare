@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T04",
+  "variant": null,
+  "tkey": "T04",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-03T15:27:40.537Z",
+  "started_at": "2026-10-04T11:20:57.477Z",
+  "ended_at": "2026-10-04T11:38:14.382Z",
+  "deliverable_dir": "aether9-promo",
+  "grader_run_id": "T04-978d9286",
+  "ref": "Google/gemini-3.8-flash-high/T04/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true
+}

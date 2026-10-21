@@ -210,15 +210,18 @@ def material_names(rubric: dict) -> set[str]:
 
 
 def claims_probe(ctx: RunContext, opts: dict) -> None:
-    """核对最终汇报：汇报里提到的文件是否真实存在；是否声称有视频却没有视频文件。"""
+    """核对最终汇报：汇报里提到的文件是否真实存在；是否声称有视频却没有视频文件。
+    opts.ignore: 环境工具/提示词指定的外部命令名（如统一 TTS 脚本），提及不算交付声明。"""
     m = ctx.metrics
     fm = ctx.run_dir / "final_message.md"
     if not fm.exists():
         m.mark_na("claims.*", "未提供 final_message.md（模型最后一条回复），无法核对汇报")
         return
+    ignore = {str(x) for x in (opts.get("ignore") or [])}
     text = fm.read_text(encoding="utf-8", errors="replace")
     m.set("claims.chars", len(text))
-    cands = _claimed_paths(text)
+    cands = [c for c in _claimed_paths(text)
+             if c not in ignore and Path(c.replace("\\", "/")).name not in ignore]
     root = ctx.output_dir
     all_names = {p.name for p in root.rglob("*") if p.is_file()} if root.exists() else set()
     all_rel = {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()} if root.exists() else set()

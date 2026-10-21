@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T08",
+  "variant": null,
+  "tkey": "T08",
+  "index": 2,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T18:33:32.244Z",
+  "started_at": "2026-10-02T18:33:32.996Z",
+  "ended_at": "2026-10-02T18:40:10.899597+00:00",
+  "deliverable_dir": "studyspot-legacy",
+  "grader_run_id": "T08-65d113cd",
+  "ref": "Google/gemini-3.8-flash-high/T08/r2",
+  "usage": {
+    "wall_min": 6.631726616666667,
+    "input_tokens": 234025,
+    "output_tokens": 73888,
+    "cache_read_tokens": 3309648
+  },
+  "notes": "完整性审计：记录的文件/命令操作未见读取hidden、rubric、准备试跑或其他模型答案；会话无父引用。自动53/53，自带12/12，原种子回归9失败。100仅代表当前量规通过；共享harness配置的隐式上下文、OS级隔离仍未完全验证。审计见reports/2026-10-03-official-unattended/reviews/T08-65d113cd-integrity/audit.json。",
+  "auto_finished": true
+}

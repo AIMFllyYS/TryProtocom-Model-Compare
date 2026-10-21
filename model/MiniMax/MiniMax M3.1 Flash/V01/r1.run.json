@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "V01",
+  "variant": null,
+  "tkey": "V01",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T10:16:26.573Z",
+  "started_at": "2026-10-20T10:16:26.576Z",
+  "ended_at": "2026-10-20T11:36:12.087Z",
+  "deliverable_dir": "pelican",
+  "grader_run_id": "V01-271d21b6",
+  "ref": "MiniMax/MiniMax M3.1 Flash/V01/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

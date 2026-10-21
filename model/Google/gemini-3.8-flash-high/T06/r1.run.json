@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T06",
+  "variant": null,
+  "tkey": "T06",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-03T15:27:41.433Z",
+  "started_at": null,
+  "ended_at": null,
+  "deliverable_dir": "studyspot-web",
+  "grader_run_id": null,
+  "ref": "Google/gemini-3.8-flash-high/T06/r1",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-13T22:37:50.311Z",
+    "reason": "移入回收站",
+    "stopped": false,
+    "from": "未开始"
+  }
+}

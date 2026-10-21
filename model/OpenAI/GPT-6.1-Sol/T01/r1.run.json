@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "vendor": "OpenAI",
+  "model": "GPT-6.1-Sol",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "Codex 桌面版",
+  "created_at": "2026-09-30T12:34:21.839Z",
+  "started_at": "2026-09-30T12:34:21.841Z",
+  "ended_at": "2026-09-30T13:21:59.883Z",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-37fbc5f7",
+  "ref": "OpenAI/GPT-6.1-Sol/T01/r1",
+  "usage": {},
+  "notes": "",
+  "quota": {
+    "unit": "%",
+    "before": 100,
+    "at_before": "2026-09-30T12:35:51.715Z",
+    "used": null,
+    "cost_usd": null
+  },
+  "timed_out": false,
+  "auto_finished": true
+}

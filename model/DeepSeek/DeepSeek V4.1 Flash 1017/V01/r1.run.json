@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "V01",
+  "variant": null,
+  "tkey": "V01",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-20T23:28:05.566Z",
+  "started_at": "2026-10-20T23:28:05.582Z",
+  "ended_at": "2026-10-21T03:54:50.250Z",
+  "deliverable_dir": "pelican",
+  "grader_run_id": "V01-94629f60",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/V01/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true
+}

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T07",
+  "variant": null,
+  "tkey": "T07",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:55:50.918Z",
+  "started_at": "2026-10-08T11:04:12.851Z",
+  "ended_at": "2026-10-08T11:14:19.444Z",
+  "deliverable_dir": "studyspot-api",
+  "grader_run_id": "T07-7cf02fff",
+  "ref": "Anthropic/Claude-Haiku-5.5/T07/r1",
+  "usage": {
+    "wall_min": 10.109883333333332,
+    "active_min": 10.109883333333332
+  },
+  "notes": "Complete ZIP delivered and original bytes transferred; no model coaching or operator code change. Automatic/API/Agent review proceeds background; human review user-only.",
+  "auto_finished": true
+}

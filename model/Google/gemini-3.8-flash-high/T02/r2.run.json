@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T02",
+  "variant": null,
+  "tkey": "T02",
+  "index": 2,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T19:06:49.708Z",
+  "started_at": "2026-10-02T19:06:50.192Z",
+  "ended_at": "2026-10-02T19:15:39.725998+00:00",
+  "deliverable_dir": "mc-sol-luna",
+  "grader_run_id": "T02-765be3e1",
+  "ref": "Google/gemini-3.8-flash-high/T02/r2",
+  "usage": {
+    "wall_min": 8.825566633333333,
+    "input_tokens": 368192,
+    "output_tokens": 96381,
+    "cache_read_tokens": 5848786
+  },
+  "notes": "",
+  "auto_finished": true
+}

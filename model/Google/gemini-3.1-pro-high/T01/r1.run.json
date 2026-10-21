@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.1-pro-high",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T20:38:02.793Z",
+  "started_at": "2026-10-02T20:38:04.299Z",
+  "ended_at": "2026-10-02T20:44:18.444474+00:00",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-5a393276",
+  "ref": "Google/gemini-3.1-pro-high/T01/r1",
+  "usage": {
+    "wall_min": 6.235757899999999
+  },
+  "notes": "",
+  "auto_finished": true
+}

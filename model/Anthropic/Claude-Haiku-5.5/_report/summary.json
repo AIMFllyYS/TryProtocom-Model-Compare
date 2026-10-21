@@ -1,0 +1,360 @@
+{
+  "board": [
+    {
+      "rank": "1=",
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "model": "Claude-Haiku-5.5",
+      "vendor": "Anthropic",
+      "harness": "Claude Web Chat + local command relay",
+      "quality": 87.82,
+      "ci_low": 87.82,
+      "ci_high": 87.82,
+      "dims": {
+        "3d": 89.8,
+        "anim": 65.13,
+        "eng": 98.29,
+        "agent": 99.44,
+        "ui": 95.8,
+        "req": 66.67,
+        "be": 99.6,
+        "cost": null,
+        "speed": 57
+      },
+      "runs": 9,
+      "tasks": 9,
+      "pass_rate": 1,
+      "suite_exp_cost_usd": null,
+      "suite_exp_min": 257.5,
+      "cost_coverage": "0/9",
+      "complete": false,
+      "na_ratio": 0.006
+    }
+  ],
+  "tasks": [
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T01",
+      "runs": 1,
+      "mean": 92.7,
+      "sd": 0,
+      "min": 92.7,
+      "max": 92.7,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 58.49,
+      "exp_cost_usd": null,
+      "exp_min": 58.49,
+      "dims": {
+        "3d": 90.67,
+        "anim": 88.03,
+        "eng": 100
+      },
+      "dim_weights": {
+        "3d": 1,
+        "anim": 0.5,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 91.7,
+        "advanced": 93.1,
+        "excellent": 91.7,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 31.4
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T02",
+      "runs": 1,
+      "mean": 87.84,
+      "sd": 0,
+      "min": 87.84,
+      "max": 87.84,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 45.91,
+      "exp_cost_usd": null,
+      "exp_min": 45.91,
+      "dims": {
+        "agent": 98.04,
+        "3d": 86.63,
+        "anim": 56.6,
+        "eng": 100
+      },
+      "dim_weights": {
+        "agent": 1,
+        "3d": 1,
+        "anim": 1,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 94.7,
+        "advanced": 86.3,
+        "excellent": 80.3,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 38.1
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T03A",
+      "runs": 1,
+      "mean": 78.44,
+      "sd": 0,
+      "min": 78.44,
+      "max": 78.44,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 13.75,
+      "exp_cost_usd": null,
+      "exp_min": 13.75,
+      "dims": {
+        "anim": 74.13,
+        "eng": 100
+      },
+      "dim_weights": {
+        "anim": 1,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 75,
+        "advanced": 75.8,
+        "excellent": 90,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 71.8
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T03C",
+      "runs": 1,
+      "mean": 79.68,
+      "sd": 0,
+      "min": 79.68,
+      "max": 79.68,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 54.87,
+      "exp_cost_usd": null,
+      "exp_min": 54.87,
+      "dims": {
+        "anim": 74.6,
+        "agent": 100,
+        "eng": 100
+      },
+      "dim_weights": {
+        "anim": 1,
+        "agent": 0.5,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 66.7,
+        "advanced": 79,
+        "excellent": 90,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 33.2
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T04",
+      "runs": 1,
+      "mean": 72.27,
+      "sd": 0,
+      "min": 72.27,
+      "max": 72.27,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 25.99,
+      "exp_cost_usd": null,
+      "exp_min": 25.99,
+      "dims": {
+        "anim": 43.75,
+        "agent": 100,
+        "eng": 96.11
+      },
+      "dim_weights": {
+        "anim": 1,
+        "agent": 1,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 95.7,
+        "advanced": 66.7,
+        "excellent": 50,
+        "clean": null
+      },
+      "cost_score": null,
+      "speed_score": 54
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T05",
+      "runs": 1,
+      "mean": 95.5,
+      "sd": 0,
+      "min": 95.5,
+      "max": 95.5,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 20.32,
+      "exp_cost_usd": null,
+      "exp_min": 20.32,
+      "dims": {
+        "3d": 92.11,
+        "ui": 96.36,
+        "eng": 100
+      },
+      "dim_weights": {
+        "3d": 1,
+        "ui": 1,
+        "eng": 1
+      },
+      "tiers": {
+        "basic": 91.7,
+        "advanced": 95.4,
+        "excellent": 100,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 60.9
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T06",
+      "runs": 1,
+      "mean": 73.58,
+      "sd": 0,
+      "min": 73.58,
+      "max": 73.58,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": false,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 16.13,
+      "exp_cost_usd": null,
+      "exp_min": 16.13,
+      "dims": {
+        "ui": 95.24,
+        "req": 50,
+        "eng": 100
+      },
+      "dim_weights": {
+        "ui": 1,
+        "req": 1,
+        "eng": 0.5
+      },
+      "tiers": {
+        "basic": 92.9,
+        "advanced": 81.8,
+        "excellent": 40,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 67.3
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T07",
+      "runs": 1,
+      "mean": 97.56,
+      "sd": 0,
+      "min": 97.56,
+      "max": 97.56,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": true,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 10.11,
+      "exp_cost_usd": null,
+      "exp_min": 10.11,
+      "dims": {
+        "be": 99.19,
+        "eng": 91.67,
+        "req": 100
+      },
+      "dim_weights": {
+        "be": 1,
+        "eng": 1,
+        "req": 0.5
+      },
+      "tiers": {
+        "basic": 97,
+        "advanced": 100,
+        "excellent": 93.3,
+        "clean": 100
+      },
+      "cost_score": null,
+      "speed_score": 80.4
+    },
+    {
+      "entrant": "Claude-Haiku-5.5 @ Claude Web Chat + local command relay",
+      "task": "T08",
+      "runs": 1,
+      "mean": 100,
+      "sd": 0,
+      "min": 100,
+      "max": 100,
+      "pass_rate": 1,
+      "pass_at_k": true,
+      "gate_fail_runs": 0,
+      "complete": true,
+      "low_confidence": false,
+      "mean_cost_usd": null,
+      "mean_min": 11.93,
+      "exp_cost_usd": null,
+      "exp_min": 11.93,
+      "dims": {
+        "be": 100,
+        "eng": 100,
+        "agent": 100
+      },
+      "dim_weights": {
+        "be": 1,
+        "eng": 1,
+        "agent": 1
+      },
+      "tiers": {
+        "basic": 100,
+        "advanced": 100,
+        "excellent": 100,
+        "clean": null
+      },
+      "cost_score": null,
+      "speed_score": 75.7
+    }
+  ],
+  "generated_at": "2026-10-08T13:25:45.008Z"
+}

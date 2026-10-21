@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "Gemini 4 Argon",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "Antigravity",
+  "created_at": "2026-10-13T22:40:31.074Z",
+  "started_at": "2026-10-13T22:40:31.077Z",
+  "ended_at": "2026-10-13T23:03:08.749Z",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-ff1e704c",
+  "ref": "Google/Gemini 4 Argon/T01/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

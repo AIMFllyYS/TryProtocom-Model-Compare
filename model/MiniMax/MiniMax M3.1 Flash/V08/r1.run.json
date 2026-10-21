@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "V08",
+  "variant": null,
+  "tkey": "V08",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T14:29:01.930Z",
+  "started_at": "2026-10-20T14:29:01.944Z",
+  "ended_at": "2026-10-21T07:23:57.295Z",
+  "deliverable_dir": "aether9-promo",
+  "grader_run_id": "V08-46c06eee",
+  "ref": "MiniMax/MiniMax M3.1 Flash/V08/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true
+}

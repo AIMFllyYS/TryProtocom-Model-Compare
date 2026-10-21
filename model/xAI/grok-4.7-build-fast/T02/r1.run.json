@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7-build-fast",
+  "task": "T02",
+  "variant": null,
+  "tkey": "T02",
+  "index": 1,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-03T02:03:58.587Z",
+  "started_at": "2026-10-03T02:03:59.230Z",
+  "ended_at": "2026-10-03T02:36:58.968390+00:00",
+  "deliverable_dir": "mc-sol-luna",
+  "grader_run_id": "T02-baf9f6bb",
+  "ref": "xAI/grok-4.7-build-fast/T02/r1",
+  "usage": {
+    "wall_min": 32.995639833333335,
+    "input_tokens": 463732,
+    "output_tokens": 214227,
+    "cache_read_tokens": 6271104,
+    "cost_usd": 3.7848222
+  },
+  "notes": "",
+  "auto_finished": true
+}

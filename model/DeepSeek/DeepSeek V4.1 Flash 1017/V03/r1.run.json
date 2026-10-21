@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "V03",
+  "variant": null,
+  "tkey": "V03",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-20T14:29:51.339Z",
+  "started_at": "2026-10-20T14:29:51.345Z",
+  "ended_at": "2026-10-20T23:25:08.902Z",
+  "deliverable_dir": "mc-sol-luna",
+  "grader_run_id": "V03-b73d00bb",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/V03/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true
+}

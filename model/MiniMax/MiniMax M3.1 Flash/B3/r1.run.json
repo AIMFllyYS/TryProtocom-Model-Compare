@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "B3",
+  "variant": null,
+  "tkey": "B3",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T04:34:56.494Z",
+  "started_at": "2026-10-20T04:34:56.498Z",
+  "ended_at": "2026-10-20T04:49:32.629Z",
+  "deliverable_dir": "job-queue",
+  "grader_run_id": "B3-b166500a",
+  "ref": "MiniMax/MiniMax M3.1 Flash/B3/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

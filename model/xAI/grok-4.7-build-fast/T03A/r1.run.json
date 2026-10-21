@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7-build-fast",
+  "task": "T03",
+  "variant": "A",
+  "tkey": "T03A",
+  "index": 1,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-15T11:30:34.542Z",
+  "started_at": "2026-10-15T11:30:34.546Z",
+  "ended_at": "2026-10-15T11:53:20.539Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": "T03A-ff3d42f0",
+  "ref": "xAI/grok-4.7-build-fast/T03A/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

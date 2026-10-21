@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "Gemini 4 Argon",
+  "task": "T07",
+  "variant": null,
+  "tkey": "T07",
+  "index": 1,
+  "harness": "Antigravity",
+  "created_at": "2026-10-14T05:36:26.278Z",
+  "started_at": "2026-10-14T05:36:26.283Z",
+  "ended_at": "2026-10-14T05:49:06.624Z",
+  "deliverable_dir": "studyspot-api",
+  "grader_run_id": "T07-239c20f3",
+  "ref": "Google/Gemini 4 Argon/T07/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

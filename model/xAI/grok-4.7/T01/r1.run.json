@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "vendor": "xAI",
+  "model": "grok-4.7",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "Grok CLI",
+  "created_at": "2026-10-02T21:42:54.043Z",
+  "started_at": "2026-10-02T21:42:55.007Z",
+  "ended_at": "2026-10-02T22:35:02.107303+00:00",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-e07788fd",
+  "ref": "xAI/grok-4.7/T01/r1",
+  "usage": {
+    "wall_min": 52.11833838333334
+  },
+  "notes": "",
+  "auto_finished": true
+}

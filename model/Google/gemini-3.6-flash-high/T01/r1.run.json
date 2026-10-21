@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.6-flash-high",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-02T20:06:26.433Z",
+  "started_at": "2026-10-02T20:06:28.051Z",
+  "ended_at": "2026-10-02T20:10:53.396702+00:00",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-f15d375b",
+  "ref": "Google/gemini-3.6-flash-high/T01/r1",
+  "usage": {
+    "wall_min": 4.422428366666667
+  },
+  "notes": "",
+  "auto_finished": true
+}

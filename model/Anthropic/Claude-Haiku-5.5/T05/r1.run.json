@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "Anthropic",
+  "model": "Claude-Haiku-5.5",
+  "task": "T05",
+  "variant": null,
+  "tkey": "T05",
+  "index": 1,
+  "harness": "Claude Web Chat + local command relay",
+  "created_at": "2026-10-08T05:55:49.969Z",
+  "started_at": "2026-10-08T10:46:50.276Z",
+  "ended_at": "2026-10-08T11:07:09.511Z",
+  "deliverable_dir": "aether9-site",
+  "grader_run_id": "T05-fed7d27a",
+  "ref": "Anthropic/Claude-Haiku-5.5/T05/r1",
+  "usage": {
+    "wall_min": 20.32058333333333,
+    "active_min": 20.32058333333333
+  },
+  "notes": "Complete original web implementation frozen; one transport-only follow-up requested pre-existing ZIP; 18 original project files mechanically extracted, no operator code change. Human review user-only.",
+  "auto_finished": true
+}

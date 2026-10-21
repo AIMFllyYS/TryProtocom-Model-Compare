@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "V06",
+  "variant": null,
+  "tkey": "V06",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T10:16:49.422Z",
+  "started_at": "2026-10-20T10:16:49.425Z",
+  "ended_at": "2026-10-20T12:51:50.404Z",
+  "deliverable_dir": "photoreal-building",
+  "grader_run_id": "V06-befa764f",
+  "ref": "MiniMax/MiniMax M3.1 Flash/V06/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

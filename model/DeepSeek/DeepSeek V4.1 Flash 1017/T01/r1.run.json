@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "T01",
+  "variant": null,
+  "tkey": "T01",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-17T11:01:02.304Z",
+  "started_at": "2026-10-17T11:01:02.307Z",
+  "ended_at": "2026-10-17T11:36:03.898Z",
+  "deliverable_dir": "pelican-bike",
+  "grader_run_id": "T01-a906b8fc",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/T01/r1",
+  "usage": {
+    "cost_usd": 1.29
+  },
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

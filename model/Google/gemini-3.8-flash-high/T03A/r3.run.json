@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "gemini-3.8-flash-high",
+  "task": "T03",
+  "variant": "A",
+  "tkey": "T03A",
+  "index": 3,
+  "harness": "Antigravity CLI",
+  "created_at": "2026-10-04T10:16:07.530Z",
+  "started_at": "2026-10-04T10:16:07.535Z",
+  "ended_at": "2026-10-04T10:35:33.956Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": null,
+  "ref": "Google/gemini-3.8-flash-high/T03A/r3",
+  "usage": {},
+  "notes": "",
+  "discarded": {
+    "at": "2026-10-04T10:35:33.956Z",
+    "reason": "Headless Antigravity command permissions repeatedly prevented task execution under the screen-safe policy. No deliverable or FINAL_MESSAGE; keep this attempt recoverable.",
+    "stopped": true,
+    "from": "进行中",
+    "set_ended": true
+  }
+}

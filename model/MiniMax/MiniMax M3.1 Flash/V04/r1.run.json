@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "MiniMax",
+  "model": "MiniMax M3.1 Flash",
+  "task": "V04",
+  "variant": null,
+  "tkey": "V04",
+  "index": 1,
+  "harness": "MiniMax Code CLI",
+  "created_at": "2026-10-20T11:50:44.433Z",
+  "started_at": "2026-10-20T11:50:44.435Z",
+  "ended_at": "2026-10-20T13:35:42.883Z",
+  "deliverable_dir": "aether9-site",
+  "grader_run_id": "V04-b25ab90e",
+  "ref": "MiniMax/MiniMax M3.1 Flash/V04/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

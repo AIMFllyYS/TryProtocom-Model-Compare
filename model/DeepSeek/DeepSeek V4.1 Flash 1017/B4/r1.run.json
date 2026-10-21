@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "B4",
+  "variant": null,
+  "tkey": "B4",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-20T13:16:01.574Z",
+  "started_at": "2026-10-20T13:16:01.576Z",
+  "ended_at": "2026-10-20T13:37:27.298Z",
+  "deliverable_dir": "blob-http",
+  "grader_run_id": "B4-1b297640",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/B4/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true
+}

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "vendor": "DeepSeek",
+  "model": "DeepSeek V4.1 Flash 1017",
+  "task": "T02",
+  "variant": null,
+  "tkey": "T02",
+  "index": 1,
+  "harness": "DeepSeek Harness",
+  "created_at": "2026-10-17T11:00:52.437Z",
+  "started_at": "2026-10-17T11:00:52.440Z",
+  "ended_at": "2026-10-17T11:49:40.849Z",
+  "deliverable_dir": "mc-sol-luna",
+  "grader_run_id": "T02-b2e38554",
+  "ref": "DeepSeek/DeepSeek V4.1 Flash 1017/T02/r1",
+  "usage": {
+    "cost_usd": 0.66
+  },
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

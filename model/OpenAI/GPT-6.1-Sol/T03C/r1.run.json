@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "OpenAI",
+  "model": "GPT-6.1-Sol",
+  "task": "T03",
+  "variant": "C",
+  "tkey": "T03C",
+  "index": 1,
+  "harness": "Codex 桌面版",
+  "created_at": "2026-09-30T17:39:33.933Z",
+  "started_at": "2026-09-30T17:39:33.940Z",
+  "ended_at": "2026-09-30T18:31:27.323Z",
+  "deliverable_dir": "tempo-promo",
+  "grader_run_id": "T03C-15928838",
+  "ref": "OpenAI/GPT-6.1-Sol/T03C/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}

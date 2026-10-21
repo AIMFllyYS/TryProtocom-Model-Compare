@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "vendor": "Google",
+  "model": "Gemini 4 Argon",
+  "task": "T04",
+  "variant": null,
+  "tkey": "T04",
+  "index": 1,
+  "harness": "Antigravity",
+  "created_at": "2026-10-14T04:11:50.153Z",
+  "started_at": "2026-10-14T04:11:50.156Z",
+  "ended_at": "2026-10-14T04:59:30.248Z",
+  "deliverable_dir": "aether9-promo",
+  "grader_run_id": "T04-6ecb0638",
+  "ref": "Google/Gemini 4 Argon/T04/r1",
+  "usage": {},
+  "notes": "",
+  "auto_finished": true,
+  "timed_out": false
+}
