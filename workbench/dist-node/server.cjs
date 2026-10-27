@@ -130,6 +130,299 @@ function applyView(runs, view, cfg, tasks) {
   return { runs: out, info };
 }
 
+// shared/quota.ts
+function unitPrice(b) {
+  if (!b || b.mode !== "subscription" || !b.monthly_fee || !b.monthly_quota) return null;
+  return b.monthly_fee / b.monthly_quota;
+}
+function settleQuota(q, b) {
+  if (!q || q.before == null || q.after == null) return { used: null, cost_usd: null };
+  const used = Math.max(0, q.before - q.after);
+  if (q.unit === "\u7F8E\u5143") return { used, cost_usd: used };
+  const p = unitPrice(b);
+  return { used, cost_usd: p == null ? null : +(used * p).toFixed(4) };
+}
+
+// shared/efficiency.ts
+var TIME_DEFAULTS = { flag_minutes: 300, min_minutes: 0.5, pending: "exclude" };
+var REL_DEFAULTS = { shrink: 1, span: 4, free_floor_usd: 0.01 };
+var PRIOR_LN = Math.log(2);
+function effSettings(cfg) {
+  const t = { ...TIME_DEFAULTS, ...cfg.efficiency?.time || {} };
+  const r = { ...REL_DEFAULTS, ...cfg.efficiency?.relative || {} };
+  return { time: t, rel: r };
+}
+var num = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
+var pos = (v) => {
+  const n = num(v);
+  return n != null && n > 0 ? n : null;
+};
+function minutesBetween(a, b) {
+  if (!a || !b) return null;
+  const m = (Date.parse(b) - Date.parse(a)) / 6e4;
+  return Number.isFinite(m) ? m : null;
+}
+var modelKey = (vendor, model) => `${vendor || ""}/${model}`;
+var r4 = (x) => Math.round(x * 1e4) / 1e4;
+function intervalOf(r, ws) {
+  const s = r.started_at || ws?.started_at, e = r.ended_at || ws?.ended_at;
+  if (!s || !e) return null;
+  const a = Date.parse(s), b = Date.parse(e);
+  return Number.isFinite(a) && Number.isFinite(b) && b > a ? [a, b] : null;
+}
+function resolveTime(r, ws, eff, cfg) {
+  const { time: T } = effSettings(cfg);
+  const review = eff?.time_review?.[r.run_id];
+  const active = pos(r.usage?.active_min) ?? pos(ws?.usage?.active_min);
+  const log = pos(r.usage?.wall_min) ?? pos(ws?.usage?.wall_min);
+  const ts = minutesBetween(r.started_at || ws?.started_at, r.ended_at || ws?.ended_at);
+  let raw = null, source = "none";
+  if (active != null) {
+    raw = active;
+    source = "active";
+  } else if (log != null) {
+    raw = log;
+    source = "log";
+  } else if (ts != null) {
+    raw = ts;
+    source = "timestamp";
+  }
+  if (review?.status === "corrected" && pos(review.minutes) != null) return { minutes: review.minutes, raw_min: raw, time_source: "corrected", time_status: "corrected" };
+  if (raw == null) return { minutes: null, raw_min: null, time_source: "none", time_status: "none" };
+  const flag = raw > T.flag_minutes ? `\u8D85\u8FC7 ${+(T.flag_minutes / 60).toFixed(1)} \u5C0F\u65F6` : raw < T.min_minutes ? `\u4E0D\u8DB3 ${T.min_minutes} \u5206\u949F` : void 0;
+  if (review?.status === "exclude") return { minutes: null, raw_min: raw, time_source: source, time_status: "excluded", flag };
+  if (!flag) return { minutes: raw, raw_min: raw, time_source: source, time_status: "ok" };
+  if (review?.status === "include") return { minutes: raw, raw_min: raw, time_source: source, time_status: "included", flag };
+  const ev = minutesBetween(r.started_at || ws?.started_at, ws?.final_at);
+  const suggest = ev != null && ev >= T.min_minutes && ev < raw * 0.9 ? Math.round(ev * 10) / 10 : null;
+  return { minutes: T.pending === "include" ? raw : null, raw_min: raw, time_source: source, time_status: "pending", flag, suggest_min: suggest };
+}
+function allocateLedger(runs, ctx) {
+  const out = /* @__PURE__ */ new Map();
+  const log = ctx.eff?.quota_log || {};
+  const wsByRef = new Map((ctx.workspaces || []).map((w) => [w.ref, w]));
+  for (const [key, readings0] of Object.entries(log)) {
+    const readings = [...readings0 || []].filter((x) => num(x.remaining) != null && Number.isFinite(Date.parse(x.at))).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    if (readings.length < 2) continue;
+    const prof = (ctx.models || []).find((m) => modelKey(m.vendor, m.name) === key);
+    const mine = runs.filter((r) => modelKey(r.vendor, r.model) === key || !r.vendor && key.endsWith("/" + r.model));
+    if (!mine.length) continue;
+    const unit = readings[readings.length - 1].unit || prof?.billing?.unit;
+    const price = unit === "\u7F8E\u5143" ? 1 : unitPrice(prof?.billing);
+    const segs = [];
+    for (let i = 0; i + 1 < readings.length; i++) {
+      const x = readings[i], y = readings[i + 1];
+      if (y.reset || y.remaining > x.remaining || x.unit && y.unit && x.unit !== y.unit) continue;
+      segs.push({ a: Date.parse(x.at), b: Date.parse(y.at), used: x.remaining - y.remaining });
+    }
+    const iv = new Map(mine.map((r) => [r.run_id, intervalOf(r, r.ws_ref ? wsByRef.get(r.ws_ref) : void 0)]));
+    const share = /* @__PURE__ */ new Map(), covered = /* @__PURE__ */ new Map();
+    for (const s of segs) {
+      const ov = mine.map((r) => {
+        const v = iv.get(r.run_id);
+        return v ? Math.max(0, Math.min(v[1], s.b) - Math.max(v[0], s.a)) : 0;
+      });
+      const tot = ov.reduce((p, q) => p + q, 0);
+      if (!tot) continue;
+      mine.forEach((r, i) => {
+        if (!ov[i]) return;
+        share.set(r.run_id, (share.get(r.run_id) || 0) + s.used * ov[i] / tot);
+        covered.set(r.run_id, (covered.get(r.run_id) || 0) + ov[i]);
+      });
+    }
+    for (const r of mine) {
+      const v = iv.get(r.run_id);
+      if (!v || !covered.has(r.run_id)) continue;
+      if (covered.get(r.run_id) < 0.98 * (v[1] - v[0])) {
+        out.set(r.run_id, { usd: null, note: "\u989D\u5EA6\u8BFB\u6570\u6CA1\u6709\u8986\u76D6\u6574\u6BB5\u8FD0\u884C\uFF08\u7F3A\u5F00\u8DD1\u524D\u6216\u7ED3\u675F\u540E\u7684\u8BFB\u6570\uFF0C\u6216\u4E2D\u95F4\u5468\u671F\u91CD\u7F6E\uFF09" });
+        continue;
+      }
+      if (price == null) {
+        out.set(r.run_id, { usd: null, note: "\u6A21\u578B\u6CA1\u6709\u586B\u5199\u8BA2\u9605\u5468\u671F\u8D39\u7528\u4E0E\u989D\u5EA6\uFF0C\u65E0\u6CD5\u628A\u989D\u5EA6\u6362\u7B97\u6210\u7F8E\u5143" });
+        continue;
+      }
+      out.set(r.run_id, { usd: r4(share.get(r.run_id) * price), note: `\u6309\u989D\u5EA6\u8BFB\u6570\u5206\u644A\uFF1A${+share.get(r.run_id).toFixed(3)} ${unit || ""}` });
+    }
+  }
+  return out;
+}
+function resolveRuns(runs, ctx, cfg) {
+  const wsByRef = new Map((ctx.workspaces || []).map((w) => [w.ref, w]));
+  const wsByRid = new Map((ctx.workspaces || []).filter((w) => w.grader_run_id).map((w) => [w.grader_run_id, w]));
+  const models = new Map((ctx.models || []).map((m) => [modelKey(m.vendor, m.name), m]));
+  const ledger = allocateLedger(runs, ctx);
+  const out = /* @__PURE__ */ new Map();
+  for (const r of runs) {
+    const ws = (r.ws_ref ? wsByRef.get(r.ws_ref) : void 0) || wsByRid.get(r.run_id);
+    const t = resolveTime(r, ws, ctx.eff, cfg);
+    const bill = models.get(modelKey(r.vendor || ws?.vendor, r.model))?.billing;
+    let cost = null, source = "none", est = false, note;
+    const ov = ctx.eff?.cost?.[r.run_id];
+    const usage = num(r.usage?.cost_usd) != null ? r.usage : ws?.usage;
+    const lg = ledger.get(r.run_id);
+    const q = ws?.quota && ws.quota.before != null && ws.quota.after != null ? settleQuota(ws.quota, bill) : null;
+    if (ov && num(ov.cost_usd) != null && ov.cost_usd >= 0) {
+      cost = ov.cost_usd;
+      source = "manual";
+      est = true;
+      note = ov.note || "\u76F4\u63A5\u586B\u5199\u7684\u4F30\u7B97\u4EF7";
+    } else if (q?.cost_usd != null) {
+      cost = q.cost_usd;
+      source = "quota";
+      est = true;
+      note = `\u989D\u5EA6\u5DEE ${+(q.used ?? 0).toFixed(3)} ${ws.quota.unit || ""}`;
+    } else if (lg?.usd != null) {
+      cost = lg.usd;
+      source = "ledger";
+      est = true;
+      note = lg.note;
+    } else if (num(usage?.cost_usd) != null) {
+      cost = usage.cost_usd;
+      source = usage.source === "quota" ? "quota" : usage.cost_estimated ? "token" : "log";
+      est = !!usage.cost_estimated || source === "quota";
+    } else if (bill?.mode === "free") {
+      cost = 0;
+      source = "free";
+    } else if (lg) note = lg.note;
+    out.set(r.run_id, { ...t, cost_usd: cost, cost_source: source, cost_estimated: est, cost_note: note });
+  }
+  return out;
+}
+function timeFlags(runs, resolved, eff) {
+  const out = [];
+  for (const r of runs) {
+    const x = resolved.get(r.run_id);
+    const rv = eff?.time_review?.[r.run_id];
+    if (!x || x.raw_min == null || !x.flag && !rv) continue;
+    out.push({
+      run_id: r.run_id,
+      entrant: r.entrant,
+      tkey: r.tkey,
+      ws_ref: r.ws_ref,
+      raw_min: Math.round(x.raw_min * 10) / 10,
+      source: x.time_source === "corrected" ? "timestamp" : x.time_source,
+      flag: x.flag || "\u624B\u52A8\u6838\u5B9E",
+      status: rv?.status || "pending",
+      minutes: x.minutes,
+      reason: rv?.reason,
+      at: rv?.at,
+      started_at: r.started_at ?? null,
+      ended_at: r.ended_at ?? null,
+      suggest_min: x.suggest_min ?? null
+    });
+  }
+  return out.sort((a, b) => (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1) || b.raw_min - a.raw_min);
+}
+var median = (xs) => {
+  const v = [...xs].sort((a, b) => a - b);
+  const n = v.length;
+  return n ? n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2 : null;
+};
+function taskWeight(tkey, task, tasks) {
+  const t = tasks.find((x) => x.id === task);
+  const nv = t ? Object.keys(t.variants || {}).length : 0;
+  return nv > 1 && tkey !== task ? 1 / nv : 1;
+}
+var levelOf = (u) => u == null ? null : u < 0.15 ? "\u4F4E" : u < 0.35 ? "\u4E2D" : "\u9AD8";
+function relativeStats(rows, tasks, opts) {
+  const floor = opts.floor ?? 0;
+  const g = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    if (!g.has(r.entrant)) g.set(r.entrant, /* @__PURE__ */ new Map());
+    const m = g.get(r.entrant);
+    if (!m.has(r.tkey)) m.set(r.tkey, []);
+    m.get(r.tkey).push(r);
+  }
+  const cell = (rs) => {
+    const v = rs.filter((r) => r.status === "ok" && r.value != null).map((r) => Math.max(r.value, floor));
+    return { v, mean: v.length ? v.reduce((a, b) => a + b, 0) / v.length : null };
+  };
+  const perTask = /* @__PURE__ */ new Map();
+  for (const m of g.values()) for (const [tk, rs] of m) {
+    const c = cell(rs);
+    if (c.mean != null && c.mean > 0) {
+      if (!perTask.has(tk)) perTask.set(tk, []);
+      perTask.get(tk).push(c.mean);
+    }
+  }
+  const baseline = /* @__PURE__ */ new Map();
+  for (const [tk, xs] of perTask) baseline.set(tk, median(xs));
+  const by = /* @__PURE__ */ new Map();
+  for (const [e, m] of g) {
+    let sw = 0, sx = 0, n = 0, excl = 0, pend = 0, inferred = 0, okRuns = 0;
+    const parts = [];
+    const means = [];
+    for (const [tk, rs] of m) {
+      excl += rs.filter((r) => r.status === "excluded").length;
+      pend += rs.filter((r) => r.status === "pending").length;
+      const c = cell(rs);
+      const b = baseline.get(tk);
+      if (c.mean == null || !b || c.mean <= 0) continue;
+      okRuns += c.v.length;
+      inferred += rs.filter((r) => r.status === "ok" && r.inferred).length;
+      const w = taskWeight(tk, rs[0].task, tasks) * (c.v.length / (c.v.length + 1));
+      const x = Math.log(c.mean / b);
+      const lv = c.v.map((v) => Math.log(v));
+      const lm = lv.reduce((a, q2) => a + q2, 0) / lv.length;
+      const vw = lv.length > 1 ? lv.reduce((a, q2) => a + (q2 - lm) ** 2, 0) / (lv.length - 1) / lv.length : 0;
+      parts.push({ w, x, vw });
+      sw += w;
+      sx += w * x;
+      n++;
+      means.push(c.mean);
+    }
+    const tasksTotal = m.size;
+    if (!n) {
+      by.set(e, { mean: null, rel: null, score: null, unc: null, level: null, tasks: 0, tasks_total: tasksTotal, runs: 0, excluded: excl, pending: pend, inferred: 0, suite_est: null });
+      continue;
+    }
+    const k = opts.shrink;
+    const xe = sx / (sw + k);
+    const xbar = sx / sw;
+    const num2 = parts.reduce((a, p) => a + p.w * p.w * ((p.x - xbar) ** 2 + p.vw), 0) + k * PRIOR_LN * PRIOR_LN;
+    const q = (excl + pend) / Math.max(1, okRuns + excl + pend);
+    const f2 = inferred / Math.max(1, okRuns);
+    const u = Math.sqrt(num2) / (sw + k) * Math.sqrt(1 + q + 0.25 * f2);
+    const rel = Math.exp(xe);
+    const score = Math.max(0, Math.min(100, 50 - 50 * Math.log(rel) / Math.log(opts.span)));
+    let suite = 0;
+    for (const b of baseline.values()) suite += b * rel;
+    by.set(e, {
+      mean: r4(means.reduce((a, b) => a + b, 0) / means.length),
+      rel: r4(rel),
+      score: Math.round(score * 10) / 10,
+      unc: r4(Math.exp(u) - 1),
+      level: levelOf(Math.exp(u) - 1),
+      tasks: n,
+      tasks_total: tasksTotal,
+      runs: okRuns,
+      excluded: excl,
+      pending: pend,
+      inferred,
+      suite_est: r4(suite)
+    });
+  }
+  return { by, baseline };
+}
+function entrantEff(runs, resolved, tasks, cfg) {
+  const { rel } = effSettings(cfg);
+  const tRows = runs.map((r) => {
+    const x = resolved.get(r.run_id);
+    const status = x.time_status === "excluded" ? "excluded" : x.time_status === "pending" ? x.minutes != null ? "ok" : "pending" : x.minutes != null ? "ok" : "none";
+    return { entrant: r.entrant, tkey: r.tkey, task: r.task, value: x.minutes, status, inferred: x.time_source === "timestamp" || x.time_status === "pending" };
+  });
+  const cRows = runs.map((r) => {
+    const x = resolved.get(r.run_id);
+    return { entrant: r.entrant, tkey: r.tkey, task: r.task, value: x.cost_usd, status: x.cost_usd != null ? "ok" : "none", inferred: x.cost_estimated };
+  });
+  const T = relativeStats(tRows, tasks, { shrink: rel.shrink, span: rel.span });
+  const C = relativeStats(cRows, tasks, { shrink: rel.shrink, span: rel.span, floor: rel.free_floor_usd });
+  const empty = (e, m) => m.get(e) || { mean: null, rel: null, score: null, unc: null, level: null, tasks: 0, tasks_total: 0, runs: 0, excluded: 0, pending: 0, inferred: 0, suite_est: null };
+  const by = {};
+  for (const e of new Set(runs.map((r) => r.entrant))) by[e] = { time: empty(e, T.by), cost: empty(e, C.by) };
+  return { by, baseline: { time: Object.fromEntries(T.baseline), cost: Object.fromEntries(C.baseline) } };
+}
+
 // shared/aggregate.ts
 var mean = (xs) => {
   const v = xs.filter((x) => typeof x === "number" && Number.isFinite(x));
@@ -167,6 +460,18 @@ function aggregate(allRuns, spec, opts = {}) {
   const qdims = dims.filter((d) => d.kind === "quality");
   const { runs, info: vinfo } = applyView(allRuns.filter((r) => r.graded && r.score), view, cfg, spec.tasks);
   const suite = view === "history" ? "v1" : "v2";
+  const suiteRuns = allRuns.filter((r) => r.graded && r.score && suiteOfRun(r, spec.tasks) === suite);
+  const effCtx = opts.ctx || {};
+  const resolved = resolveRuns(suiteRuns, effCtx, cfg);
+  const effRuns = suiteRuns.filter((r) => !r.incident);
+  const effBy = /* @__PURE__ */ new Map();
+  for (const r of effRuns) {
+    const kk = `${r.entrant}\0${r.tkey}`;
+    if (!effBy.has(kk)) effBy.set(kk, []);
+    effBy.get(kk).push(r);
+  }
+  const effStats = entrantEff(effRuns, resolved, spec.tasks, cfg);
+  const flags = timeFlags(suiteRuns, resolved, effCtx.eff);
   const byEt = /* @__PURE__ */ new Map();
   const k = (e, t) => `${e}\0${t}`;
   for (const r of runs) {
@@ -177,7 +482,6 @@ function aggregate(allRuns, spec, opts = {}) {
   const entrants = [...new Set(runs.map((r) => r.entrant))].sort();
   const tkeys = [...new Set(runs.map((r) => r.tkey))].sort();
   const eff = cfg.efficiency;
-  const usageMin = (r) => r.usage?.active_min ?? r.usage?.wall_min ?? null;
   const taskRows = [];
   for (const key of [...byEt.keys()].sort()) {
     const rs = byEt.get(key);
@@ -185,8 +489,9 @@ function aggregate(allRuns, spec, opts = {}) {
     const totals = rs.map((r) => r.score.total);
     const passed = rs.map((r) => r.score.passed);
     const pr = passed.filter(Boolean).length / passed.length;
-    const mc = mean(rs.map((r) => r.usage?.cost_usd ?? null));
-    const mm = mean(rs.map(usageMin));
+    const er0 = effBy.get(key) || rs;
+    const mc = mean(er0.map((r) => resolved.get(r.run_id)?.cost_usd ?? null));
+    const mm = mean(er0.map((r) => resolved.get(r.run_id)?.minutes ?? null));
     const row = {
       entrant: e,
       task: tk,
@@ -236,12 +541,12 @@ function aggregate(allRuns, spec, opts = {}) {
     }
     const ds = {};
     for (const [d, [a, b]] of Object.entries(acc)) if (b) ds[d] = r2(a / b);
-    let num = 0, den = 0;
+    let num2 = 0, den = 0;
     for (const qd of qdims) if (qd.id in ds) {
-      num += (qd.weight ?? 1) * ds[qd.id];
+      num2 += (qd.weight ?? 1) * ds[qd.id];
       den += qd.weight ?? 1;
     }
-    return { dims: ds, quality: den ? r2(num / den) : null };
+    return { dims: ds, quality: den ? r2(num2 / den) : null };
   };
   const rng = mulberry32(20261008);
   const B = opts.bootstrap ?? Number(cfg.statistics?.bootstrap_samples ?? 2e3);
@@ -264,13 +569,12 @@ function aggregate(allRuns, spec, opts = {}) {
     const hi = boots.length ? boots[Math.floor((1 + ci) / 2 * boots.length) - 1] : null;
     const trs = taskRows.filter((t) => t.entrant === e);
     const costS = trs.map((t) => t.cost_score).filter((x) => x != null);
-    const speedS = trs.map((t) => t.speed_score).filter((x) => x != null);
     const expC = trs.map((t) => t.exp_cost_usd).filter((x) => x != null);
     const expM = trs.map((t) => t.exp_min).filter((x) => x != null);
     const er = runs.filter((r) => r.entrant === e);
     const dimsFull = { ...base.dims };
-    dimsFull.cost = costS.length ? r2(mean(costS), 1) : null;
-    dimsFull.speed = speedS.length ? r2(mean(speedS), 1) : null;
+    dimsFull.cost = effStats.by[e]?.cost.score ?? null;
+    dimsFull.speed = effStats.by[e]?.time.score ?? null;
     const suiteSum = (xs, d) => xs.length ? xs.every((x) => x !== INF) ? r2(xs.reduce((a, b) => a + b, 0), d) : INF : null;
     const row = {
       rank: "",
@@ -382,7 +686,7 @@ function aggregate(allRuns, spec, opts = {}) {
     if (r.timed_out) tags.push("\u8D85\u65F6");
     if (!sc.gate_pass || !sc.passed) failures.push({ entrant: r.entrant, task: r.tkey, run_id: r.run_id, total: sc.total, tags: [...new Set(tags)].join("|") || "\u80FD\u529B\u4E0D\u8DB3\uFF08\u672A\u8FBE\u6807\uFF09" });
   }
-  const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0 };
+  const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0, time_review: flags.filter((f2) => f2.status === "pending").length };
   for (const r of allRuns.filter((x) => suiteOfRun(x, spec.tasks) === "v2" === (view !== "history"))) {
     if (!r.graded || !r.score) {
       pending.ungraded++;
@@ -392,17 +696,23 @@ function aggregate(allRuns, spec, opts = {}) {
     if ((r.usage?.missing || []).length) pending.usage_missing++;
     if (r.score.low_confidence) pending.low_confidence++;
   }
-  return { view, excluded: vinfo.excluded, board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: (/* @__PURE__ */ new Date()).toISOString(), pending };
-}
-
-// shared/activity.ts
-var ACTIVE = (j) => j.status === "running" || j.status === "queued";
-var FAIL_WINDOW = 30 * 6e4;
-var queuedAt = (j) => j.queued_at ?? j.started_at;
-function petJobs(jobs, now = Date.now(), windowMs = 15 * 6e4, max = 6) {
-  const act = jobs.filter(ACTIVE).sort((a, b) => a.status === b.status ? queuedAt(a) - queuedAt(b) : a.status === "running" ? -1 : 1);
-  const recent = jobs.filter((j) => !ACTIVE(j) && (j.kind === "register" || j.kind === "grade") && now - (j.ended_at || 0) < windowMs).sort((a, b) => (b.ended_at || 0) - (a.ended_at || 0));
-  return [...act, ...recent].slice(0, max);
+  return {
+    view,
+    excluded: vinfo.excluded,
+    board,
+    tasks: taskRows,
+    items,
+    uplift,
+    failures,
+    entrants,
+    tkeys,
+    generated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    pending,
+    eff: effStats.by,
+    run_eff: Object.fromEntries(resolved),
+    time_flags: flags,
+    eff_baseline: effStats.baseline
+  };
 }
 
 // shared/deliverables.ts
@@ -583,6 +893,16 @@ function evalDeliverable(d, exists, list) {
   });
 }
 
+// shared/activity.ts
+var ACTIVE = (j) => j.status === "running" || j.status === "queued";
+var FAIL_WINDOW = 30 * 6e4;
+var queuedAt = (j) => j.queued_at ?? j.started_at;
+function petJobs(jobs, now = Date.now(), windowMs = 15 * 6e4, max = 6) {
+  const act = jobs.filter(ACTIVE).sort((a, b) => a.status === b.status ? queuedAt(a) - queuedAt(b) : a.status === "running" ? -1 : 1);
+  const recent = jobs.filter((j) => !ACTIVE(j) && (j.kind === "register" || j.kind === "grade") && now - (j.ended_at || 0) < windowMs).sort((a, b) => (b.ended_at || 0) - (a.ended_at || 0));
+  return [...act, ...recent].slice(0, max);
+}
+
 // shared/prompt.ts
 function buildPrompt(raw, taskId, variant, opts = {}) {
   const warnings = [];
@@ -687,19 +1007,6 @@ function reviewPrompt(p) {
   L.push("## 5. \u5B8C\u6210\u540E\u6C47\u62A5");
   L.push("\u5217\u51FA\uFF1A\u6253\u5206\u7684 item_id\u3001\u5206\u6570\u4E0E\u8BC1\u636E\u6458\u8981\uFF1B\u4ECD\u5F85\u4EBA\u5DE5\u7684\u9879\u6570\uFF1BN/A \u6216\u4F4E\u53EF\u4FE1\u7684\u539F\u56E0\uFF1B\u5DE5\u4F5C\u53F0\u4E2D\u67E5\u770B\u7ED3\u679C\u7684\u4F4D\u7F6E\uFF08\u8FD0\u884C \u2192 \u8BE5 ref\uFF09\u3002");
   return L.join("\n") + "\n";
-}
-
-// shared/quota.ts
-function unitPrice(b) {
-  if (!b || b.mode !== "subscription" || !b.monthly_fee || !b.monthly_quota) return null;
-  return b.monthly_fee / b.monthly_quota;
-}
-function settleQuota(q, b) {
-  if (!q || q.before == null || q.after == null) return { used: null, cost_usd: null };
-  const used = Math.max(0, q.before - q.after);
-  if (q.unit === "\u7F8E\u5143") return { used, cost_usd: used };
-  const p = unitPrice(b);
-  return { used, cost_usd: p == null ? null : +(used * p).toFixed(4) };
 }
 
 // shared/vendors.ts
@@ -2457,6 +2764,19 @@ var StoreFile = class {
       stat.notes++;
     }
     if (!this.data.spec && other.spec) this.data.spec = other.spec;
+    if (other.eff) {
+      const e = this.data.eff ??= {};
+      for (const k of ["time_review", "cost"]) {
+        const mine = e[k] ??= {};
+        for (const [id, v] of Object.entries(other.eff[k] || {})) if (!mine[id] || (v.at || "") > (mine[id].at || "")) mine[id] = v;
+      }
+      e.quota_log ??= {};
+      for (const [key, list] of Object.entries(other.eff.quota_log || {})) {
+        const cur = new Map((e.quota_log[key] || []).map((x) => [x.id, x]));
+        for (const x of list || []) if (!cur.has(x.id)) cur.set(x.id, x);
+        e.quota_log[key] = [...cur.values()].sort((a, b) => a.at.localeCompare(b.at));
+      }
+    }
     this.log("import", `\u5BFC\u5165 ${stat.runs} \u6B21\u8FD0\u884C\u3001${stat.models} \u4E2A\u6A21\u578B\uFF08\u6765\u81EA ${other.machine || "\u672A\u77E5\u7535\u8111"}\uFF09`);
     return stat;
   }
@@ -2634,6 +2954,11 @@ var Workspaces = class {
     const root = run.has_deliverable ? droot : f2.ws;
     run.entry = pv && import_node_fs8.default.existsSync(pv) ? import_node_path7.default.relative(f2.ws, pv).split(import_node_path7.default.sep).join("/") : this.detectEntry(root, f2.ws, d.kind === "video");
     run.detect = this.detect(f2.ws, d, run.deliverable_dir);
+    try {
+      run.final_at = new Date(import_node_fs8.default.statSync(import_node_path7.default.join(f2.ws, FINAL_FILE)).mtimeMs).toISOString();
+    } catch {
+      run.final_at = run.detect?.last_change ? new Date(run.detect.last_change).toISOString() : null;
+    }
     return run;
   }
   /** 交付检测：按清单逐项检查 + 最近修改时间 + FINAL_MESSAGE.md 是否出现。 */
@@ -2874,7 +3199,7 @@ async function startServer(over = {}) {
     const key = store.data.updated_at + ":" + store.data.runs.length;
     const hit = aggCache.get(view);
     if (hit?.key === key) return hit.agg;
-    const agg = aggregate(store.data.runs, await loadSpec(), { view });
+    const agg = aggregate(store.data.runs, await loadSpec(), { view, ctx: { workspaces: store.data.workspaces, models: store.data.models, eff: store.data.eff } });
     aggCache.set(view, { key, agg });
     return agg;
   }
@@ -3352,6 +3677,69 @@ async function startServer(over = {}) {
     refreshWorkspaces();
     return r;
   });
+  const effStore = () => store.data.eff ??= {};
+  const effSaved = (action, detail) => {
+    store.log(action, detail);
+    store.save();
+    aggCache.clear();
+    hub.emit({ type: "store", updated_at: store.data.updated_at });
+  };
+  const knownRun = (id) => {
+    const rid = String(id || "");
+    if (!store.data.runs.some((r) => r.run_id === rid)) throw new HttpError(404, `\u6CA1\u6709\u8FD9\u6B21\u8FD0\u884C\uFF1A${rid}`);
+    return rid;
+  };
+  R.post("/api/eff/time-review", async (req) => {
+    const b = await readJson(req);
+    const rid = knownRun(b.run_id);
+    const e = effStore();
+    e.time_review ??= {};
+    const st = String(b.status || "");
+    if (st === "clear") delete e.time_review[rid];
+    else if (st === "exclude" || st === "include") e.time_review[rid] = { status: st, reason: b.reason ? String(b.reason).slice(0, 300) : void 0, at: (/* @__PURE__ */ new Date()).toISOString() };
+    else if (st === "corrected") {
+      const m = Number(b.minutes);
+      if (!Number.isFinite(m) || m <= 0 || m > 10080) throw new HttpError(400, "\u4FEE\u6B63\u7528\u65F6\u9700\u8981 0\u201310080 \u4E4B\u95F4\u7684\u5206\u949F\u6570");
+      e.time_review[rid] = { status: "corrected", minutes: m, reason: b.reason ? String(b.reason).slice(0, 300) : void 0, at: (/* @__PURE__ */ new Date()).toISOString() };
+    } else throw new HttpError(400, "status \u53EA\u80FD\u662F exclude / include / corrected / clear");
+    effSaved("time-review", `${rid} \u2192 ${st}`);
+    return e.time_review[rid] ?? null;
+  });
+  R.post("/api/eff/cost", async (req) => {
+    const b = await readJson(req);
+    const rid = knownRun(b.run_id);
+    const e = effStore();
+    e.cost ??= {};
+    if (b.cost_usd === null || b.cost_usd === "") delete e.cost[rid];
+    else {
+      const v = Number(b.cost_usd);
+      if (!Number.isFinite(v) || v < 0 || v > 1e5) throw new HttpError(400, "\u8D39\u7528\u9700\u8981 0\u2013100000 \u4E4B\u95F4\u7684\u7F8E\u5143\u6570");
+      e.cost[rid] = { cost_usd: v, note: b.note ? String(b.note).slice(0, 300) : void 0, at: (/* @__PURE__ */ new Date()).toISOString() };
+    }
+    effSaved("cost", `${rid} \u2192 ${b.cost_usd ?? "\u6E05\u9664"}`);
+    return e.cost[rid] ?? null;
+  });
+  R.post("/api/eff/quota-log", async (req) => {
+    const b = await readJson(req);
+    const key = String(b.model || "");
+    if (!store.data.models.some((m) => `${m.vendor}/${m.name}` === key)) throw new HttpError(404, `\u6CA1\u6709\u8FD9\u4E2A\u6A21\u578B\uFF1A${key}`);
+    const e = effStore();
+    e.quota_log ??= {};
+    const list = e.quota_log[key] ??= [];
+    if (b.delete) {
+      e.quota_log[key] = list.filter((x) => x.id !== String(b.delete));
+      effSaved("quota-log", `${key} \u5220\u9664\u8BFB\u6570`);
+      return e.quota_log[key];
+    }
+    const remaining = Number(b.remaining);
+    if (!Number.isFinite(remaining) || remaining < 0) throw new HttpError(400, "\u5269\u4F59\u989D\u5EA6\u9700\u8981\u975E\u8D1F\u6570");
+    const at = b.at ? new Date(String(b.at)) : /* @__PURE__ */ new Date();
+    if (Number.isNaN(at.getTime())) throw new HttpError(400, "\u8BFB\u6570\u65F6\u95F4\u65E0\u6CD5\u89E3\u6790");
+    list.push({ id: `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, at: at.toISOString(), remaining, unit: b.unit ? String(b.unit) : void 0, note: b.note ? String(b.note).slice(0, 200) : void 0, reset: !!b.reset });
+    list.sort((x, y) => x.at.localeCompare(y.at));
+    effSaved("quota-log", `${key} \u5269\u4F59 ${remaining}${b.unit || ""}`);
+    return list;
+  });
   R.post("/api/shots", async (req) => {
     const b = await readJson(req);
     const m = /^data:image\/png;base64,(.+)$/.exec(String(b.data || ""));
@@ -3515,7 +3903,19 @@ async function startServer(over = {}) {
     liveRun(b.ref);
     if (typeof b.final_message === "string" && b.final_message.trim()) ws.writeFinal(b.ref, b.final_message);
     if (b.transcript) ws.writeTranscript(b.ref, b.transcript);
-    const patch = { ended_at: b.at || (/* @__PURE__ */ new Date()).toISOString() };
+    const endAt = (() => {
+      if (b.at) return String(b.at);
+      const pr = ws.parseRef(b.ref);
+      const cur = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      if (cur.ended_at) return cur.ended_at;
+      try {
+        const m = import_node_fs9.default.statSync(import_node_path8.default.join(ws.files(b.ref).ws, FINAL_FILE)).mtimeMs;
+        if (!cur.started_at || m > Date.parse(cur.started_at)) return new Date(m).toISOString();
+      } catch {
+      }
+      return (/* @__PURE__ */ new Date()).toISOString();
+    })();
+    const patch = { ended_at: endAt };
     if (b.usage) patch.usage = b.usage;
     if (b.timed_out != null) patch.timed_out = !!b.timed_out;
     const r = ws.patchRun(b.ref, patch);

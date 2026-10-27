@@ -9,6 +9,7 @@ import { Btn, Card, Empty, Select, Seg } from '../ui/kit';
 import { Bars, ChartCard, Legend, Pareto, Radar, seriesColor } from '../ui/charts';
 import { toast } from '../ui/toast';
 import { Score, useNamer } from '../components/common';
+import { radarAxes } from '../components/Efficiency';
 import { frontier } from './Board';
 import { ArtifactCompare } from '../stage/ArtifactCompare';
 import { useLocal } from '../lib/router';
@@ -73,7 +74,7 @@ export default function Compare() {
           </div>
           <div className="grid g-2 mt-l">
             <ChartCard title="维度雷达对比" sub={rows.map((r) => splitEntrant(r.entrant).model).join(' vs ')}>
-              <div className="center"><Radar axes={dims.map((d) => ({ id: d.id, label: d.name }))} series={rows.map((r) => ({ key: r.entrant, label: nm.entrant(r.entrant), color: color(r.entrant), values: r.dims }))} focus={hover} onFocus={setHover} /></div>
+              <div className="center"><Radar axes={radarAxes(wb.spec?.dims, wb.view)} series={rows.map((r) => ({ key: r.entrant, label: nm.entrant(r.entrant), color: color(r.entrant), values: r.dims }))} focus={hover} onFocus={setHover} /></div>
               <Legend items={rows.map((r) => ({ key: r.entrant, label: nm.entrant(r.entrant), color: color(r.entrant) }))} onHover={setHover} active={hover} />
             </ChartCard>
             <ChartCard title="成本 × 质量" sub="整套期望成本（美元，对数）">

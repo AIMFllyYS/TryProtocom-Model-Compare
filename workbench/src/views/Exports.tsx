@@ -9,6 +9,7 @@ import { Badge, Btn, Card, Empty, Field } from '../ui/kit';
 import { ChartCard, Heatmap, Pareto, Radar, seriesColor } from '../ui/charts';
 import { toast } from '../ui/toast';
 import { useNamer } from '../components/common';
+import { radarAxes } from '../components/Efficiency';
 import { frontier } from './Board';
 
 const FORMATS = ['csv', 'md', 'xlsx', 'png', 'html'] as const;
@@ -91,7 +92,7 @@ export default function Exports() {
         {!ents.length ? <Card><Empty title="还没有评分数据">评分完成后这里会出现可导出的图表。</Empty></Card> : (
           <div className="grid g-2" ref={gallery}>
             <ChartCard title="维度雷达 · 全部参赛者">
-              <div className="center"><Radar axes={dims.map((d) => ({ id: d.id, label: d.name }))} series={ents.slice(0, 8).map((b, i) => ({ key: b.entrant, label: nm.entrant(b.entrant), color: seriesColor(i), values: b.dims }))} /></div>
+              <div className="center"><Radar axes={radarAxes(wb.spec?.dims, wb.view)} series={ents.slice(0, 8).map((b, i) => ({ key: b.entrant, label: nm.entrant(b.entrant), color: seriesColor(i), values: b.dims }))} /></div>
             </ChartCard>
             <ChartCard title="成本 × 质量（帕累托）">
               <Pareto points={frontier(ents.filter((b) => b.quality != null && b.suite_exp_cost_usd != null).map((b, i) => ({ key: b.entrant, label: nm.entrant(b.entrant), x: b.suite_exp_cost_usd!, y: b.quality!, color: seriesColor(i) })))} />
@@ -104,7 +105,7 @@ export default function Exports() {
             </ChartCard>
             {ents.map((b, i) => (
               <ChartCard key={b.entrant} title={`${nm.blind ? nm.entrant(b.entrant) : splitEntrant(b.entrant).model} 维度雷达`} sub={`${splitEntrant(b.entrant).harness} · 质量 ${fmt.n(b.quality)} · #${b.rank}`}>
-                <div className="center"><Radar size={320} axes={dims.map((d) => ({ id: d.id, label: d.name }))} series={[{ key: b.entrant, label: nm.entrant(b.entrant), color: seriesColor(i), values: b.dims }]} /></div>
+                <div className="center"><Radar size={320} axes={radarAxes(wb.spec?.dims, wb.view)} series={[{ key: b.entrant, label: nm.entrant(b.entrant), color: seriesColor(i), values: b.dims }]} /></div>
               </ChartCard>
             ))}
           </div>

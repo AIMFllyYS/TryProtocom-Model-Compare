@@ -1,8 +1,10 @@
 // 汇总：运行 → 题目 → 维度 → 参赛者（模型 @ harness）。逐行移植自 bench-grader/scripts/benchlib/aggregate.py，
 // 输入只依赖可移植存储文件中的 StoreRun，因此在没有 bench-data 的电脑上也能出榜。
 // 与 Python 版的唯一差异：bootstrap 使用 mulberry32 随机数，置信区间数值会有极小抖动。
+// 例外：成本 / 速度维度改由 efficiency.ts 计算（按题相对值 + 用时核实 + 额度读数），Python 报告仍是旧的期望值口径。
 import type { Aggregate, BoardRow, BoardView, Dimension, FullConfig, ItemAnalysisRow, SpecData, StoreRun, TaskRow } from './types';
 import { applyView, suiteOf, suiteOfRun } from './v2';
+import { entrantEff, resolveRuns, timeFlags, type EffContext } from './efficiency';
 
 const mean = (xs: (number | null | undefined)[]): number | null => {
   const v = xs.filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
@@ -36,13 +38,22 @@ function mulberry32(seed: number) {
 
 export const entrantOf = (r: Pick<StoreRun, 'model' | 'harness'>) => `${r.model} @ ${r.harness}`;
 
-export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'config_full' | 'cfg' | 'tasks'>, opts: { bootstrap?: number; view?: BoardView } = {}): Aggregate {
+export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'config_full' | 'cfg' | 'tasks'>, opts: { bootstrap?: number; view?: BoardView; ctx?: EffContext } = {}): Aggregate {
   const view: BoardView = opts.view ?? 'history';
   const cfg: FullConfig = { ...spec.cfg, ...(spec.config_full || {}) };
   const dims: Dimension[] = spec.dims.filter((d) => !d.only_views || d.only_views.includes(view));
   const qdims = dims.filter((d) => d.kind === 'quality');
   const { runs, info: vinfo } = applyView(allRuns.filter((r) => r.graded && r.score), view, cfg, spec.tasks);
   const suite = view === 'history' ? 'v1' : 'v2';
+  // 速度与价格：用本题库全部已评分运行（不跟随简化版“挑最高分那次”），事故运行不计
+  const suiteRuns = allRuns.filter((r) => r.graded && r.score && suiteOfRun(r, spec.tasks) === suite);
+  const effCtx: EffContext = opts.ctx || {};
+  const resolved = resolveRuns(suiteRuns, effCtx, cfg);
+  const effRuns = suiteRuns.filter((r) => !r.incident);
+  const effBy = new Map<string, StoreRun[]>();
+  for (const r of effRuns) { const kk = `${r.entrant}\u0000${r.tkey}`; if (!effBy.has(kk)) effBy.set(kk, []); effBy.get(kk)!.push(r); }
+  const effStats = entrantEff(effRuns, resolved, spec.tasks, cfg);
+  const flags = timeFlags(suiteRuns, resolved, effCtx.eff);
   const byEt = new Map<string, StoreRun[]>();
   const k = (e: string, t: string) => `${e}\u0000${t}`;
   for (const r of runs) {
@@ -53,7 +64,6 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
   const entrants = [...new Set(runs.map((r) => r.entrant))].sort();
   const tkeys = [...new Set(runs.map((r) => r.tkey))].sort();
   const eff = cfg.efficiency;
-  const usageMin = (r: StoreRun) => r.usage?.active_min ?? r.usage?.wall_min ?? null;
 
   const taskRows: TaskRow[] = [];
   for (const key of [...byEt.keys()].sort()) {
@@ -62,8 +72,9 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
     const totals = rs.map((r) => r.score!.total);
     const passed = rs.map((r) => r.score!.passed);
     const pr = passed.filter(Boolean).length / passed.length;
-    const mc = mean(rs.map((r) => r.usage?.cost_usd ?? null));
-    const mm = mean(rs.map(usageMin));
+    const er0 = effBy.get(key) || rs;
+    const mc = mean(er0.map((r) => resolved.get(r.run_id)?.cost_usd ?? null));
+    const mm = mean(er0.map((r) => resolved.get(r.run_id)?.minutes ?? null));
     const row: TaskRow = {
       entrant: e, task: tk, runs: rs.length, n_used: (rs[0] as { n_used?: number }).n_used ?? null, mean: r2(mean(totals) ?? 0), sd: r2(psd(totals)), min: Math.min(...totals), max: Math.max(...totals),
       pass_rate: r2(pr, 3), pass_at_k: passed.some(Boolean), gate_fail_runs: rs.filter((r) => !r.score!.gate_pass).length,
@@ -122,13 +133,13 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
     const hi = boots.length ? boots[Math.floor(((1 + ci) / 2) * boots.length) - 1] : null;
     const trs = taskRows.filter((t) => t.entrant === e);
     const costS = trs.map((t) => t.cost_score).filter((x): x is number => x != null);
-    const speedS = trs.map((t) => t.speed_score).filter((x): x is number => x != null);
     const expC = trs.map((t) => t.exp_cost_usd).filter((x): x is number => x != null);
     const expM = trs.map((t) => t.exp_min).filter((x): x is number => x != null);
     const er = runs.filter((r) => r.entrant === e);
     const dimsFull: Record<string, number | null> = { ...base.dims };
-    dimsFull.cost = costS.length ? r2(mean(costS)!, 1) : null;
-    dimsFull.speed = speedS.length ? r2(mean(speedS)!, 1) : null;
+    // 雷达的成本 / 速度轴：按题相对基线的几何加权分（持平 50），没有记录就是 null（未记录），不当 0 分
+    dimsFull.cost = effStats.by[e]?.cost.score ?? null;
+    dimsFull.speed = effStats.by[e]?.time.score ?? null;
     const suiteSum = (xs: number[], d: number) => (xs.length ? (xs.every((x) => x !== INF) ? r2(xs.reduce((a, b) => a + b, 0), d) : INF) : null);
     const row: BoardRow = {
       rank: '', entrant: e, model: er[0].model, vendor: er[0].vendor, harness: er[0].harness, quality: base.quality, ci_low: lo, ci_high: hi,
@@ -216,14 +227,17 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
     if (!sc.gate_pass || !sc.passed) failures.push({ entrant: r.entrant, task: r.tkey, run_id: r.run_id, total: sc.total, tags: [...new Set(tags)].join('|') || '能力不足（未达标）' });
   }
 
-  const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0 };
+  const pending = { human: 0, agent: 0, usage_missing: 0, ungraded: 0, low_confidence: 0, time_review: flags.filter((f) => f.status === 'pending').length };
   for (const r of allRuns.filter((x) => (suiteOfRun(x, spec.tasks) === 'v2') === (view !== 'history'))) {
     if (!r.graded || !r.score) { pending.ungraded++; continue; }
     for (const it of r.score.items) if (it.status === 'pending') it.method === 'human' ? pending.human++ : pending.agent++;
     if ((r.usage?.missing || []).length) pending.usage_missing++;
     if (r.score.low_confidence) pending.low_confidence++;
   }
-  return { view, excluded: vinfo.excluded, board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: new Date().toISOString(), pending };
+  return {
+    view, excluded: vinfo.excluded, board, tasks: taskRows, items, uplift, failures, entrants, tkeys, generated_at: new Date().toISOString(), pending,
+    eff: effStats.by, run_eff: Object.fromEntries(resolved), time_flags: flags, eff_baseline: effStats.baseline,
+  };
 }
 
 export const isInf = (v: unknown) => v === INF || v === 'inf';

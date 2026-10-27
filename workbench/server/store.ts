@@ -201,6 +201,20 @@ export class StoreFile {
     const notes = new Set(this.data.notes.map((n) => n.id));
     for (const n of other.notes || []) if (!notes.has(n.id)) { this.data.notes.push(n); stat.notes++; }
     if (!this.data.spec && other.spec) this.data.spec = other.spec;
+    // 速度与价格的人工记录：按条目合并，较新的决定覆盖；额度读数按 id 去重
+    if (other.eff) {
+      const e = (this.data.eff ??= {});
+      for (const k of ['time_review', 'cost'] as const) {
+        const mine: Record<string, { at: string }> = (e[k] ??= {}) as Record<string, { at: string }>;
+        for (const [id, v] of Object.entries(other.eff[k] || {})) if (!mine[id] || (v.at || '') > (mine[id].at || '')) mine[id] = v;
+      }
+      e.quota_log ??= {};
+      for (const [key, list] of Object.entries(other.eff.quota_log || {})) {
+        const cur = new Map((e.quota_log[key] || []).map((x) => [x.id, x]));
+        for (const x of list || []) if (!cur.has(x.id)) cur.set(x.id, x);
+        e.quota_log[key] = [...cur.values()].sort((a, b) => a.at.localeCompare(b.at));
+      }
+    }
     this.log('import', `导入 ${stat.runs} 次运行、${stat.models} 个模型（来自 ${other.machine || '未知电脑'}）`);
     return stat;
   }

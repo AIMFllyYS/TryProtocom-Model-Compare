@@ -234,7 +234,7 @@ async function main() {
 \u6839\u76EE\u5F55 ${s.root}
 Python ${s.python || "\u672A\u627E\u5230"}`);
         console.log(`\u6A21\u578B ${data.models} \xB7 \u5DE5\u4F5C\u533A ${data.workspaces} \xB7 \u767B\u8BB0\u8FD0\u884C ${data.runs}\uFF08\u5DF2\u8BC4\u5206 ${data.graded}\uFF09`);
-        console.log(`\u5F85\u529E\uFF1A\u672A\u8BC4\u5206 ${agg.pending.ungraded} \xB7 \u4EBA\u5DE5\u5F85\u8BC4 ${agg.pending.human} \xB7 agent \u5F85\u8BC4 ${agg.pending.agent} \xB7 \u7F3A\u7528\u91CF ${agg.pending.usage_missing} \xB7 \u4F4E\u53EF\u4FE1 ${agg.pending.low_confidence}`);
+        console.log(`\u5F85\u529E\uFF1A\u672A\u8BC4\u5206 ${agg.pending.ungraded} \xB7 \u4EBA\u5DE5\u5F85\u8BC4 ${agg.pending.human} \xB7 agent \u5F85\u8BC4 ${agg.pending.agent} \xB7 \u7F3A\u7528\u91CF ${agg.pending.usage_missing} \xB7 \u4F4E\u53EF\u4FE1 ${agg.pending.low_confidence} \xB7 \u7528\u65F6\u5F85\u6838\u5B9E ${agg.pending.time_review ?? 0}`);
         console.log(`\u5B58\u50A8\u6587\u4EF6 ${s.paths.store}\uFF08\u66F4\u65B0\u4E8E ${st.updated_at}\uFF09`);
       });
     }

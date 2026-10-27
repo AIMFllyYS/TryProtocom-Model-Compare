@@ -12,6 +12,7 @@ import { HarnessIcon, ModelAvatar } from '../ui/brand';
 import { HARNESS_GROUPS, harnessGroup } from '../../shared/vendors';
 import { toast } from '../ui/toast';
 import { Score, useNamer } from '../components/common';
+import { EffTable, radarAxes, TimeReviewList } from '../components/Efficiency';
 
 type Tab = 'board' | 'dims' | 'tasks' | 'eff' | 'items' | 'uplift' | 'fail';
 type SortK = 'rank' | 'quality' | 'pass' | 'cost' | 'time' | string;
@@ -113,13 +114,15 @@ export default function Board() {
           <Excluded rows={agg.excluded} label={nm.entrant} />
           <div className="grid g-2 mt-l">
             <ChartCard title="维度雷达" sub={sel.length ? `已选 ${sel.length} 个参赛者` : '前 5 名'}>
-              <div className="center"><Radar axes={dims.map((d) => ({ id: d.id, label: d.name }))} series={radarSeries} focus={hover} onFocus={setHover} /></div>
+              <div className="center"><Radar axes={radarAxes(wb.spec?.dims, view)} series={radarSeries} focus={hover} onFocus={setHover} /></div>
               <Legend items={radarSeries.map((s) => ({ key: s.key, label: s.label, color: s.color }))} onHover={setHover} active={hover} />
             </ChartCard>
             <ChartCard title="质量总分与置信区间" sub="点 = 均值，横线 = 95% CI">
               <QualityCi rows={agg.board} color={color} label={nm.entrant} />
             </ChartCard>
           </div>
+          <EffTable rows={board} />
+          {(agg.pending.time_review || 0) > 0 && <TimeReviewList />}
         </>
       )}
       {tab === 'dims' && (
@@ -140,10 +143,11 @@ export default function Board() {
           <ChartCard title="成本 × 质量（帕累托）" sub="越靠左上越好">
             <Pareto points={frontier(agg.board.filter((b) => b.quality != null && b.suite_exp_cost_usd != null).map((b) => ({ key: b.entrant, label: nm.entrant(b.entrant), x: b.suite_exp_cost_usd!, y: b.quality!, color: color(b.entrant) })))} />
           </ChartCard>
-          <ChartCard title="用时 × 质量" sub="整套期望达标用时（分钟，对数）">
-            <Pareto xLabel="整套期望用时（分钟，对数）" points={frontier(agg.board.filter((b) => b.quality != null && b.suite_exp_min != null).map((b) => ({ key: b.entrant, label: nm.entrant(b.entrant), x: b.suite_exp_min!, y: b.quality!, color: color(b.entrant) })))} />
+          <ChartCard title="用时 × 质量" sub="标准整套预计用时（按相对速度折算，分钟，对数）">
+            <Pareto xLabel="标准整套预计用时（分钟，对数）" points={frontier(agg.board.filter((b) => b.quality != null && agg.eff?.[b.entrant]?.time.suite_est != null).map((b) => ({ key: b.entrant, label: nm.entrant(b.entrant), x: agg.eff![b.entrant].time.suite_est!, y: b.quality!, color: color(b.entrant) })))} />
           </ChartCard>
-          <Card title="效率明细" className="span-all" pad={false}>
+          <div className="span-all"><EffTable rows={agg.board} /><TimeReviewList /></div>
+          <Card title="期望值明细" sub="期望 = 单次平均 ÷ 达标率（达标率为 0 时为无穷）" className="span-all" pad={false}>
             <div className="tbl-wrap"><table className="tbl">
               <thead><tr><th>参赛者</th><th className="num">质量</th><th className="num">达标率</th><th className="num">整套期望成本</th><th className="num">整套期望用时</th><th>成本覆盖</th></tr></thead>
               <tbody>{agg.board.map((b) => <tr key={b.entrant}><td>{nm.entrant(b.entrant)}</td><td className="num"><Score v={b.quality} /></td><td className="num">{fmt.pct(b.pass_rate)}</td><td className="num">{fmt.usd(b.suite_exp_cost_usd)}</td><td className="num">{fmt.min(b.suite_exp_min)}</td><td className="small muted">{b.cost_coverage}</td></tr>)}</tbody>

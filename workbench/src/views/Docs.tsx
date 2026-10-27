@@ -204,8 +204,10 @@ export default function Docs() {
             </Card>
             <Card title="效率维度">
               <div className="stack s small dim">
-                <div><Timer size={13} style={{ display: 'inline', verticalAlign: -2 }} /> <b>期望成功成本</b> = 单次费用 ÷ 达标率；≤ ${cfg.efficiency.cost.best} 记 100 分，≥ ${cfg.efficiency.cost.worst} 记 0 分，对数刻度线性插值。</div>
-                <div><Clock3 size={13} style={{ display: 'inline', verticalAlign: -2 }} /> <b>期望达标用时</b>：≤ {cfg.efficiency.speed.best} 分钟记 100，≥ {cfg.efficiency.speed.worst} 分钟记 0。</div>
+                <div><Clock3 size={13} style={{ display: 'inline', verticalAlign: -2 }} /> <b>速度（雷达轴）</b>：每题平均用时 ÷ 该题各参赛者平均的中位数，取对数后按题加权（题权重 × n/(n+1)，A/C 条件各占半题）平均，再向基线收缩 {cfg.efficiency.relative?.shrink ?? 1} 题；持平记 50，快 {cfg.efficiency.relative?.span ?? 4} 倍记 100，慢 {cfg.efficiency.relative?.span ?? 4} 倍记 0。用时来源：手动修正 → 有效时间 → 日志墙钟 → 开始/结束时刻；单次超过 {Math.round((cfg.efficiency.time?.flag_minutes ?? 300) / 6) / 10} 小时进入核实，用户决定是否纳入，排除的计入相对不确定性。</div>
+                <div><Timer size={13} style={{ display: 'inline', verticalAlign: -2 }} /> <b>成本效率（雷达轴）</b>：同样的相对算法，费用来源：直接填写 → 额度差 → 额度读数分摊 → 日志 / token × 单价；没有记录的为“未记录”，不补数；免费按 ${cfg.efficiency.relative?.free_floor_usd ?? 0.01} 参与对数。</div>
+                <div><b>相对不确定性</b> = 题间离散、同题多次离散与收缩先验合成的 1σ，再按排除 / 待核实 / 推算占比放大，显示为 ±%（&lt;15% 低，&lt;35% 中）。</div>
+                <div><b>期望成功成本 / 达标用时</b>（明细表）= 单次平均 ÷ 达标率；逐题分 ≤ ${cfg.efficiency.cost.best} / {cfg.efficiency.speed.best} 分钟记 100，≥ ${cfg.efficiency.cost.worst} / {cfg.efficiency.speed.worst} 分钟记 0。</div>
                 <div>默认只报告质量总分 + 两个效率维度，不强行合并成综合分。</div>
               </div>
             </Card>

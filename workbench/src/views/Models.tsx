@@ -13,6 +13,7 @@ import { BrandIcon, HarnessIcon, ModelAvatar } from '../ui/brand';
 import { Bars, ChartCard, Radar, seriesColor } from '../ui/charts';
 import { toast } from '../ui/toast';
 import { Score, useNamer } from '../components/common';
+import { QuotaLedger, radarAxes } from '../components/Efficiency';
 import { AddModelDialog, modelKey } from '../components/pickers';
 import { launch } from '../components/LaunchPad';
 
@@ -162,13 +163,15 @@ function ModelDetail({ vendor, name }: { vendor: string; name: string }) {
       {entrants.length > 1 && <div className="row gap-s mt"><span className="muted small">harness：</span><Select value={row?.entrant || ''} onChange={setEnt} size="sm" options={entrants.map((b) => ({ value: b.entrant, label: splitEntrant(b.entrant).harness, icon: <HarnessIcon name={splitEntrant(b.entrant).harness} size="xs" /> }))} /></div>}
 
       <div className="grid g-2 mt-l">
-        <ChartCard title="维度雷达" sub="7 个质量维度，0–100" exportName={`${name} 维度雷达`}>
-          {row ? <div className="center"><Radar axes={dims.map((d) => ({ id: d.id, label: d.name }))} series={[{ key: row.entrant, label: name, color: vendorById(vendor)?.color || seriesColor(0), values: row.dims }]} /></div> : <Empty title="暂无维度分">完成至少一道题的评分后显示。</Empty>}
+        <ChartCard title="维度雷达" sub="质量维度 + 成本 / 速度（相对基线，持平 50），0–100" exportName={`${name} 维度雷达`}>
+          {row ? <div className="center"><Radar axes={radarAxes(wb.spec?.dims, wb.view)} series={[{ key: row.entrant, label: name, color: vendorById(vendor)?.color || seriesColor(0), values: row.dims }]} /></div> : <Empty title="暂无维度分">完成至少一道题的评分后显示。</Empty>}
         </ChartCard>
         <ChartCard title="逐题得分" sub="均值 ± 标准差" exportName={`${name} 逐题得分`}>
           {tasksRows.length ? <Bars cats={(wb.agg?.tkeys || []).map((k) => ({ id: k, label: k }))} series={[{ key: 'm', label: name, color: vendorById(vendor)?.color || seriesColor(0), values: Object.fromEntries(tasksRows.map((t) => [t.task, t.mean])), err: Object.fromEntries(tasksRows.map((t) => [t.task, t.sd])) }]} /> : <Empty title="暂无逐题得分" />}
         </ChartCard>
       </div>
+
+      {m.billing?.mode !== 'token' && m.billing?.mode !== 'free' && <QuotaLedger model={m} />}
 
       <Card title="运行矩阵" sub={`每题 ${need} 次，点击格子进入运行或题目`} className="mt-l">
         <div className="run-matrix">

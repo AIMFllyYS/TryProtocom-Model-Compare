@@ -184,7 +184,7 @@ async function main() {
       return out(data, () => {
         console.log(`Bench Workbench ${s.version} · ${rt!.url}\n根目录 ${s.root}\nPython ${s.python || '未找到'}`);
         console.log(`模型 ${data.models} · 工作区 ${data.workspaces} · 登记运行 ${data.runs}（已评分 ${data.graded}）`);
-        console.log(`待办：未评分 ${agg.pending.ungraded} · 人工待评 ${agg.pending.human} · agent 待评 ${agg.pending.agent} · 缺用量 ${agg.pending.usage_missing} · 低可信 ${agg.pending.low_confidence}`);
+        console.log(`待办：未评分 ${agg.pending.ungraded} · 人工待评 ${agg.pending.human} · agent 待评 ${agg.pending.agent} · 缺用量 ${agg.pending.usage_missing} · 低可信 ${agg.pending.low_confidence} · 用时待核实 ${agg.pending.time_review ?? 0}`);
         console.log(`存储文件 ${s.paths.store}（更新于 ${st.updated_at}）`);
       });
     }

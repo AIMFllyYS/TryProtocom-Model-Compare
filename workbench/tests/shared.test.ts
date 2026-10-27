@@ -275,3 +275,69 @@ test('榜单三视图：历史版不含 v2、简化版取最高并标 n、完整
   assert.ok(f.availability! < 100 && f.dims.stability! < 100, '失误计入稳定性');
   assert.equal(f.runs, 6);
 });
+
+test('速度与价格：用时回退时间戳、超过 5 小时待核实、相对几何加权、未记录不补数、额度读数分摊', async () => {
+  const { aggregate } = await import('../shared/aggregate');
+  const { resolveRuns, relativeStats, allocateLedger } = await import('../shared/efficiency');
+  const dims = [{ id: 'visual', name: 'v', kind: 'quality', desc: '' }, { id: 'cost', name: '成本', kind: 'efficiency', desc: '' }, { id: 'speed', name: '速度', kind: 'efficiency', desc: '' }] as any;
+  const eff = { cost: { best: 0.3, worst: 30 }, speed: { best: 5, worst: 180 } };
+  const spec = { dims, cfg: { runs_per_task: 1, pass_threshold: 60, efficiency: eff }, config_full: { runs_per_task: 1, pass_threshold: 60, efficiency: eff, statistics: { bootstrap_samples: 10 } },
+    tasks: [{ id: 'T01', suite: 'v1', variants: {} }, { id: 'T02', suite: 'v1', variants: {} }] } as any;
+  const t0 = Date.parse('2026-10-01T00:00:00Z');
+  const iso = (min: number) => new Date(t0 + min * 60000).toISOString();
+  const mk = (id: string, ent: string, tkey: string, startMin: number, durMin: number, usage: Record<string, unknown> = {}) => ({
+    run_id: id, entrant: `${ent} @ H`, model: ent, vendor: 'V', harness: 'H', task: tkey, variant: null, tkey, run_index: 1, graded: true, usage, manual: {},
+    started_at: iso(startMin), ended_at: iso(startMin + durMin), ws_ref: null,
+    score: { gate_pass: true, total: 80, dims: { visual: 80 }, dim_weights: { visual: 1 }, tiers: {}, items: [], na_ratio: 0, low_confidence: false, pending: [], complete: true, passed: true, gate_fail: [] },
+  }) as unknown as StoreRun;
+  // fast 每题都比 slow 快一倍；slow 的 T02 有一条 38 小时的异常记录
+  const runs = [mk('f1', 'fast', 'T01', 0, 10), mk('f2', 'fast', 'T02', 0, 30), mk('s1', 'slow', 'T01', 0, 20), mk('s2', 'slow', 'T02', 0, 2280), mk('m1', 'mid', 'T01', 0, 14, { wall_min: 14, cost_usd: 0.5 })];
+
+  const r = resolveRuns(runs, {}, spec.cfg);
+  assert.equal(r.get('f1')!.time_source, 'timestamp', '没有日志时用开始/结束时刻');
+  assert.equal(r.get('m1')!.time_source, 'log');
+  assert.equal(r.get('s2')!.time_status, 'pending');
+  assert.equal(r.get('s2')!.minutes, null, '核实前默认暂不计入');
+  assert.equal(r.get('f1')!.cost_usd, null); assert.equal(r.get('f1')!.cost_source, 'none', '没记录的费用是未记录，不补 0');
+
+  const a = aggregate(runs, spec, { bootstrap: 10 });
+  assert.equal(a.pending.time_review, 1);
+  assert.equal(a.time_flags![0].run_id, 's2');
+  const ef = a.eff!['fast @ H'], es = a.eff!['slow @ H'];
+  assert.ok(ef.time.rel! < 1 && es.time.rel! > 1, '快的倍数 < 1，慢的 > 1');
+  assert.equal(es.time.pending, 1);
+  assert.ok(es.time.unc! > ef.time.unc!, '待核实的运行抬高相对不确定性');
+  const fb = a.board.find((b) => b.entrant === 'fast @ H')!;
+  assert.ok(fb.dims.speed! > 50, '比基线快 → 雷达速度分高于 50');
+  assert.equal(fb.dims.cost, null, '没有费用记录 → 成本轴为空（未记录）');
+  assert.equal(a.board.find((b) => b.entrant === 'mid @ H')!.dims.cost, 50, '唯一有费用的参赛者就是基线');
+
+  // 用户核实：纳入 → 用原值；修正 → 用手填分钟数；排除 → 计入不确定性
+  const inc = resolveRuns(runs, { eff: { time_review: { s2: { status: 'include', at: 'x' } } } }, spec.cfg).get('s2')!;
+  assert.equal(inc.time_status, 'included'); assert.equal(inc.minutes, 2280);
+  const cor = resolveRuns(runs, { eff: { time_review: { s2: { status: 'corrected', minutes: 60, at: 'x' } } } }, spec.cfg).get('s2')!;
+  assert.equal(cor.minutes, 60); assert.equal(cor.time_source, 'corrected');
+  const ex = aggregate(runs, spec, { bootstrap: 10, ctx: { eff: { time_review: { s2: { status: 'exclude', at: 'x' } } } } });
+  assert.equal(ex.pending.time_review, 0); assert.equal(ex.eff!['slow @ H'].time.excluded, 1);
+  // 直接估价优先
+  const sug = resolveRuns(runs, { workspaces: [{ ref: 'V/slow/T02/r1', grader_run_id: 's2', started_at: iso(0), ended_at: iso(2280), final_at: iso(25) } as any] }, spec.cfg).get('s2')!;
+  assert.equal(sug.suggest_min, 25, '按 FINAL_MESSAGE.md 时间给出建议值');
+  const man = resolveRuns(runs, { eff: { cost: { f1: { cost_usd: 1.2, at: 'x' } } } }, spec.cfg).get('f1')!;
+  assert.equal(man.cost_usd, 1.2); assert.equal(man.cost_source, 'manual');
+
+  // 相对统计：几何对称——快一倍与慢一倍互为倒数；收缩把只测一题的拉向 1
+  const rs = relativeStats([
+    { entrant: 'A', tkey: 'T1', task: 'T1', value: 10, status: 'ok' }, { entrant: 'B', tkey: 'T1', task: 'T1', value: 20, status: 'ok' }, { entrant: 'C', tkey: 'T1', task: 'T1', value: 40, status: 'ok' },
+  ], [], { shrink: 0, span: 4 });
+  assert.ok(Math.abs(rs.by.get('A')!.rel! * rs.by.get('C')!.rel! - 1) < 1e-6);
+  const shr = relativeStats([{ entrant: 'A', tkey: 'T1', task: 'T1', value: 10, status: 'ok' }, { entrant: 'B', tkey: 'T1', task: 'T1', value: 40, status: 'ok' }], [], { shrink: 1, span: 4 });
+  assert.ok(shr.by.get('A')!.rel! > 0.5, '收缩后不会把一题的 0.5× 原样当成结论');
+
+  // 额度读数分摊：两条读数之间并发的两次运行按时间重叠分；剩余增加 = 周期重置，不计
+  const prof = { vendor: 'V', name: 'fast', billing: { mode: 'subscription', monthly_fee: 200, monthly_quota: 100, unit: '%' } } as any;
+  const q = allocateLedger([mk('q1', 'fast', 'T01', 10, 30), mk('q2', 'fast', 'T02', 10, 30), mk('q3', 'fast', 'T02', 100, 10)], {
+    models: [prof], eff: { quota_log: { 'V/fast': [{ id: 'a', at: iso(0), remaining: 90 }, { id: 'b', at: iso(60), remaining: 80 }, { id: 'c', at: iso(95), remaining: 100 }, { id: 'd', at: iso(120), remaining: 99 }] } },
+  });
+  assert.equal(q.get('q1')!.usd, 10); assert.equal(q.get('q2')!.usd, 10, '10% × $2/% 两次运行平分');
+  assert.equal(q.get('q3')!.usd, 2, '重置后的一段单独计算');
+});

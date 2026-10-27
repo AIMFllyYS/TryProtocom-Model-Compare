@@ -149,6 +149,9 @@ export class Workspaces {
     const root = run.has_deliverable ? droot : f.ws;
     run.entry = pv && fs.existsSync(pv) ? path.relative(f.ws, pv).split(path.sep).join('/') : this.detectEntry(root, f.ws, d.kind === 'video');
     run.detect = this.detect(f.ws, d, run.deliverable_dir);
+    // 交付证据时间：模型写出 FINAL_MESSAGE.md 的时刻（没有则用交付目录最近修改）。结束时间记晚了（很晚才登记 / 归档）时据此建议修正用时
+    try { run.final_at = new Date(fs.statSync(path.join(f.ws, FINAL_FILE)).mtimeMs).toISOString(); }
+    catch { run.final_at = run.detect?.last_change ? new Date(run.detect.last_change).toISOString() : null; }
     return run;
   }
 

@@ -33,7 +33,13 @@ export interface SpecTask {
 }
 export interface BenchConfig {
   name: string; version: string; frozen_date: string | null; runs_per_task: number; pass_threshold: number;
-  efficiency: { cost: { best: number; worst: number }; speed: { best: number; worst: number } };
+  efficiency: {
+    cost: { best: number; worst: number }; speed: { best: number; worst: number };
+    /** 用时核实：单次超过 flag_minutes（默认 300 = 5 小时）或不足 min_minutes 进入核实；pending = 核实前怎么算 */
+    time?: { flag_minutes?: number; min_minutes?: number; pending?: 'exclude' | 'include' };
+    /** 相对比较：shrink = 向基线收缩的伪题数；span = 雷达上“快/便宜几倍记满分”；free_floor_usd = 免费模型参与对数的下限 */
+    relative?: { shrink?: number; span?: number; free_floor_usd?: number };
+  };
   low_confidence_na_ratio: number;
 }
 export interface FullConfig extends BenchConfig {
@@ -115,6 +121,7 @@ export interface WorkspaceRun {
   detect?: DetectResult;               // 交付检测（服务端实时计算）
   auto_finished?: boolean;             // 由 FINAL_MESSAGE.md 自动结束计时
   quota?: RunQuota;                    // 订阅额度记录
+  final_at?: string | null;            // 交付证据时间：工作区 FINAL_MESSAGE.md 的修改时间（服务端实时计算）
   discarded?: DiscardInfo | null;      // 已移入回收站（不参与任何评估；可恢复）
 }
 
@@ -159,6 +166,46 @@ export interface BenchStore {
   models: ModelProfile[]; runs: StoreRun[]; workspaces: WorkspaceRun[]; notes: StoreNote[];
   history: StoreHistory[]; spec?: SpecData | null;
   trash?: TrashEntry[];
+  /** 速度与价格的人工记录：用时核实、直接估价、额度读数。键为评分 run_id / 供应商/模型 */
+  eff?: EffStore;
+}
+
+// ---------- 速度与价格 ----------
+/** 用时核实决定：exclude 不纳入时间统计（计入相对不确定性）/ include 照常纳入 / corrected 用手填分钟数 */
+export interface TimeReview { status: 'exclude' | 'include' | 'corrected'; minutes?: number | null; reason?: string; at: string }
+/** 直接填写的费用（美元），优先于一切推算 */
+export interface CostOverride { cost_usd: number; note?: string; at: string }
+/** 模型级额度读数：任何时候都可以补一条；两条读数之间用掉的额度按时间重叠分给那段时间里的运行 */
+export interface QuotaReading { id: string; at: string; remaining: number; unit?: string; note?: string; reset?: boolean }
+export interface EffStore { time_review?: Record<string, TimeReview>; cost?: Record<string, CostOverride>; quota_log?: Record<string, QuotaReading[]> }
+
+export type TimeSource = 'corrected' | 'active' | 'log' | 'timestamp' | 'none';
+/** ok 正常 / pending 超长或过短待核实 / excluded 已排除 / included 核实后纳入 / corrected 手动修正 / none 无数据 */
+export type TimeStatus = 'ok' | 'pending' | 'excluded' | 'included' | 'corrected' | 'none';
+export type CostSource = 'manual' | 'quota' | 'ledger' | 'log' | 'token' | 'free' | 'none';
+/** 一次运行解析后的用时与费用 */
+export interface RunEff {
+  minutes: number | null; raw_min: number | null; time_source: TimeSource; time_status: TimeStatus; flag?: string;
+  /** 待核实时的建议值：按交付证据时间（FINAL_MESSAGE.md）算出的用时 */
+  suggest_min?: number | null;
+  cost_usd: number | null; cost_source: CostSource; cost_estimated: boolean; cost_note?: string;
+}
+/** 一个参赛者在用时或费用上的相对统计 */
+export interface EffMetric {
+  mean: number | null;          // 覆盖题的每题平均（分钟 / 美元）
+  rel: number | null;           // 相对基线的倍数（几何加权），<1 更快 / 更便宜
+  score: number | null;         // 雷达分：持平 50，快（便宜）span 倍 100，慢（贵）span 倍 0
+  unc: number | null;           // 相对不确定性（1σ，比例，0.2 = ±20%）
+  level: '低' | '中' | '高' | null;
+  tasks: number; tasks_total: number; runs: number; excluded: number; pending: number; inferred: number;
+  suite_est: number | null;     // 按相对倍数折算的标准整套（所有有基线的题）
+}
+export interface EntrantEff { time: EffMetric; cost: EffMetric }
+/** 进入核实（或已核实）的超长 / 过短运行 */
+export interface TimeFlag {
+  run_id: string; entrant: string; tkey: string; ws_ref: string | null; raw_min: number; source: TimeSource; flag: string;
+  status: 'pending' | 'exclude' | 'include' | 'corrected'; minutes: number | null; reason?: string; at?: string;
+  started_at: string | null; ended_at: string | null; suggest_min?: number | null;
 }
 
 // ---------- 汇总 ----------
@@ -192,7 +239,12 @@ export interface Aggregate {
   uplift: { entrant: string; task: string; A_mean: number; C_mean: number; uplift: number; A_anim: number | null; C_anim: number | null; anim_uplift: number; A_cost: number | null; C_cost: number | null; A_min: number | null; C_min: number | null }[];
   failures: { entrant: string; task: string; run_id: string; total: number; tags: string }[];
   entrants: string[]; tkeys: string[]; generated_at: string;
-  pending: { human: number; agent: number; usage_missing: number; ungraded: number; low_confidence: number };
+  pending: { human: number; agent: number; usage_missing: number; ungraded: number; low_confidence: number; time_review?: number };
+  /** 速度与价格：按参赛者的相对统计、每次运行的解析结果、核实清单、每题基线 */
+  eff?: Record<string, EntrantEff>;
+  run_eff?: Record<string, RunEff>;
+  time_flags?: TimeFlag[];
+  eff_baseline?: { time: Record<string, number>; cost: Record<string, number> };
 }
 
 // ---------- 预览 / 进程 / 任务 ----------

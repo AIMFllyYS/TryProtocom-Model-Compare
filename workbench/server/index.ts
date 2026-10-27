@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import type { Aggregate, BoardView, JobInfo, JobKind, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
 import { aggregate } from '../shared/aggregate';
+import { FINAL_FILE } from '../shared/deliverables';
 import { petJobs } from '../shared/activity';
 import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
 import { settleQuota } from '../shared/quota';
@@ -65,7 +66,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const key = store.data.updated_at + ':' + store.data.runs.length;
     const hit = aggCache.get(view);
     if (hit?.key === key) return hit.agg;
-    const agg = aggregate(store.data.runs, await loadSpec(), { view });
+    const agg = aggregate(store.data.runs, await loadSpec(), { view, ctx: { workspaces: store.data.workspaces, models: store.data.models, eff: store.data.eff } });
     aggCache.set(view, { key, agg });
     return agg;
   }
@@ -495,6 +496,55 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   };
   R.post('/api/ws/quota', async (req) => { const b = await readJson(req); const r = applyQuota(b.ref, b); refreshWorkspaces(); return r; });
 
+  // ---------- 速度与价格：用时核实 / 直接估价 / 额度读数（写入可移植存储 eff） ----------
+  const effStore = () => (store.data.eff ??= {});
+  const effSaved = (action: string, detail: string) => { store.log(action, detail); store.save(); aggCache.clear(); hub.emit({ type: 'store', updated_at: store.data.updated_at }); };
+  const knownRun = (id: unknown) => { const rid = String(id || ''); if (!store.data.runs.some((r) => r.run_id === rid)) throw new HttpError(404, `没有这次运行：${rid}`); return rid; };
+  R.post('/api/eff/time-review', async (req) => {
+    const b = await readJson(req);
+    const rid = knownRun(b.run_id);
+    const e = effStore(); e.time_review ??= {};
+    const st = String(b.status || '');
+    if (st === 'clear') delete e.time_review[rid];
+    else if (st === 'exclude' || st === 'include') e.time_review[rid] = { status: st, reason: b.reason ? String(b.reason).slice(0, 300) : undefined, at: new Date().toISOString() };
+    else if (st === 'corrected') {
+      const m = Number(b.minutes);
+      if (!Number.isFinite(m) || m <= 0 || m > 10080) throw new HttpError(400, '修正用时需要 0–10080 之间的分钟数');
+      e.time_review[rid] = { status: 'corrected', minutes: m, reason: b.reason ? String(b.reason).slice(0, 300) : undefined, at: new Date().toISOString() };
+    } else throw new HttpError(400, 'status 只能是 exclude / include / corrected / clear');
+    effSaved('time-review', `${rid} → ${st}`);
+    return e.time_review[rid] ?? null;
+  });
+  R.post('/api/eff/cost', async (req) => {
+    const b = await readJson(req);
+    const rid = knownRun(b.run_id);
+    const e = effStore(); e.cost ??= {};
+    if (b.cost_usd === null || b.cost_usd === '') delete e.cost[rid];
+    else {
+      const v = Number(b.cost_usd);
+      if (!Number.isFinite(v) || v < 0 || v > 100000) throw new HttpError(400, '费用需要 0–100000 之间的美元数');
+      e.cost[rid] = { cost_usd: v, note: b.note ? String(b.note).slice(0, 300) : undefined, at: new Date().toISOString() };
+    }
+    effSaved('cost', `${rid} → ${b.cost_usd ?? '清除'}`);
+    return e.cost[rid] ?? null;
+  });
+  R.post('/api/eff/quota-log', async (req) => {
+    const b = await readJson(req);
+    const key = String(b.model || '');
+    if (!store.data.models.some((m) => `${m.vendor}/${m.name}` === key)) throw new HttpError(404, `没有这个模型：${key}`);
+    const e = effStore(); e.quota_log ??= {};
+    const list = (e.quota_log[key] ??= []);
+    if (b.delete) { e.quota_log[key] = list.filter((x) => x.id !== String(b.delete)); effSaved('quota-log', `${key} 删除读数`); return e.quota_log[key]; }
+    const remaining = Number(b.remaining);
+    if (!Number.isFinite(remaining) || remaining < 0) throw new HttpError(400, '剩余额度需要非负数');
+    const at = b.at ? new Date(String(b.at)) : new Date();
+    if (Number.isNaN(at.getTime())) throw new HttpError(400, '读数时间无法解析');
+    list.push({ id: `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, at: at.toISOString(), remaining, unit: b.unit ? String(b.unit) : undefined, note: b.note ? String(b.note).slice(0, 200) : undefined, reset: !!b.reset });
+    list.sort((x, y) => x.at.localeCompare(y.at));
+    effSaved('quota-log', `${key} 剩余 ${remaining}${b.unit || ''}`);
+    return list;
+  });
+
   // 截图（桌面宠物 / 桌面版）：保存到运行旁的 rN.shots/，作为评审证据
   R.post('/api/shots', async (req) => {
     const b = await readJson(req);
@@ -657,7 +707,20 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     liveRun(b.ref);
     if (typeof b.final_message === 'string' && b.final_message.trim()) ws.writeFinal(b.ref, b.final_message);
     if (b.transcript) ws.writeTranscript(b.ref, b.transcript);
-    const patch: any = { ended_at: b.at || new Date().toISOString() };
+    // 结束时刻：显式给出 > 已记录 > 模型写出 FINAL_MESSAGE.md 的时刻 > 现在。
+    // 不能直接用“现在”：很晚才登记 / 批量登记时，会把等待时间算成模型用时（曾出现 30 多小时的记录）
+    const endAt = (() => {
+      if (b.at) return String(b.at);
+      const pr = ws.parseRef(b.ref);
+      const cur = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
+      if (cur.ended_at) return cur.ended_at;
+      try {
+        const m = fs.statSync(path.join(ws.files(b.ref).ws, FINAL_FILE)).mtimeMs;
+        if (!cur.started_at || m > Date.parse(cur.started_at)) return new Date(m).toISOString();
+      } catch { /* 没有 FINAL_MESSAGE.md */ }
+      return new Date().toISOString();
+    })();
+    const patch: any = { ended_at: endAt };
     if (b.usage) patch.usage = b.usage;
     if (b.timed_out != null) patch.timed_out = !!b.timed_out;
     const r = ws.patchRun(b.ref, patch);

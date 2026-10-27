@@ -13,6 +13,7 @@ import { BrandIcon, HarnessIcon, ModelAvatar } from '../ui/brand';
 import { vendorById } from '../../shared/vendors';
 import { toast } from '../ui/toast';
 import { DimChip, Score, TaskLabel, WsBadge, useNamer } from '../components/common';
+import { RunEffCard } from '../components/Efficiency';
 import { HarnessPicker, ModelPicker } from '../components/pickers';
 import { FileBrowser } from '../components/Files';
 import { ItemScorer } from '../components/ItemScorer';
@@ -425,7 +426,7 @@ function RunDetail({ row }: { row: Row }) {
         {tab === 'prompt' && ws && (texts ? <Card title="发给模型的提示词" sub={`留档于 ${ws.ref}.prompt.md`} extra={<CopyBtn text={texts.prompt} />}><pre className="prompt">{texts.prompt || '（没有找到提示词留档）'}</pre></Card> : null)}
         {tab === 'final' && <FinalPanel text={ws ? texts?.text || detail?.final_message || '' : detail?.final_message || ''} ws={ws} />}
         {tab === 'files' && <div className="stack">{ws && <FileBrowser root={`model/${ws.ref}`} title={`r${ws.index}（工作目录）`} />}{run && detail?.local && <FileBrowser root={run.dir} title="bench-grader 运行目录（交付物副本 + 评分证据）" height={380} />}</div>}
-        {tab === 'usage' && <UsagePanel ws={ws} run={run} />}
+        {tab === 'usage' && <>{run && <RunEffCard run={run} ws={ws} />}<div className="mt" /><UsagePanel ws={ws} run={run} /></>}
         {tab === 'raw' && <pre className="prompt">{JSON.stringify({ workspace: ws, run, metrics: detail?.metrics }, null, 2)}</pre>}
       </div>
     </div>
