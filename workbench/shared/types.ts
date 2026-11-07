@@ -154,6 +154,8 @@ export interface WbSettings {
   current_model?: string;              // 当前测评模型 供应商/模型
   pet_auto?: boolean;                  // 登记 / 自动评分开始时自动召唤桌面宠物（默认 true）
   github?: string;                     // 开源仓库地址
+  /** 人民币折算美元用的汇率（默认 7）。只在前端填费用时用，存储里始终是美元 */
+  cny_rate?: number;
 }
 
 export interface StoreNote { id: string; target: string; text: string; at: string }

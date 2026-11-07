@@ -57,12 +57,18 @@ function useSettings() {
 function PromptSettings() {
   const { s, save } = useSettings();
   const [tts, setTts] = useState(s.tts_command || '');
+  const [rate, setRate] = useState(String(s.cny_rate ?? 7));
   return (
     <>
       <Card title="复制提示词时">
         <ToggleRow title="附带统一运行约定" desc="在题目原文前加入工作目录绝对路径、交付文件夹名、必须存在的文件与 FINAL_MESSAGE.md 约定。关闭后只发送 prompt.md 原文。" checked={s.prompt_header !== false} onChange={(v) => void save({ prompt_header: v })} />
         <ToggleRow title="复制即开始计时" desc="复制提示词时记录开始时间；模型写出 FINAL_MESSAGE.md 时自动结束。" checked={s.auto_start !== false} onChange={(v) => void save({ auto_start: v })} />
         <ToggleRow title="复制后自动打开 harness" desc="题目页的「复制提示词」同时启动模型绑定的 harness（也可以随时用旁边的「复制并打开」按钮）。" checked={!!s.open_harness} onChange={(v) => void save({ open_harness: v })} />
+      </Card>
+      <Card title="费用填写" sub="美元 / 人民币互斥。存储里永远是美元，人民币只在这里折算">
+        <Field label="人民币兑美元汇率（1 美元 = ? 人民币）" hint={`填人民币时按这个汇率除以 ${s.cny_rate ?? 7} 折算成美元，例如 ¥70 → $10`}>
+          <input type="number" step="0.01" min="0.01" className="mono" value={rate} onChange={(e) => setRate(e.target.value)} onBlur={() => { const v = Number(rate); if (Number.isFinite(v) && v > 0 && v !== (s.cny_rate ?? 7)) void save({ cny_rate: v }, '已更新汇率'); }} placeholder="7" style={{ maxWidth: 140 }} />
+        </Field>
       </Card>
       <Card title="后台任务时">
         <ToggleRow title="自动召唤桌面宠物" desc="登记或自动评分开始时，在屏幕右下角召唤桌面宠物并展开任务面板，可以看进度和完整评分日志；收起后宠物上的光点表示还在工作。在本轮任务进行中手动退出宠物，就不再自动召唤，直到任务全部结束。需要已安装 Electron。" checked={s.pet_auto !== false} onChange={(v) => void save({ pet_auto: v })} />
