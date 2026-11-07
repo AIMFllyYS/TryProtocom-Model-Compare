@@ -163,7 +163,9 @@ export function Heatmap({ rows, cols, value, text, onCell, cell = 54, rowW = 180
 
 // ------------------------------------------------------------ 帕累托
 export interface ScatterPt { key: string; label: string; x: number; y: number; color: string; frontier?: boolean }
-export function Pareto({ points, xLabel = '整套期望成本（美元，对数）', yLabel = '质量总分', height = 320, log = true }: { points: ScatterPt[]; xLabel?: string; yLabel?: string; height?: number; log?: boolean }) {
+export function Pareto({ points: raw, xLabel = '整套期望成本（美元，对数）', yLabel = '质量总分', height = 320, log = true }: { points: ScatterPt[]; xLabel?: string; yLabel?: string; height?: number; log?: boolean }) {
+  // 汇总经 JSON 传输时 Infinity 会变成 'inf' / 'Infinity' 字符串：这类点画不出来，先剔除，别让整页崩掉
+  const points = raw.filter((p) => Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)));
   const W = 640, H = height, L = 52, B = 42, T = 16, Rr = 24;
   if (!points.length) return <div className="muted small pad">暂无同时具备成本与质量分的参赛者</div>;
   const tx = (v: number) => (log ? Math.log10(Math.max(v, 1e-4)) : v);

@@ -1,13 +1,21 @@
 // 格式化、分类标签与维度配色等纯函数。
 import type { Method, Tier, WorkspaceRun, WsStatus } from '../../shared/types';
 
+// 汇总经 JSON 传输时 Infinity 会变成字符串 'inf'/'Infinity'：统一按“无穷大”处理，避免格式化时崩
+type Num = number | string | null | undefined;
+const isInf = (v: Num): boolean => v === 'inf' || v === 'Infinity' || v === Infinity;
+const isNum = (v: Num): v is number => typeof v === 'number' && Number.isFinite(v);
+
 export const fmt = {
-  n(v: number | null | undefined, d = 1) { return v == null || Number.isNaN(v) ? '—' : Number(v).toFixed(d); },
-  int(v: number | null | undefined) { return v == null ? '—' : Math.round(v).toLocaleString('zh-CN'); },
-  pct(v: number | null | undefined, d = 0) { return v == null ? '—' : (v * 100).toFixed(d) + '%'; },
-  usd(v: number | null | undefined) { return v == null ? '—' : v >= 100 ? '$' + v.toFixed(0) : v >= 1 ? '$' + v.toFixed(2) : '$' + v.toFixed(3); },
-  min(v: number | null | undefined) {
-    if (v == null) return '—';
+  n(v: Num, d = 1) { if (isInf(v)) return '∞'; return isNum(v) ? v.toFixed(d) : '—'; },
+  int(v: Num) { return isNum(v) ? Math.round(v).toLocaleString('zh-CN') : isInf(v) ? '∞' : '—'; },
+  pct(v: Num, d = 0) { return isNum(v) ? (v * 100).toFixed(d) + '%' : isInf(v) ? '∞' : '—'; },
+  usd(v: Num) {
+    if (isInf(v)) return '∞';
+    return isNum(v) ? (v >= 100 ? '$' + v.toFixed(0) : v >= 1 ? '$' + v.toFixed(2) : '$' + v.toFixed(3)) : '—';
+  },
+  min(v: Num) {
+    if (!isNum(v)) return isInf(v) ? '∞' : '—';
     if (v < 1) return Math.round(v * 60) + ' 秒';
     if (v < 90) return v.toFixed(v < 10 ? 1 : 0) + ' 分';
     return (v / 60).toFixed(1) + ' 时';
