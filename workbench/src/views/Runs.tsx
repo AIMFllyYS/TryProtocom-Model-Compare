@@ -8,7 +8,7 @@ import { useWb } from '../state';
 import { go, href, useLocal, useRoute } from '../lib/router';
 import { cls, copyText, fmt, METHOD_LABEL, TIER_LABEL, wsStatus } from '../lib/format';
 import { Markdown } from '../lib/markdown';
-import { Badge, Btn, Card, CheckBox, CopyBtn, Empty, Field, IconBtn, Kv, Meter, Seg, Select, Tabs } from '../ui/kit';
+import { Badge, Btn, Card, CheckBox, CopyBtn, Empty, Field, IconBtn, Kv, Meter, Modal, Seg, Select, Tabs } from '../ui/kit';
 import { BrandIcon, HarnessIcon, ModelAvatar } from '../ui/brand';
 import { vendorById } from '../../shared/vendors';
 import { toast } from '../ui/toast';
@@ -17,7 +17,7 @@ import { RunEffCard } from '../components/Efficiency';
 import { HarnessPicker, ModelPicker } from '../components/pickers';
 import { FileBrowser } from '../components/Files';
 import { ItemScorer } from '../components/ItemScorer';
-import { CostFields } from '../components/CostFields';
+import { CostFields, useCnyRate } from '../components/CostFields';
 import { QuotaForm } from '../components/LaunchPad';
 import { TrashDock, TrashedNotice, isLive, runHandlers, useRunActions } from '../components/Trash';
 import { ActivityBanner, ActivityStrip, activityOf, isBusy, useRunActivity } from '../components/Activity';
@@ -372,6 +372,7 @@ function RunDetail({ row }: { row: Row }) {
   const [tab, setTab] = useState<DTab>(run?.score ? 'score' : 'deliver');
   const [texts, setTexts] = useState<{ text: string; prompt: string } | null>(null);
   const [detail, setDetail] = useState<{ metrics: any; final_message: string | null; local: boolean } | null>(null);
+  const [revising, setRevising] = useState(false);
   const [, tick] = useState(0);
   useEffect(() => { if (ws) get<{ text: string; prompt: string }>('/api/ws/final', { ref: ws.ref }).then(setTexts, () => setTexts({ text: '', prompt: '' })); }, [ws?.ref, ws?.ended_at, ws?.has_final]); // eslint-disable-line
   useEffect(() => { if (run) get<{ metrics: any; final_message: string | null; local: boolean }>(`/api/runs/${encodeURIComponent(run.run_id)}`).then(setDetail, () => setDetail(null)); }, [run?.run_id, run?.synced_at]); // eslint-disable-line
@@ -415,6 +416,9 @@ function RunDetail({ row }: { row: Row }) {
         {ws && <Btn icon={<FolderOpen size={14} />} onClick={() => void post('/api/open-folder', { ref: ws.ref }).catch((e) => toast.error(e.message))}>工作目录</Btn>}
         {ws && <CopyBtn text={() => texts?.prompt || ''} label="复制提示词" />}
         {(run || ws) && <Btn icon={<Bot size={15} />} onClick={() => void aiPrompt()} tip="复制给评分 Agent 的提示词（skills 路径 + wb CLI 步骤）">AI 评审提示词</Btn>}
+        {/* 交付阶段及之后（登记 / 自动评分 / 复核完成）都能修订用时与成本：填错了不用回退重跑。
+            仅有存储记录、没有工作区的运行（历史导入）同样可改 */}
+        {(ws || run) && stage >= 3 && <Btn icon={<PencilLine size={14} />} onClick={() => setRevising(true)} tip="修订这次的用时与成本，保存后立即生效（不影响质量分）">修订</Btn>}
         <span className="grow" />
         {run && <Btn size="sm" tone="ghost" icon={busy ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} disabled={busy} tip={busy ? '正在登记 / 评分，完成后再重新评分' : undefined} onClick={regrade}>{busy ? '评分中' : '重新评分'}</Btn>}
         <IconBtn label="更多操作：彻底停止 / 删除…" onClick={(e) => acts.open(e.currentTarget, row, { detail: true })}><Ellipsis size={16} /></IconBtn>
@@ -456,7 +460,64 @@ function RunDetail({ row }: { row: Row }) {
         {tab === 'usage' && <>{run && <RunEffCard run={run} ws={ws} />}<div className="mt" /><UsagePanel ws={ws} run={run} /></>}
         {tab === 'raw' && <pre className="prompt">{JSON.stringify({ workspace: ws, run, metrics: detail?.metrics }, null, 2)}</pre>}
       </div>
+      {revising && (ws || run) && <ReviseModal ws={ws} run={run} onClose={() => setRevising(false)} />}
     </div>
+  );
+}
+
+/**
+ * 修订用时与成本：交付及之后任何阶段都能改，保存立刻生效。
+ * - 已登记（有 run）：用时走内建的用时核实（corrected），费用走直接估价（manual，优先级最高）；
+ * - 未登记（只有工作区）：直接改 rN.run.json 里的 usage，登记时随 extra 带过去。
+ * 只碰这两个数，不动质量分。
+ */
+function ReviseModal({ ws, run, onClose }: { ws?: WorkspaceRun; run?: StoreRun; onClose: () => void }) {
+  const wb = useWb();
+  const rate = useCnyRate();
+  const wall = ws?.started_at && ws?.ended_at ? (Date.parse(ws.ended_at) - Date.parse(ws.started_at)) / 60000 : null;
+  const runEff = run ? wb.agg?.run_eff?.[run.run_id] : undefined;
+  const curMin = runEff?.minutes ?? ws?.usage?.active_min ?? wall ?? undefined;
+  const curUsd = runEff?.cost_usd ?? ws?.usage?.cost_usd ?? undefined;
+  const [min, setMin] = useState(curMin != null ? String(Number(curMin.toFixed(1))) : '');
+  const [usd, setUsd] = useState<number | undefined>(curUsd ?? undefined);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const m = min.trim() === '' ? undefined : Number(min);
+    if (m !== undefined && (!Number.isFinite(m) || m <= 0)) { toast.error('用时需要大于 0 的分钟数'); return; }
+    setBusy(true);
+    try {
+      // 1) 用时：已登记走用时核实（corrected 优先级最高）；未登记改 usage.active_min
+      if (m !== undefined) {
+        if (run) await post('/api/eff/time-review', { run_id: run.run_id, status: 'corrected', minutes: m, reason: '运行页修订' });
+        else if (ws) await post('/api/ws/patch', { ref: ws.ref, usage: { ...(ws.usage || {}), active_min: m } });
+      }
+      // 2) 费用：已登记走直接估价（manual）；未登记改 usage.cost_usd
+      if (run) {
+        if (usd !== runEff?.cost_usd) await post('/api/eff/cost', { run_id: run.run_id, cost_usd: usd ?? null, note: '运行页修订' });
+      } else if (ws && usd !== ws.usage?.cost_usd) {
+        await post('/api/ws/patch', { ref: ws.ref, usage: { ...(ws.usage || {}), cost_usd: usd, cost_estimated: usd != null, source: 'user' } });
+      }
+      await wb.refresh(['store', 'agg']);
+      toast.ok('已修订，用时与成本立即生效');
+      onClose();
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} width={540} title="修订用时与成本"
+      sub={`${ws?.tkey || run?.tkey} · r${ws?.index ?? run?.run_index ?? 1}｜保存后立即生效，只改速度与价格统计，不影响质量分`}
+      footer={<><Btn tone="ghost" onClick={onClose}>取消</Btn><Btn tone="primary" busy={busy} onClick={() => void save()}>保存修订</Btn></>}>
+      <div className="stack">
+        <Field label="有效用时（分钟）" hint={wall != null ? `墙钟 ${fmt.min(wall)} · 留空表示不改` : '留空表示不改'}>
+          <input type="number" step="0.1" min="0" value={min} onChange={(e) => setMin(e.target.value)} placeholder="例如 32.5" />
+        </Field>
+        <div className="form-grid">
+          <CostFields usd={usd} onChange={setUsd} hint={`留空表示不改（也按日志估算）；1 美元 = ${rate} 人民币`} />
+        </div>
+        <p className="muted small">
+          {run ? '这次已登记：用时记为「手动修正」，费用记为「直接填写」，优先级都高于日志与额度推算。' : '这次还没登记：改动会在登记时随用量一起提交。'}
+        </p>
+      </div>
+    </Modal>
   );
 }
 
