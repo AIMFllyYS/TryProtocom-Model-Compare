@@ -51,7 +51,7 @@ body.lp-dragging .dock-t { box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--acc
 
 .quota { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--fill-1); box-shadow: inset 0 0 0 .5px var(--hair); }
 .quota > .row > svg { color: var(--accent-ink); }
-.quota.q-token { flex-direction: row; align-items: center; }
+.quota.q-token { flex-direction: row; align-items: center; flex-wrap: wrap; }
 .quota.compact { padding: 10px 12px; }
 .quota-cfg { display: flex; flex-direction: column; gap: 10px; padding: 10px; border-radius: 12px; background: var(--g-solid); box-shadow: 0 0 0 .5px var(--edge); }
 .mb-s { margin-bottom: 6px; }

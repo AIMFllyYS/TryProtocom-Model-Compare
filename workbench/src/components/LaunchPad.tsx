@@ -13,6 +13,7 @@ import { Badge, Btn, Field, Modal, Seg, Select } from '../ui/kit';
 import { HarnessIcon, ModelAvatar } from '../ui/brand';
 import { toast } from '../ui/toast';
 import { findHarness, HarnessPicker, modelKey } from './pickers';
+import { CostFields, useCnyRate } from './CostFields';
 
 interface PromptRes { text: string; warnings: string[]; ref: string | null; workspace: string | null; index: number | null; exists: boolean }
 interface Slot { t: SpecTask; v: string | null; key: string }
@@ -193,9 +194,12 @@ function StampCard({ stamp, model, slot, onNext, onRecopy }: { stamp: { run: Wor
 /** 额度记录：开跑前 / 结束后剩余额度；订阅制按周期费用 ÷ 周期额度换算成美元 */
 export function QuotaForm({ run, model, phase, compact, onSaved }: { run: WorkspaceRun; model: ModelProfile; phase: 'before' | 'after'; compact?: boolean; onSaved?: () => void }) {
   const wb = useWb();
+  const rate = useCnyRate();
   const b0: Billing = model.billing || { mode: 'subscription', unit: '次' };
   const [bill, setBill] = useState<Billing>(b0);
   const [edit, setEdit] = useState(!model.billing);
+  // Agent 计费下“要不要直接手填价格”：只是个前端开关，打开才显示美元/人民币输入框
+  const [manualCost, setManualCost] = useState(false);
   const [unit, setUnit] = useState(run.quota?.unit || b0.unit || '次');
   const [val, setVal] = useState<string>(phase === 'before' ? (run.quota?.before ?? '').toString() : (run.quota?.after ?? '').toString());
   const [saved, setSaved] = useState(false);
@@ -205,22 +209,41 @@ export function QuotaForm({ run, model, phase, compact, onSaved }: { run: Worksp
   const save = async () => {
     try {
       if (edit || JSON.stringify(bill) !== JSON.stringify(model.billing || null)) await post('/api/models', { ...model, billing: { ...bill, unit } });
-      if (val !== '' && bill.mode !== 'free') await post('/api/ws/quota', { ref: run.ref, unit, [phase]: Number(val) });
+      if (val !== '' && bill.mode === 'subscription') await post('/api/ws/quota', { ref: run.ref, unit, [phase]: Number(val) });
       setSaved(true); setEdit(false);
       await wb.refresh(['store']);
       onSaved?.();
       toast.ok(phase === 'before' ? '已记录开跑前额度' : '已记录结束后额度');
     } catch (e: any) { toast.error(e.message); }
   };
+  /** Agent 计费 / 不记录时手填价格：直接写 usage.cost_usd（登记时随 extra 带去 bench-grader） */
+  const saveCost = async (usd: number | undefined) => {
+    try {
+      await post('/api/ws/patch', { ref: run.ref, usage: { ...(run.usage || {}), cost_usd: usd, cost_estimated: usd != null, source: 'user' } });
+      await wb.refresh(['store']);
+      toast.ok(usd == null ? '已清除手填费用' : `已记录费用 ${fmt.usd(usd)}`);
+    } catch (e: any) { toast.error(e.message); }
+  };
+  // Agent 计费：桥接到 bench-grader 的 harness 日志解析（即原来的“按 token”），默认不手填
   if (bill.mode === 'token' && !edit) return (
-    <div className="quota q-token"><Gauge size={15} /><span className="grow small dim">{model.name} 按 token 计费：费用由 harness 日志 × 单价自动估算，无需记录额度。</span><Btn size="xs" tone="ghost" onClick={() => setEdit(true)}>改计费方式</Btn></div>
+    <div className="quota q-token">
+      <Gauge size={15} />
+      <span className="grow small dim">{model.name} · Agent 计费：费用由 harness 日志 × 单价自动估算（bench-grader 解析）。不想自动算就直接填个价。</span>
+      <Btn size="xs" tone={manualCost ? 'tinted' : 'ghost'} onClick={() => setManualCost(!manualCost)}>{manualCost ? '收起手填' : '直接填价'}</Btn>
+      <Btn size="xs" tone="ghost" onClick={() => setEdit(true)}>改计费方式</Btn>
+      {manualCost && (
+        <div className="row gap-s wrap" style={{ flexBasis: '100%' }}>
+          <CostFields usd={run.usage?.cost_usd} onChange={(v) => void saveCost(v)} hint={`留空回到日志估算；1 美元 = ${rate} 人民币`} />
+        </div>
+      )}
+    </div>
   );
   return (
     <div className={cls('quota', compact && 'compact')}>
       <div className="row gap-s"><Wallet size={15} /><b className="small">{phase === 'before' ? '开跑前剩余额度' : '结束后剩余额度'}</b><span className="muted xs">{bill.plan ? `· ${bill.plan}` : ''}{price != null ? ` · 约 $${price.toFixed(price < 0.1 ? 4 : 3)}/${unit}` : ''}</span><span className="grow" />{!edit && <Btn size="xs" tone="ghost" onClick={() => setEdit(true)}>计费设置</Btn>}</div>
       {edit && (
         <div className="quota-cfg">
-          <Seg size="xs" value={bill.mode} onChange={(m) => setBill({ ...bill, mode: m })} options={[{ value: 'subscription', label: '订阅额度' }, { value: 'token', label: '按 token' }, { value: 'free', label: '不记录' }]} />
+          <Seg size="xs" value={bill.mode} onChange={(m) => setBill({ ...bill, mode: m })} options={[{ value: 'subscription', label: '订阅额度' }, { value: 'token', label: 'Agent 计费' }, { value: 'free', label: '不记录' }]} />
           {bill.mode === 'subscription' && (
             <div className="form-grid">
               <Field label="套餐"><input value={bill.plan || ''} onChange={(e) => setBill({ ...bill, plan: e.target.value })} placeholder="例如 ChatGPT Pro / Claude Max" /></Field>
@@ -239,8 +262,14 @@ export function QuotaForm({ run, model, phase, compact, onSaved }: { run: Worksp
           {saved ? <Badge tone="ok"><Check size={11} />已记录</Badge> : <Btn size="sm" tone="tinted" onClick={() => void save()}>{edit ? '保存' : '记录'}</Btn>}
         </div>
       )}
-      {bill.mode === 'free' && <div className="row"><span className="muted small grow">不记录额度（免费额度或不关心成本）。</span>{edit && <Btn size="sm" tone="tinted" onClick={() => void save()}>保存</Btn>}</div>}
-      {bill.mode === 'token' && edit && <div className="row"><span className="muted small grow">费用由 harness 日志 × 单价自动估算。</span><Btn size="sm" tone="tinted" onClick={() => void save()}>保存</Btn></div>}
+      {bill.mode === 'free' && <div className="row"><span className="muted small grow">不记录费用（不关心成本或免费额度）。</span>{edit && <Btn size="sm" tone="tinted" onClick={() => void save()}>保存</Btn>}</div>}
+      {bill.mode === 'token' && edit && (
+        <div className="stack s">
+          <span className="muted small">Agent 计费：费用由 harness 日志 × 单价自动估算（bench-grader 原有的日志解析，已桥接）。不想自动算也可以直接填一个价。</span>
+          <div className="form-grid"><CostFields usd={run.usage?.cost_usd} onChange={(v) => void saveCost(v)} hint={`留空回到日志估算；1 美元 = ${rate} 人民币`} /></div>
+          <div className="row"><Btn size="sm" tone="tinted" onClick={() => void save()}>保存</Btn></div>
+        </div>
+      )}
     </div>
   );
 }
