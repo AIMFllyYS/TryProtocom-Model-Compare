@@ -84,6 +84,8 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
 .field-h { font-size: 11.5px; color: var(--text-3); }
 .field-e { font-size: 11.5px; color: var(--bad); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 16px; }
+/* 输入 / 输出 / 缓存读 / 缓存写：四个窄字段并成一行 */
+.form-grid.form-grid-4 { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 
 /* ---------- 下拉选择（自绘） ---------- */
 .select {

@@ -17,6 +17,7 @@ import { RunEffCard } from '../components/Efficiency';
 import { HarnessPicker, ModelPicker } from '../components/pickers';
 import { FileBrowser } from '../components/Files';
 import { ItemScorer } from '../components/ItemScorer';
+import { CostFields } from '../components/CostFields';
 import { QuotaForm } from '../components/LaunchPad';
 import { TrashDock, TrashedNotice, isLive, runHandlers, useRunActions } from '../components/Trash';
 import { ActivityBanner, ActivityStrip, activityOf, isBusy, useRunActivity } from '../components/Activity';
@@ -505,6 +506,21 @@ function FinishForm({ ws, finalText, onDone, onReopen }: { ws: WorkspaceRun; fin
         </Field>
         <div className="form-grid">
           <Field label="Harness"><HarnessPicker value={harness} onChange={setHarness} block /></Field>
+        </div>
+        {/* 三行：① 墙钟 + 有效时间 ② 输入 / 输出 / 缓存命中 ③ 费用（美元 · 人民币互斥）
+            输入输出都不强制填；费用填了人民币就不用填美元，反之亦然 */}
+        <div className="form-grid">
+          <Field label="墙钟（分）" hint={wall ? `计时 ${wall.toFixed(1)}` : '留空按计时或日志'}><input type="number" step="0.1" value={u.wall_min ?? ''} onChange={num('wall_min')} placeholder={wall ? wall.toFixed(1) : ''} /></Field>
+          <Field label="有效时间（分）"><input type="number" step="0.1" value={u.active_min ?? ''} onChange={num('active_min')} /></Field>
+        </div>
+        <div className="form-grid form-grid-4">
+          <Field label="输入 token"><input type="number" value={u.input_tokens ?? ''} onChange={num('input_tokens')} placeholder="选填" /></Field>
+          <Field label="输出 token"><input type="number" value={u.output_tokens ?? ''} onChange={num('output_tokens')} placeholder="选填" /></Field>
+          <Field label="缓存命中（读）"><input type="number" value={u.cache_read_tokens ?? ''} onChange={num('cache_read_tokens')} placeholder="选填" /></Field>
+          <Field label="缓存写入"><input type="number" value={u.cache_write_tokens ?? ''} onChange={num('cache_write_tokens')} placeholder="选填" /></Field>
+        </div>
+        <div className="form-grid">
+          <CostFields usd={u.cost_usd} onChange={(v) => setU({ ...u, cost_usd: v })} hint="两项互斥，填一种即可；留空按 token × 单价估算" />
         </div>
         <label className="row gap-s small"><CheckBox checked={timedOut} onChange={setTimedOut} label="超时" />超出时间上限（记为超时）</label>
         {prof && <QuotaForm run={ws} model={prof} phase="after" />}
