@@ -1,6 +1,6 @@
 // 运行：看板（进行中 → 已交付待登记 → 待评分 → 已完成），详情含实时交付清单、登记评分、得分明细、预览打分与 AI 评审提示词。
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Bot, ChevronRight, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
+import { Bot, ChevronRight, ChevronsDownUp, ChevronsUp, ChevronsUpDown, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, PencilLine, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
 import type { ItemScore, SpecItem, StoreRun, Usage, WorkspaceRun } from '../../shared/types';
 import { FINAL_FILE } from '../../shared/deliverables';
 import { get, post } from '../api';
@@ -112,6 +112,16 @@ function useTrashHas() {
   return (k: string) => !!store?.trash?.some((t) => t.id === k || t.ref === k);
 }
 
+// 展开层级三态：全部展开 / 收起（默认，只到供应商） / 完全折叠（供应商也只露一张卡）
+type ExpandMode = 'all' | 'vendor' | 'collapsed';
+/** 点一下切到哪一态：全部展开 → 收起 → 完全折叠 → 全部展开 */
+const NEXT_MODE: Record<ExpandMode, ExpandMode> = { all: 'vendor', vendor: 'collapsed', collapsed: 'all' };
+const EXPAND_MODES: { id: ExpandMode; label: string; icon: typeof ChevronsUpDown; hint: string }[] = [
+  { id: 'all', label: '全部展开', icon: ChevronsUpDown, hint: '供应商与模型都展开：所有跑分卡片铺开' },
+  { id: 'vendor', label: '收起', icon: ChevronsDownUp, hint: '展开到供应商：看到每个供应商下有哪些模型，每个模型只露最近一次跑分' },
+  { id: 'collapsed', label: '完全折叠', icon: ChevronsUp, hint: '供应商也收起：每个供应商只露最近一次跑分' },
+];
+
 function RunBoard({ rows }: { rows: Row[] }) {
   const wb = useWb();
   const nm = useNamer();
@@ -119,8 +129,17 @@ function RunBoard({ rows }: { rows: Row[] }) {
   const [view, setView] = useLocal<'board' | 'list'>('runs.view', 'board');
   const [fModel, setFModel] = useLocal('runs.model', '');
   const [fTask, setFTask] = useLocal('runs.task', '');
+  // 默认「收起」：供应商展开、模型收起。单组标题点了就记下覆盖值，跟模式解耦
+  const [mode, setMode] = useLocal<ExpandMode>('runs.expand', 'vendor');
   const [openModels, setOpenModels] = useState<Record<string, boolean>>({});
   const [openVendors, setOpenVendors] = useState<Record<string, boolean>>({});
+  /** 循环切三态：全部展开 → 收起 → 完全折叠 → 全部展开。切换时清掉单组覆盖，避免看着像没生效 */
+  const cycleMode = () => {
+    setMode(NEXT_MODE[mode]);
+    setOpenModels({});
+    setOpenVendors({});
+  };
+  const ModeIcon = EXPAND_MODES.find((m) => m.id === mode)!.icon;
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   const list = rows.filter((r) => {
@@ -157,6 +176,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
         <ModelPicker value={fModel} onChange={setFModel} size="sm" placeholder="全部模型" allowAdd={false} allowAll />
         {fModel && <Btn size="sm" tone="ghost" icon={<X size={13} />} onClick={() => setFModel('')}>清除</Btn>}
         <Select size="sm" value={fTask} onChange={setFTask} placeholder="全部题目" options={[{ value: '', label: '全部题目' }, ...(wb.spec?.tasks || []).map((t) => ({ value: t.id, label: `${t.id} ${t.name}` }))]} />
+        <Btn size="sm" icon={<ModeIcon size={13} />} onClick={cycleMode} tip={`当前：${EXPAND_MODES.find((m) => m.id === mode)!.label} · ${EXPAND_MODES.find((m) => m.id === mode)!.hint}；点击 → ${EXPAND_MODES.find((m) => m.id === NEXT_MODE[mode])!.label}`}>{EXPAND_MODES.find((m) => m.id === mode)!.label}</Btn>
         <span className="grow" />
         {pend && <span className="muted small">待人工 {pend.human} · 待 Agent {pend.agent} · 缺用量 {pend.usage_missing}</span>}
         <Seg size="sm" value={view} onChange={setView} options={[{ value: 'board', label: <LayoutGrid size={14} />, title: '看板' }, { value: 'list', label: <List size={14} />, title: '列表' }]} />
@@ -171,7 +191,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
               <div key={c.id} className="kan-col">
                 <div className="kan-h"><c.icon size={15} /><b>{c.label}</b><span className="badge">{items.length}</span></div>
                 <div className="kan-hint muted xs">{c.hint}</div>
-                <BoardColumn col={c.id} items={items} nm={nm} acts={acts} open={openModels} setOpen={setOpenModels} force={fModel} />
+                <BoardColumn col={c.id} items={items} nm={nm} acts={acts} open={openModels} setOpen={setOpenModels} force={fModel} mode={mode} />
               </div>
             );
           })}
@@ -181,13 +201,14 @@ function RunBoard({ rows }: { rows: Row[] }) {
           <div className="tbl-wrap"><table className="tbl">
             <thead><tr><th>模型</th><th>题目</th><th>次</th><th>状态</th><th>交付</th><th>用时</th><th>harness</th><th className="num">得分</th><th aria-label="操作" /></tr></thead>
             <tbody>{vendorTree(list).map((v) => {
-              const vOpen = openVendors[v.vendor] !== false;
+              const vDefault = mode !== 'collapsed';
+              const vOpen = v.vendor in openVendors ? openVendors[v.vendor] : vDefault;
               const vCount = v.models.reduce((n, m) => n + m.rows.length, 0);
               return (
                 <VendorRows key={v.vendor} node={v} open={vOpen} count={vCount} nm={nm} acts={acts}
-                  modelOpen={(k) => !!fModel || !!openModels[k]}
+                  modelOpen={(k) => !!fModel || (k in openModels ? !!openModels[k] : mode === 'all')}
                   onVendor={() => setOpenVendors((s) => ({ ...s, [v.vendor]: !vOpen }))}
-                  onModel={(k) => setOpenModels((s) => ({ ...s, [k]: !s[k] }))} />
+                  onModel={(k) => setOpenModels((s) => ({ ...s, [k]: !(k in s ? s[k] : mode === 'all') }))} />
               );
             })}</tbody>
           </table></div>
@@ -198,7 +219,7 @@ function RunBoard({ rows }: { rows: Row[] }) {
   );
 }
 
-function BoardColumn({ col, items, nm, acts, open, setOpen, force }: { col: string; items: Row[]; nm: ReturnType<typeof useNamer>; acts: ReturnType<typeof useRunActions>; open: Record<string, boolean>; setOpen: (fn: (s: Record<string, boolean>) => Record<string, boolean>) => void; force: string }) {
+function BoardColumn({ col, items, nm, acts, open, setOpen, force, mode }: { col: string; items: Row[]; nm: ReturnType<typeof useNamer>; acts: ReturnType<typeof useRunActions>; open: Record<string, boolean>; setOpen: (fn: (s: Record<string, boolean>) => Record<string, boolean>) => void; force: string; mode: ExpandMode }) {
   const vendors = boardVendors(items);
   if (!vendors.length) return <div className="kan-empty">空</div>;
   const aliases = [...vendors.map((v) => v.vendor)].sort((a, b) => a.localeCompare(b, 'zh'));
@@ -207,7 +228,10 @@ function BoardColumn({ col, items, nm, acts, open, setOpen, force }: { col: stri
     <div className="kan-list">
       {vendors.map((v) => {
         const vKey = `${col}\u0000${v.vendor}`;
-        const expanded = !!force || !!open[vKey];
+        // 默认（收起）展开到供应商；「完全折叠」把供应商也收起来；「全部展开」全部铺开。
+        // 单组标题点过就按覆盖值走，所以覆盖值优先于模式默认值。
+        const vDefault = mode !== 'collapsed';
+        const expanded = !!force || (vKey in open ? !!open[vKey] : vDefault);
         const count = v.models.reduce((n, m) => n + m.rows.length, 0);
         const meta = vendorById(v.vendor);
         return (
@@ -221,7 +245,9 @@ function BoardColumn({ col, items, nm, acts, open, setOpen, force }: { col: stri
             {!expanded && <RunCard r={v.models[0].rows[0]} nm={nm} acts={acts} />}
             {expanded && v.models.map((m) => {
               const mKey = `${col}\u0000${m.key}`;
-              const mOpen = !!force || !!open[mKey];
+              // 模型层默认收起（每个模型只露最近一次跑分）：这正是“能看到供应商有哪几个模型，但跑分折叠”的那个状态
+              const mDefault = mode === 'all';
+              const mOpen = !!force || (mKey in open ? !!open[mKey] : mDefault);
               const shown = mOpen ? m.rows : m.rows.slice(0, 1);
               return (
                 <div key={m.key} className="kan-sub">
@@ -479,11 +505,6 @@ function FinishForm({ ws, finalText, onDone, onReopen }: { ws: WorkspaceRun; fin
         </Field>
         <div className="form-grid">
           <Field label="Harness"><HarnessPicker value={harness} onChange={setHarness} block /></Field>
-          <Field label="墙钟（分）" hint={wall ? `计时 ${wall.toFixed(1)}` : '留空按计时或日志'}><input type="number" step="0.1" value={u.wall_min ?? ''} onChange={num('wall_min')} placeholder={wall ? wall.toFixed(1) : ''} /></Field>
-          <Field label="有效时间（分）"><input type="number" step="0.1" value={u.active_min ?? ''} onChange={num('active_min')} /></Field>
-          <Field label="费用（美元）" hint="留空按 token × 单价估算"><input type="number" step="0.001" value={u.cost_usd ?? ''} onChange={num('cost_usd')} /></Field>
-          <Field label="输入 token"><input type="number" value={u.input_tokens ?? ''} onChange={num('input_tokens')} /></Field>
-          <Field label="输出 token"><input type="number" value={u.output_tokens ?? ''} onChange={num('output_tokens')} /></Field>
         </div>
         <label className="row gap-s small"><CheckBox checked={timedOut} onChange={setTimedOut} label="超时" />超出时间上限（记为超时）</label>
         {prof && <QuotaForm run={ws} model={prof} phase="after" />}
