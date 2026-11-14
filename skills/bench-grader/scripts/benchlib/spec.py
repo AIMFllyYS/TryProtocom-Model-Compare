@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .common import SKILL_ROOT, bench_config, dimensions, load_rubric, task_dirs
+from .human_levels import levels_for
 from .scoring import TIER_LABEL, item_weight
 
 METHOD_LABEL = {"auto": "自动", "agent": "Agent 审查", "human": "人工"}
@@ -26,7 +27,9 @@ RELATIONS = [
 def rule_text(it: dict) -> str:
     r = it.get("rule") or {}
     t = r.get("type", "bool")
-    if it.get("method") in ("human", "agent"):
+    if it.get("method") == "human":
+        return "预览 1–10；未重评的旧 0–3 仍除以 3"
+    if it.get("method") == "agent":
         return "0–3 分锚定评分，换算为 0–1"
     if t == "bool":
         return "为真得满分" if r.get("expect", True) else "为假得满分"
@@ -57,7 +60,7 @@ def collect() -> dict:
             items.append({"id": it["id"], "dim": it["dim"], "tier": it.get("tier", "basic"), "tier_label": TIER_LABEL.get(it.get("tier", "basic")),
                           "method": it.get("method", "auto"), "method_label": METHOD_LABEL[it.get("method", "auto")], "weight": item_weight(it),
                           "desc": it["desc"], "metric": it.get("metric") or it.get("value_expr", ""), "rule": rule_text(it),
-                          "anchors": it.get("anchors", []), "evidence": it.get("evidence", ""), "variants": it.get("variants", []),
+                          "anchors": it.get("anchors", []), "levels": levels_for(it), "evidence": it.get("evidence", ""), "variants": it.get("variants", []),
                           "edition": it.get("edition", "base"), "module": it.get("module"), "judge": it.get("judge")})
         gates = [{"id": g["id"], "desc": g["desc"], "variants": g.get("variants", [])} for g in r.get("gates", [])]
         tier0 = [{"id": g["id"], "desc": g["desc"], "variants": g.get("variants", [])} for g in r.get("tier0", [])]
