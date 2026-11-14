@@ -80,13 +80,31 @@ def grade_run(run_dir: Path, fast: bool = False, only: list[str] | None = None) 
     return rescore(run_dir)
 
 
-def rescore(run_dir: Path) -> dict:
+def rescore(run_dir: Path, *, persist: bool = True, preserve_auto: bool = False) -> dict:
+    """重算一次运行。persist 默认仍写盘，与原先的 rescore(run_dir) 一致。
+
+    preserve_auto 时沿用已有 score.json 里的自动项和门槛/可用性结论，只按人工分重算。
+    """
     meta = load_json(run_dir / "meta.json")
     rubric = load_rubric(meta["task"])
     metrics = Metrics.from_dict(load_json(run_dir / "metrics.json", {}) or {})
-    sc = score_run(rubric, metrics, load_manual(run_dir), meta.get("variant"))
+    old = load_json(run_dir / "score.json") if preserve_auto else None
+    frozen_auto = frozen_head = None
+    if isinstance(old, dict) and old.get("items"):
+        frozen_auto = {it["id"]: it for it in old["items"] if it.get("method") == "auto"}
+        frozen_head = {"gate_fail": old.get("gate_fail") or [], "tier0_fail": old.get("tier0_fail") or [],
+                       "tier0_pass": old.get("tier0_pass", None)}
+    sc = score_run(rubric, metrics, load_manual(run_dir), meta.get("variant"),
+                   frozen_auto=frozen_auto, frozen_head=frozen_head)
+    if isinstance(old, dict) and frozen_auto is not None:
+        if old.get("scorer_version"):
+            sc["scorer_version"] = old["scorer_version"]
+        if old.get("rubric_hash"):
+            sc["rubric_hash"] = old["rubric_hash"]
+        sc["auto_preserved"] = True
     sc["run_id"] = meta["run_id"]
-    dump_json(run_dir / "score.json", sc)
+    if persist:
+        dump_json(run_dir / "score.json", sc)
     return sc
 
 

@@ -91,7 +91,8 @@ def item_weight(item: dict) -> float:
     return float(item.get("weight", TIER_WEIGHT.get(item.get("tier", "basic"), 1)))
 
 
-def score_run(rubric: dict, metrics: Metrics, manual: dict, variant: str | None = None) -> dict:
+def score_run(rubric: dict, metrics: Metrics, manual: dict, variant: str | None = None, *,
+              frozen_auto: dict | None = None, frozen_head: dict | None = None) -> dict:
     cfg = bench_config()
     vconf = (rubric.get("variants") or {}).get(variant or "", {})
     dims_w = vconf.get("dims", rubric.get("dims", {}))
@@ -130,7 +131,14 @@ def score_run(rubric: dict, metrics: Metrics, manual: dict, variant: str | None 
                 rec.update(status="pending", s=None)
             else:
                 sc = float(ms["score"])
-                rec.update(status="scored", s=_clamp(sc / 3.0), value=sc, by=ms.get("by", rec["method"]), note=ms.get("note", ""))
+                # 人工预览的新档是 1–10。没有 scale 的旧 0–3（以及全部 Agent 分）仍除以 3。
+                if rec["method"] == "human" and ms.get("scale") == "human-10":
+                    unit = _clamp(sc / 10.0)
+                else:
+                    unit = _clamp(sc / 3.0)
+                rec.update(status="scored", s=unit, value=sc, by=ms.get("by", rec["method"]), note=ms.get("note", ""))
+                if ms.get("scale"):
+                    rec["scale"] = ms.get("scale")
         else:
             v, st = _value(it, metrics)
             rec["value"] = v
@@ -141,6 +149,18 @@ def score_run(rubric: dict, metrics: Metrics, manual: dict, variant: str | None 
             else:
                 rec.update(status="missing", s=0.0)
         items_out.append(rec)
+
+    # 人工改分时保住已经落盘的自动项和门槛/可用性结论，避免一次点选把探针口径整份重算。
+    if frozen_auto:
+        items_out = [frozen_auto[r["id"]] if r.get("method") == "auto" and r["id"] in frozen_auto else r for r in items_out]
+    if frozen_head is not None:
+        gate_fail = list(frozen_head.get("gate_fail") or [])
+        if frozen_head.get("tier0_pass") is None:
+            tier0_fail = []
+            has_tier0 = False
+        else:
+            tier0_fail = list(frozen_head.get("tier0_fail") or [])
+            has_tier0 = True
 
     gate_pass = not gate_fail
     counted = [r for r in items_out if r["status"] in ("scored", "missing")]
