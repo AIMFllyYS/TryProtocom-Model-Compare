@@ -306,6 +306,7 @@ function ItemCard({ i, open, onToggle }: { i: SpecItem; open: boolean; onToggle:
           {i.rule && <div><span className="field-l">换算</span><p className="mono small">{i.rule}</p></div>}
           {i.evidence && <div><span className="field-l">依据</span><p className="small">{i.evidence}</p></div>}
           {i.anchors.length > 0 && <ol className="anchors" start={0}>{i.anchors.map((a, k) => <li key={k}><b>{k}</b><span>{a}</span></li>)}</ol>}
+          {i.method === 'human' && (i.levels?.length === 10) && <ol className="anchors levels10" start={1}>{i.levels.map((a, k) => <li key={k}><b>{k + 1}</b><span>{a}</span></li>)}</ol>}
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@
   python wbbridge.py spec                                   # 规范数据（= build-spec 使用的数据）+ 完整配置 + 单价表
   python wbbridge.py snapshot --data <bench-data>           # 全部运行：meta、重新计分后的 score、用量、人工分、产物、别名
   python wbbridge.py rescore  --data <bench-data> --run <id>
-  python wbbridge.py set-manual --data <bench-data> --run <id> --item <item_id> --score <0-3|""> [--note ..] [--by human|agent]
+  python wbbridge.py set-manual --data <bench-data> --run <id> --item <item_id> --score <0-3|1-10|""> [--scale human-10] [--note ..] [--by human|agent]
   python wbbridge.py probe-page --url <url> [--viewport 1440x900] [--wait 2500] [--shot out.png] [--mobile]
 """
 from __future__ import annotations
@@ -97,12 +97,12 @@ def cmd_spec(a):
     out(_clean(data))
 
 
-def _run_record(rd: Path, root: Path) -> dict:
+def _run_record(rd: Path, root: Path, preserve_auto: bool = False) -> dict:
     from benchlib.common import bench_config, dump_json, load_json
     from benchlib.runs import rescore
     from benchlib.usage import resolve_usage
     meta = load_json(rd / "meta.json") or {}
-    sc = rescore(rd) if (rd / "metrics.json").exists() or meta else None
+    sc = rescore(rd, persist=True, preserve_auto=preserve_auto) if (rd / "metrics.json").exists() or meta else None
     try:
         usage = resolve_usage(meta, bench_config())
     except Exception as e:  # noqa: BLE001
@@ -163,7 +163,8 @@ def cmd_rescore(a):
 
 
 def cmd_set_manual(a):
-    from benchlib.common import dump_json, load_json, file_lock
+    from benchlib.agent_accept import keep_agent_score
+    from benchlib.common import dump_json, load_json, file_lock, load_rubric
     data = Path(a.data)
     rd = data / "runs" / a.run
     if not (rd / "meta.json").exists():
@@ -173,12 +174,38 @@ def cmd_set_manual(a):
         if a.score in (None, ""):
             ms.pop(a.item, None)
         else:
-            s = max(0.0, min(3.0, float(a.score)))
-            from benchlib.agent_accept import keep_agent_score
-            ms[a.item] = keep_agent_score(ms.get(a.item), {"score": s, "note": a.note or "", "by": a.by or "human", "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+            by = a.by or "human"
+            scale = (getattr(a, "scale", None) or "").strip()
+            prev = ms.get(a.item) if isinstance(ms.get(a.item), dict) else None
+            note = a.note or ""
+            at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            if scale == "human-10":
+                meta = load_json(rd / "meta.json") or {}
+                rubric = load_rubric(meta.get("task") or "")
+                item = next((x for x in rubric.get("items", []) if x.get("id") == a.item), None)
+                if by != "human" or not item or item.get("method") != "human":
+                    return out(error="1–10 档只用于人工项")
+                try:
+                    raw = float(a.score)
+                except ValueError:
+                    return out(error=f"分数无法解析：{a.score}")
+                if raw != int(raw) or not (1 <= int(raw) <= 10):
+                    return out(error="人工 10 档只接受 1 到 10 的整数")
+                entry = {"score": float(int(raw)), "note": note, "by": by, "at": at, "scale": "human-10"}
+                if prev and prev.get("scale") == "human-10" and prev.get("legacy_score") not in (None, ""):
+                    entry["legacy_score"] = prev.get("legacy_score")
+                elif prev and prev.get("scale") != "human-10" and prev.get("score") not in (None, ""):
+                    entry["legacy_score"] = prev.get("score")
+                ms[a.item] = keep_agent_score(prev, entry)
+            else:
+                try:
+                    s = max(0.0, min(3.0, float(a.score)))
+                except ValueError:
+                    return out(error=f"分数无法解析：{a.score}")
+                ms[a.item] = keep_agent_score(prev, {"score": s, "note": note, "by": by, "at": at})
         dump_json(rd / "manual_scores.json", ms)
         root = Path(a.root).resolve() if a.root else data.resolve().parent
-        out(_clean(_run_record(rd, root)))
+        out(_clean(_run_record(rd, root, preserve_auto=True)))
 
 
 def cmd_probe_page(a):
@@ -236,7 +263,7 @@ def main():
     p = sub.add_parser("set-manual")
     for k in ("--data", "--run", "--item"):
         p.add_argument(k, required=True)
-    p.add_argument("--root"); p.add_argument("--score", default=""); p.add_argument("--note", default=""); p.add_argument("--by", default="human")
+    p.add_argument("--root"); p.add_argument("--score", default=""); p.add_argument("--note", default=""); p.add_argument("--by", default="human"); p.add_argument("--scale", default="")
     p.set_defaults(fn=cmd_set_manual)
     p = sub.add_parser("probe-page")
     p.add_argument("--url", required=True); p.add_argument("--viewport"); p.add_argument("--wait", type=int); p.add_argument("--timeout", type=int)

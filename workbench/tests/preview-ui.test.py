@@ -15,7 +15,7 @@ DIST = ROOT / "workbench/dist"
 OUT = ROOT / "workbench/.runtime/preview-ui"
 OUT.mkdir(parents=True, exist_ok=True)
 keys = ["T01", "T02", "T03A", "T03C", "T04", "T05", "T06", "T07", "T08"]
-item = dict(id="H1", dim="ui", tier="basic", tier_label="基础", method="human", method_label="人工", weight=1, desc="测试交互与视觉表现", metric="", rule="", anchors=["0 分", "1 分", "2 分", "3 分"], evidence="查看产物", variants=[])
+item = dict(id="H1", dim="ui", tier="basic", tier_label="基础", method="human", method_label="人工", weight=1, desc="测试交互与视觉表现", metric="", rule="", anchors=["0 分", "1 分", "2 分", "3 分"], levels=[f"{n} 分的分辨" for n in range(1, 11)], evidence="查看产物", variants=[])
 spec = dict(cfg=dict(name="UI regression",version="1",runs_per_task=3), dims=[dict(id="ui",name="UI",kind="quality")],tasks=[dict(id=f"T{i:02}",name=f"Fixture task {i}",short=f"T{i:02}",variants={"A":{},"C":{}} if i==3 else {},items=[item],dims={"ui":1},condition="",materials=[],prompt="",gates=[],hidden=[]) for i in range(1,9)],relations=[])
 store = dict(schema="bench-store/1",created_at="2026-01-01",updated_at="2026-01-01",benchmark={"name":"UI regression"},settings={},notes=[],history=[],trash=[])
 template = dict(harness="test",alias=None,graded=True,manual={},usage={},artifacts={},notes=[],dir="",has_final_message=True,synced_at="2026-01-01",score=dict(total=90,complete=True,gate_pass=True,gate_fail=[],passed=True,dims={"ui":90},dim_weights={"ui":1},tiers={},na_ratio=0,low_confidence=False,pending=["H1"],items=[{**item,"status":"pending","s":None}]))
@@ -167,7 +167,8 @@ try:
         picker.get_by_role("button",name="全部展开",exact=True).click()
         expect(tree.get_by_role("treeitem")).to_have_count(117)
         for row in tree.get_by_role("treeitem").all()[:15]:
-            assert row.bounding_box()["height"]==34
+            h = row.bounding_box()["height"]
+            assert h == 34, h
             positions=row.locator('.explorer-chevron,.explorer-icon,.explorer-name').evaluate_all("els => els.map(e => {const r=e.getBoundingClientRect();return r.y+r.height/2})")
             assert max(positions)-min(positions)<2, positions
         picker.get_by_role("button",name="全部折叠",exact=True).click()
@@ -201,34 +202,29 @@ try:
         picker.get_by_role("tab",name="仓库文件",exact=True).click()
         expect(picker.locator(".fprev-b")).to_contain_text("Content of README.md")
         picker.get_by_role("button",name="关闭 (Esc)",exact=True).click()
-        # Long press moves only the header; clamp keeps the sheet inside the stage.
+        # 评分题在左侧栏，不盖住舞台。
         sheet=page.get_by_role("complementary",name="评分面板")
         expect(sheet).to_be_visible()
-        header=sheet.locator(".ss-h")
-        box=header.bounding_box(); before=sheet.bounding_box()
-        page.mouse.move(box["x"]+40,box["y"]+20); page.mouse.down(); page.wait_for_timeout(350)
-        page.mouse.move(box["x"]-200,box["y"]+150,steps=10); page.mouse.up()
-        after=sheet.bounding_box()
-        assert after["x"] < before["x"]-150, (before,after)
-        stage=page.locator(".stage").bounding_box()
-        assert after["x"] >= stage["x"]-1 and after["y"] >= stage["y"]-1
-        page.screenshot(path=str(OUT/"dragged.png"))
-        page.reload()
+        expect(sheet.get_by_role("radio")).to_have_count(10)
+        side=page.locator("nav.side").bounding_box()
+        box=sheet.bounding_box(); stage=page.locator(".stage").bounding_box()
+        assert box["x"] >= side["x"]-1 and box["x"]+box["width"] <= side["x"]+side["width"]+2
+        assert box["x"]+box["width"] <= stage["x"]+2
+        page.screenshot(path=str(OUT/"score-dock.png"))
+        page.get_by_role("button",name="切回左侧导航",exact=True).click()
+        expect(sheet).to_have_count(0)
+        expect(page.get_by_role("link",name="总览",exact=True)).to_be_visible()
+        page.get_by_role("button",name="显示当前评分题",exact=True).click()
         expect(sheet).to_be_visible()
-        page.wait_for_timeout(450)
-        restored=sheet.bounding_box()
-        assert abs(restored["x"]-after["x"])<2, (restored,after)
-        header.dblclick(position={"x":40,"y":20})
-        assert sheet.bounding_box()["x"] > after["x"]+150
         page.get_by_role("button",name="收起",exact=True).click()
-        expect(sheet).to_have_class("score-sheet glass-thick min")
+        assert "min" in (sheet.get_attribute("class") or "").split()
         page.set_viewport_size({"width":850,"height":700})
         page.wait_for_timeout(150)
         small=sheet.bounding_box(); bounds=page.locator(".stage").bounding_box()
-        assert small["x"] >= bounds["x"]-1 and small["x"]+small["width"] <= bounds["x"]+bounds["width"]+1
+        assert small["x"]+small["width"] <= bounds["x"]+2
         assert not unexpected_writes,unexpected_writes
         assert not errors,errors
-        print(json.dumps(dict(ok=True,task_rows=9,tiles=18,highest_score_and_tie=True,lazy_mount=True,interactive_iframes=True,expand=True,tab_tree=True,task_first_tree=True,expand_collapse_all=True,keyboard_tree_navigation=True,repository_file_preview=True,aligned_34px_rows=True,close_others=True,long_press=True,persist_position=True,reset_position=True,unexpected_writes=unexpected_writes,page_errors=errors),ensure_ascii=True))
+        print(json.dumps(dict(ok=True,task_rows=9,tiles=18,highest_score_and_tie=True,lazy_mount=True,interactive_iframes=True,expand=True,tab_tree=True,task_first_tree=True,expand_collapse_all=True,keyboard_tree_navigation=True,repository_file_preview=True,aligned_34px_rows=True,close_others=True,score_dock=True,ten_levels=True,nav_toggle=True,unexpected_writes=unexpected_writes,page_errors=errors),ensure_ascii=True))
         browser.close()
 finally:
     server.shutdown(); server.server_close()

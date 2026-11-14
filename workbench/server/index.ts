@@ -783,10 +783,10 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.post('/api/runs/:id/manual', async (req) => {
     const b = await readJson(req);
     const rid = req.params.id;
-    const items: { item: string; score: number | '' | null; note?: string }[] = Array.isArray(b.items) ? b.items : [{ item: b.item, score: b.score, note: b.note }];
+    const items: { item: string; score: number | '' | null; note?: string; scale?: string }[] = Array.isArray(b.items) ? b.items : [{ item: b.item, score: b.score, note: b.note, scale: b.scale }];
     let last: any = null;
     for (const it of items) {
-      last = await callBridge(cfg, ['set-manual', '--data', cfg.benchData, '--root', cfg.root, '--run', rid, '--item', it.item, '--score', it.score == null ? '' : String(it.score), '--note', it.note || '', '--by', b.by || 'human']);
+      last = await callBridge(cfg, ['set-manual', '--data', cfg.benchData, '--root', cfg.root, '--run', rid, '--item', it.item, '--score', it.score == null ? '' : String(it.score), '--note', it.note || '', '--by', b.by || 'human', '--scale', it.scale || '']);
     }
     const cur = store.data.runs.find((r) => r.run_id === rid);
     if (cur && last) {

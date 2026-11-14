@@ -19,7 +19,7 @@ export type Method = 'auto' | 'agent' | 'human';
 
 export interface SpecItem {
   id: string; dim: string; tier: Tier; tier_label: string; method: Method; method_label: string; weight: number;
-  desc: string; metric: string; rule: string; anchors: string[]; evidence: string; variants: string[];
+  desc: string; metric: string; rule: string; anchors: string[]; levels?: string[]; evidence: string; variants: string[];
   edition?: 'base' | 'detail'; module?: string | null; judge?: 'absolute' | 'pairwise' | null;
 }
 export interface SpecGate { id: string; desc: string; variants: string[] }
@@ -81,7 +81,7 @@ export interface Usage {
   cache_read_tokens?: number; cache_write_tokens?: number; cost_usd?: number; cost_estimated?: boolean;
   price_as_of?: string | null; source?: string; missing?: string[]; log_files?: string[]; log_model?: string;
 }
-export interface ManualScore { score: number; note?: string; by?: string; at?: string }
+export interface ManualScore { score: number; note?: string; by?: string; at?: string; scale?: string; legacy_score?: number }
 
 /** 存储文件中的一次已登记运行（bench-grader run）。 */
 export interface StoreRun {

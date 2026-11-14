@@ -10,7 +10,6 @@ import { Badge, Btn, Empty, IconBtn, Seg, Select } from '../ui/kit';
 import { toast } from '../ui/toast';
 import { resolveArtifact } from '../components/artifact';
 import { useNamer } from '../components/common';
-import { ScoreSheet } from '../components/ScoreSheet';
 import { Pane, type PaneState } from '../stage/Pane';
 import { OpenDialog } from '../stage/OpenDialog';
 import { ProcOutput } from '../stage/DevTools';
@@ -164,7 +163,6 @@ export default function Stage() {
         onCloseOthers={() => { setPanes((ps) => ps.filter((p) => p.id === tabMenu.id)); setFocus(tabMenu.id); }}
         onOpen={(ref) => void openRef(ref).catch((e) => toast.error(e.message))} />}
       {openDlg && <OpenDialog onClose={() => setOpenDlg(false)} onOpenSession={(s, rep) => openSession(s, rep)} onOpenVideo={(path, label) => addPane({ src: { type: 'video', path, label } })} onOpenRef={(x) => void openRef(x).catch((e) => toast.error(e.message))} />}
-      {scoreRun && <ScoreSheet runId={scoreRun} onClose={() => setScoreRun(null)} />}
     </div>
   );
 }

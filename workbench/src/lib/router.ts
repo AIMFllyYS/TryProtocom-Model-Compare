@@ -1,5 +1,5 @@
 // 基于 hash 的极简路由：#/<view>/<a>/<b>?k=v。可深链、可被 CLI（wb ui …）遥控。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type View = 'overview' | 'models' | 'tasks' | 'runs' | 'stage' | 'board' | 'compare' | 'exports' | 'docs' | 'settings';
 export const VIEWS: View[] = ['overview', 'models', 'tasks', 'runs', 'stage', 'board', 'compare', 'exports', 'docs', 'settings'];
@@ -47,13 +47,27 @@ export function useRoute(): Route {
 
 /** 本地持久化的 state（UI 偏好） */
 export function useLocal<T>(key: string, init: T): [T, (v: T | ((p: T) => T)) => void] {
+  const initRef = useRef(init);
   const [v, setV] = useState<T>(() => {
     try { const s = localStorage.getItem('wb.' + key); return s ? (JSON.parse(s) as T) : init; } catch { return init; }
   });
   const set = (nv: T | ((p: T) => T)) => setV((p) => {
     const val = typeof nv === 'function' ? (nv as (p: T) => T)(p) : nv;
     try { localStorage.setItem('wb.' + key, JSON.stringify(val)); } catch { /* 配额 */ }
+    window.dispatchEvent(new CustomEvent('wb-local', { detail: key }));
     return val;
   });
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== key) return;
+      try {
+        const s = localStorage.getItem('wb.' + key);
+        const next = (s ? JSON.parse(s) : initRef.current) as T;
+        setV((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('wb-local', on);
+    return () => window.removeEventListener('wb-local', on);
+  }, [key]);
   return [v, set];
 }

@@ -7,6 +7,12 @@
 
 /* ---------- 侧栏：悬浮玻璃面板 ---------- */
 .side { display: flex; flex-direction: column; min-height: 0; border-radius: var(--r-2xl); padding: 12px 10px 10px; }
+.side-top { display: flex; align-items: flex-start; gap: 4px; }
+.side-top .side-brand { flex: 1; min-width: 0; }
+.side-mode { flex: none; margin-top: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 650; color: var(--text-2); background: var(--fill-2); }
+.side-mode.on, .side-mode:hover { color: var(--text); background: var(--fill-3, var(--fill-2)); }
+.app.side-score { --side-w: 372px; }
+.side-score-scroll { display: flex; flex-direction: column; }
 .side-brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 14px; min-width: 0; }
 .logo {
   position: relative; width: 34px; height: 34px; flex: none; border-radius: 11px; corner-shape: squircle; display: grid; place-items: center; overflow: hidden;
@@ -129,6 +135,7 @@
 @media (max-width: 1180px) { .g-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 960px) {
   .app { --side-w: 68px; }
+  .app.side-score { --side-w: 320px; }
   .app .side-brand-t, .app .side-l, .app .side-gl span, .app .side-foot .hide-c { display: none; }
   .app .side-i { justify-content: center; padding: 0; }
   .app .side-foot { flex-direction: column; }

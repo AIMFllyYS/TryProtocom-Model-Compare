@@ -122,6 +122,7 @@
 .t-basic { background: var(--text-4); } .t-advanced { background: var(--info); } .t-excellent { background: var(--accent); } .t-clean { background: var(--warn); }
 .item-b { display: flex; flex-direction: column; gap: 10px; padding: 4px 14px 14px 86px; }
 .anchors { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.anchors.levels10 { grid-template-columns: 1fr; margin-top: 8px; }
 .anchors li { display: flex; gap: 8px; padding: 8px 10px; border-radius: var(--r-s); background: var(--fill-1); font-size: 12px; color: var(--text-2); }
 .anchors b { font-family: var(--font-display); font-size: 16px; color: var(--text); }
 @media (max-width: 900px) { .anchors { grid-template-columns: 1fr 1fr; } .item-b { padding-left: 14px; } }
@@ -240,6 +241,7 @@
 /* 旧评分控件（运行详情展开行） */
 .scorer { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
 .scorer-btns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.scorer.human10 .scorer-btns { grid-template-columns: 1fr; }
 .sc-btn { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 0; border-radius: var(--r-m); text-align: left; cursor: pointer; background: var(--g-solid); box-shadow: 0 0 0 .5px var(--edge), var(--sh-1); font-size: 12px; color: var(--text-2); transition: transform var(--t-fast); }
 .sc-btn b { font-family: var(--font-display); font-size: 18px; color: var(--text); }
 .sc-btn:hover { transform: translateY(-1px); }
@@ -389,13 +391,25 @@
 .ss-b { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 14px; overflow: auto; overscroll-behavior: contain; }
 .ss-nav { display: flex; align-items: center; gap: 6px; }
 .ss-pills { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
-.ss-pill { width: 22px; height: 22px; border: 0; border-radius: 7px; padding: 0; cursor: pointer; font-size: 11px; font-weight: 700; background: var(--fill-2); color: var(--text-3); transition: box-shadow var(--t-fast), background var(--t-fast); }
+.ss-pill { min-width: 22px; width: auto; height: 22px; padding: 0 4px; border: 0; border-radius: 7px; cursor: pointer; font-size: 11px; font-weight: 700; background: var(--fill-2); color: var(--text-3); transition: box-shadow var(--t-fast), background var(--t-fast); }
 .ss-pill:hover { background: var(--fill-3, var(--fill-2)); }
 .ss-pill.done { background: var(--ok-soft); color: var(--ok); }
 .ss-pill.done.s0 { background: var(--bad-soft); color: var(--bad); }
 .ss-pill.done.s1 { background: var(--warn-soft); color: var(--warn); }
 .ss-pill.on { box-shadow: 0 0 0 2px var(--text); }
-.ss-q { display: flex; flex-direction: column; gap: 6px; }
+.score-sheet.score-dock { position: static; right: auto; top: auto; width: auto; max-height: none; flex: 1; min-height: 0; border-radius: 16px; animation: none; z-index: 1; background: transparent; box-shadow: none; }
+.score-sheet.score-dock .ss-b { min-height: 0; }
+.ss-q { display: flex; flex-direction: column; gap: 6px; min-height: 108px; }
+.ss-legacy { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+.ss-mode { display: flex; gap: 6px; }
+.ss-mode button { height: 28px; padding: 0 10px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 650; color: var(--text-3); background: var(--fill-1); }
+.ss-mode button.on { color: var(--text); background: var(--fill-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.ss-axis { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; min-height: 240px; }
+.ss-range { writing-mode: vertical-lr; direction: rtl; appearance: slider-vertical; width: 28px; height: 100%; margin: 0; accent-color: var(--accent); }
+.ss-axis-read { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
+.ss-axis-read b { font-family: var(--font-display); font-size: 28px; line-height: 1; }
+.ss-axis-read p { margin: 0; font-size: 14px; line-height: 1.5; }
+.ss-opt-k i { display: block; font-style: normal; font-size: 9px; font-weight: 650; opacity: .7; }
 .ss-qn { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--text-2); }
 .ss-desc { font-size: 15px; font-weight: 620; line-height: 1.45; color: var(--text); }
 .ss-evi { font-size: 12px; color: var(--text-3); line-height: 1.5; }

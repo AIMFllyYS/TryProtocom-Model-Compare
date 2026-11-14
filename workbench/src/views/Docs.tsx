@@ -145,7 +145,7 @@ export default function Docs() {
 
         {/* 题库 */}
         <section id="doc-library" className="doc-sec">
-          <div className="doc-h"><span className="eyebrow">题库 {cfg.version}</span><h2>题库</h2><p>每道题包含：发给模型的原文提示词、门槛条件、全部检查项（维度、层级、方式、权重、换算规则）与人工 / Agent 项的 0–3 锚点。点击卡片查看完整细则。</p></div>
+          <div className="doc-h"><span className="eyebrow">题库 {cfg.version}</span><h2>题库</h2><p>每道题包含：发给模型的原文提示词、门槛条件、全部检查项。人工预览是 1–10 档，原来的四句锚点落在 2、4、6、10；Agent 审查仍是 0–3。点击卡片查看完整细则。</p></div>
           <div className="grid g-3">
             <Card title="检查项方式"><div className="compo"><Donut size={120} thick={14} center={stats.items} sub="检查项" parts={[...stats.method].map(([k, n]) => ({ label: ML[k] || k, value: n, color: MC[k] }))} /><div className="legend-list">{[...stats.method].map(([k, n]) => <span key={k}><i style={{ background: MC[k] }} />{ML[k]}<b>{n}</b></span>)}</div></div></Card>
             <Card title="检查项层级"><div className="compo"><Donut size={120} thick={14} center={stats.items} sub="检查项" parts={[...stats.tier].map(([k, n]) => ({ label: TL[k] || k, value: n, color: TC[k] }))} /><div className="legend-list">{[...stats.tier].map(([k, n]) => <span key={k}><i style={{ background: TC[k] }} />{TL[k]}<b>{n}</b></span>)}</div></div></Card>
@@ -187,7 +187,7 @@ export default function Docs() {
             </Card>
             <Card title="换算规则" pad={false}>
               <table className="tbl compact"><thead><tr><th>规则</th><th>含义</th></tr></thead><tbody>
-                {[['bool', '为真（或指定期望值）得 1'], ['ratio', '比例直接作为得分'], ['min / max', '达到阈值得 1；给出 zero 时在阈值与 zero 之间线性'], ['linear', '从 bad 到 good 线性映射，可选对数刻度'], ['band', '落在区间内得 1，偏离 tol 记 0'], ['eq', '等于目标值得 1'], ['锚点 0–3', '人工与 Agent 项，除以 3']].map(([a, b]) => <tr key={a}><td className="mono">{a}</td><td className="small">{b}</td></tr>)}
+                {[['bool', '为真（或指定期望值）得 1'], ['ratio', '比例直接作为得分'], ['min / max', '达到阈值得 1；给出 zero 时在阈值与 zero 之间线性'], ['linear', '从 bad 到 good 线性映射，可选对数刻度'], ['band', '落在区间内得 1，偏离 tol 记 0'], ['eq', '等于目标值得 1'], ['人工 1–10', '预览新选的档除以 10；没重评的旧 0–3 仍除以 3'], ['锚点 0–3', 'Agent 审查，除以 3']].map(([a, b]) => <tr key={a}><td className="mono">{a}</td><td className="small">{b}</td></tr>)}
               </tbody></table>
             </Card>
             <Card title="状态处理">
@@ -229,7 +229,7 @@ export default function Docs() {
               <li>提示词带统一「运行约定」：工作目录绝对路径、交付文件夹名、必须存在的文件、<code>FINAL_MESSAGE.md</code> 结束约定。</li>
             </ul></Card>
             <Card title="人工评分怎么收集"><ul className="plain-list small dim">
-              <li>自动评分跑完后，在工作台预览产物时同屏打分（键盘 0–3），或一次性生成评分包。</li>
+              <li>自动评分跑完后，在预览舞台左侧栏打人工分（1–9，0 表示 10 分），或一次性生成评分包。</li>
               <li>盲评模式把模型名替换为代号，同一检查项的所有运行横向比较。</li>
               <li>动画题使用统一管线逐帧渲染的评审视频，避免各家渲染环境差异。</li>
               <li>Agent 项先由评分 Agent 填写并附证据，用户确认或修改。</li>

@@ -52,7 +52,7 @@ export default function Overview() {
   if (!wb.store?.models.length) cta = { icon: Plus, title: '先新增一个模型', sub: '只需输入名称，供应商、目录与 harness 自动识别', label: '新增模型', run: () => go('models') };
   else if (!prof) cta = { icon: Boxes, title: '选择当前测评模型', sub: '右上角或下方选择；题目页复制的提示词会写入它的工作目录', label: '去模型页', run: () => go('models') };
   else if (delivered.length) cta = { icon: FileCheck2, title: `${delivered.length} 次运行已交付`, sub: '检测到 FINAL_MESSAGE.md，登记后自动评分', label: '去登记评分', run: () => go('runs') };
-  else if (humanRun) cta = { icon: MonitorPlay, title: `还有 ${pend?.human || 0} 个人工项待评`, sub: '预览产物时同屏打分，键盘 0–3 即可', label: '预览并打分', run: () => go('stage', [], { open: humanRun.ws ? 'ws:' + humanRun.ws.ref : 'run:' + humanRun.run!.run_id, score: humanRun.run!.run_id }) };
+  else if (humanRun) cta = { icon: MonitorPlay, title: `还有 ${pend?.human || 0} 个人工项待评`, sub: '预览时题目在左侧栏，键盘 1–9，0 是 10 分', label: '预览并打分', run: () => go('stage', [], { open: humanRun.ws ? 'ws:' + humanRun.ws.ref : 'run:' + humanRun.run!.run_id, score: humanRun.run!.run_id }) };
   else if (pend?.time_review) cta = { icon: Hourglass, title: `${pend.time_review} 次运行用时超过 5 小时，待核实`, sub: '可能断线、忘了结束或很晚才开跑；核实后可不纳入时间统计（记为不确定）', label: '去核实', run: () => { localStorage.setItem('wb.board.tab', JSON.stringify('eff')); go('board'); } };
   else if (running.length) cta = { icon: Hourglass, title: `${running.length} 个运行进行中`, sub: '模型完成后工作台会自动检测交付', label: '查看运行', run: () => go('runs') };
   else if (nextTask) cta = { icon: ClipboardCopy, title: `下一题：${nextTask.t.id} ${nextTask.t.name}`, sub: `${nextTask.t.short}`, label: '打开发车台', run: () => launch(`${prof.vendor}/${prof.name}`, nextTask.t.id) };

@@ -9,6 +9,7 @@ import { Palette } from './ui/palette';
 import { IconBtn, Popover, Spinner, Tip } from './ui/kit';
 import { ModelPicker } from './components/pickers';
 import { LaunchPadHost } from './components/LaunchPad';
+import { ScoreSheet } from './components/ScoreSheet';
 import { toast } from './ui/toast';
 import { GithubIcon } from './ui/brand';
 import { desktop, post } from './api';
@@ -30,6 +31,16 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const [collapsed, setCollapsed] = useLocal('nav.collapsed', false);
   const [theme, setTheme] = useLocal<'dark' | 'light'>('theme', (document.documentElement.dataset.theme as 'dark' | 'light') || 'light');
+  const [scoreRun, setScoreRun] = useLocal<string | null>('stage.score', null);
+  const [preferScore, setPreferScore] = useLocal('stage.sideScore', true);
+  const scoring = route.view === 'stage' && !!scoreRun;
+  const showScore = scoring && preferScore && !collapsed;
+  const prevScore = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (prevScore.current === undefined) { prevScore.current = scoreRun; return; }
+    if (scoreRun && scoreRun !== prevScore.current) { setPreferScore(true); if (collapsed) setCollapsed(false); }
+    prevScore.current = scoreRun;
+  }, [scoreRun]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
   useEffect(() => {
@@ -52,8 +63,8 @@ export function App() {
   const full = route.view === 'stage';
 
   return (
-    <div className={cls('app', collapsed && 'side-collapsed')}>
-      <Sidebar route={route} collapsed={collapsed} setCollapsed={setCollapsed} theme={theme} setTheme={setTheme} />
+    <div className={cls('app', collapsed && !showScore && 'side-collapsed', showScore && 'side-score')}>
+      <Sidebar route={route} collapsed={collapsed} setCollapsed={setCollapsed} theme={theme} setTheme={setTheme} showScore={showScore} scoring={scoring} scoreRun={scoreRun} setScoreRun={setScoreRun} onToggleScore={() => { if (showScore) setPreferScore(false); else { setPreferScore(true); setCollapsed(false); } }} />
       <div className="main">
         <header className="toolbar glass-thin">
           <Crumbs route={route} />
@@ -77,7 +88,7 @@ export function App() {
   );
 }
 
-function Sidebar({ route, collapsed, setCollapsed, theme, setTheme }: { route: Route; collapsed: boolean; setCollapsed: (b: boolean) => void; theme: string; setTheme: (t: 'dark' | 'light') => void }) {
+function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, showScore, scoring, scoreRun, setScoreRun, onToggleScore }: { route: Route; collapsed: boolean; setCollapsed: (b: boolean) => void; theme: string; setTheme: (t: 'dark' | 'light') => void; showScore: boolean; scoring: boolean; scoreRun: string | null; setScoreRun: (id: string | null) => void; onToggleScore: () => void }) {
   const wb = useWb();
   const box = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState<{ y: number; on: boolean }>({ y: 0, on: false });
@@ -97,11 +108,15 @@ function Sidebar({ route, collapsed, setCollapsed, theme, setTheme }: { route: R
   const gh = wb.session.github;
   return (
     <nav className="side glass-thin" aria-label="主导航">
-      <a className="side-brand" href={href('overview')} style={{ textDecoration: 'none', color: 'inherit' }}>
-        <span className="logo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l5-6 4 4 7-9" /><circle cx="20" cy="6" r="1.2" fill="#fff" /></svg></span>
-        <span className="side-brand-t"><b>Model Compare</b><span>{wb.spec ? `${wb.spec.cfg.name} ${wb.spec.cfg.version}` : 'Bench Workbench'}</span></span>
-      </a>
-      <div className="side-scroll" ref={box}>
+      <div className="side-top">
+        <a className="side-brand" href={href('overview')} style={{ textDecoration: 'none', color: 'inherit' }}>
+          <span className="logo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l5-6 4 4 7-9" /><circle cx="20" cy="6" r="1.2" fill="#fff" /></svg></span>
+          <span className="side-brand-t"><b>Model Compare</b><span>{wb.spec ? `${wb.spec.cfg.name} ${wb.spec.cfg.version}` : 'Bench Workbench'}</span></span>
+        </a>
+        {scoring && <button type="button" className={cls('side-mode', showScore && 'on')} aria-pressed={showScore} aria-label={showScore ? '切回左侧导航' : '显示当前评分题'} onClick={onToggleScore}>{showScore ? '导航' : '本题'}</button>}
+      </div>
+      <div className={cls('side-scroll', showScore && 'side-score-scroll')} ref={box}>
+        {showScore && scoreRun ? <ScoreSheet dock runId={scoreRun} onClose={() => setScoreRun(null)} /> : <>
         <span className="side-thumb lens" style={{ transform: `translateY(${thumb.y}px)`, opacity: thumb.on ? 1 : 0 }} aria-hidden />
         {NAV_GROUPS.map((g) => (
           <div key={g.id} className="side-group">
@@ -123,6 +138,7 @@ function Sidebar({ route, collapsed, setCollapsed, theme, setTheme }: { route: R
           <div className="side-gl"><span>系统</span></div>
           {(() => { const a = <a href={href('settings')} className={cls('side-i', route.view === 'settings' && 'on')}><SETTINGS_NAV.icon size={17} aria-hidden /><span className="side-l">设置</span>{wb.jobs.some((j) => j.status === 'running') && <span className="side-b live"><Loader2 size={11} className="spin" /></span>}</a>; return collapsed ? <Tip text="设置" place="right-start">{a}</Tip> : a; })()}
         </div>
+        </>}
       </div>
       <div className="side-foot">
         <IconBtn label="GitHub 开源仓库" onClick={() => { const D = desktop(); if (D) void D.openExternal(gh); else window.open(gh, '_blank', 'noopener'); }}><GithubIcon size={16} /></IconBtn>
