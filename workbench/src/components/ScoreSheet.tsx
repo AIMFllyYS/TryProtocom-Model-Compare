@@ -2,7 +2,7 @@
 // 旧的 0–3 只显示成 2/4/6/10，点已经亮着的那一档不写盘。改选其他档才按 human-10 保存。
 // 再点已选项不清空；清除用退格。
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, MessageSquarePlus, PartyPopper, X } from 'lucide-react';
+import { Bot, Check, ChevronLeft, ChevronRight, Loader2, MessageSquarePlus, PartyPopper } from 'lucide-react';
 import type { ManualScore, RunScore, SpecItem, StoreRun } from '../../shared/types';
 import { get, post } from '../api';
 import { useWb } from '../state';
@@ -20,7 +20,7 @@ function levelsOf(spec?: SpecItem): string[] {
   return spec?.levels && spec.levels.length === 10 ? spec.levels : [];
 }
 
-export function ScoreSheet({ runId, onClose, dock = false }: { runId: string; onClose: () => void; dock?: boolean }) {
+export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: () => void; dock?: boolean }) {
   const wb = useWb();
   const nm = useNamer();
   const run: StoreRun | undefined = wb.store?.runs.find((r) => r.run_id === runId);
@@ -38,7 +38,6 @@ export function ScoreSheet({ runId, onClose, dock = false }: { runId: string; on
   }, [local, run?.manual]);
 
   const [idx, setIdx] = useState(() => Math.max(0, human.findIndex((i) => i.status === 'pending')));
-  const [min, setMin] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [inflight, setInflight] = useState(0);
   const [flash, setFlash] = useState<string | null>(null);
@@ -115,7 +114,7 @@ export function ScoreSheet({ runId, onClose, dock = false }: { runId: string; on
   keyRef.current = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) { if (e.key === 'Escape') t.blur(); return; }
-    if (e.ctrlKey || e.metaKey || e.altKey || min || !it) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || !it) return;
     if (e.key === '0') { e.preventDefault(); choose(10); }
     else if (/^[1-9]$/.test(e.key)) { e.preventDefault(); choose(Number(e.key)); }
     else if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); go(1); }
@@ -136,99 +135,86 @@ export function ScoreSheet({ runId, onClose, dock = false }: { runId: string; on
   const axisText = levels[axisValue - 1] || '';
 
   return (
-    <aside className={cls('score-sheet', dock && 'score-dock', !dock && 'glass-thick', min && 'min')} aria-label="评分面板">
+    <aside className={cls('score-sheet', dock && 'score-dock', !dock && 'glass-thick')} aria-label="评分面板">
       <header className="ss-h">
         <div className="grow">
-          <div className="row gap-s"><b>{task?.id}{run.variant || ''} · {nm.blind ? run.alias || '匿名' : run.model}</b>{run.score && <Score v={run.score.total} />}</div>
-          <div className="muted xs row gap-xs">
-            人工项 {scoredCount}/{human.length}{agentPending ? ` · Agent 待评 ${agentPending}` : ''}
-            {inflight > 0 ? <span className="ss-saving"><Loader2 size={11} className="spin" />保存中</span> : run.score && !run.score.complete ? ' · 评分未完成' : ''}
-          </div>
+          <div className="ss-ht"><b>{task?.id}{run.variant || ''}</b><span className="ss-model">{nm.blind ? run.alias || '匿名' : run.model}</span>{run.score && <Score v={run.score.total} />}</div>
+          <div className="muted xs">人工 {scoredCount}/{human.length}{inflight > 0 ? <span className="ss-saving"><Loader2 size={11} className="spin" /></span> : run.score && !run.score.complete ? ' · 未完成' : ''}</div>
         </div>
-        <IconBtn label={min ? '展开' : '收起'} size="xs" onClick={() => setMin(!min)}>{min ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</IconBtn>
-        <IconBtn label="关闭评分面板" size="xs" onClick={onClose}><X size={14} /></IconBtn>
+        <IconBtn label={noteOpen ? '收起备注' : '添加备注'} size="xs" active={noteOpen} onClick={() => { setNoteOpen((o) => !o); if (!noteOpen) requestAnimationFrame(() => noteRef.current?.focus()); }}><MessageSquarePlus size={14} /></IconBtn>
       </header>
-      {!min && (
-        <>
-          <div className="ss-prog"><i style={{ transform: `scaleX(${human.length ? scoredCount / human.length : 1})` }} /></div>
-          {!human.length ? <p className="muted small pad">这道题没有人工项。</p> : it && cur && (
-            <div className="ss-b">
-              <div className="ss-nav">
-                <IconBtn label="上一项 (K)" size="xs" onClick={() => go(-1)} disabled={idx === 0}><ChevronLeft size={14} /></IconBtn>
-                <Pills items={human} idx={idx} scores={human.map((h) => { const a = answer(h.id); return displayLevel(a.score, a.scale); })} onPick={(i) => { clearTimeout(advanceTimer.current); setFlash(null); setAxisDraft(null); setIdx(i); }} />
-                <IconBtn label="下一项 (J)" size="xs" onClick={() => go(1)} disabled={idx === human.length - 1}><ChevronRight size={14} /></IconBtn>
-              </div>
+      <div className="ss-prog"><i style={{ transform: `scaleX(${human.length ? scoredCount / human.length : 1})` }} /></div>
+      {!human.length ? <p className="muted small pad">这道题没有人工项。</p> : it && cur && (
+        <div className="ss-b">
+          <div className="ss-nav">
+            <IconBtn label="上一项 (K)" size="xs" onClick={() => go(-1)} disabled={idx === 0}><ChevronLeft size={14} /></IconBtn>
+            <Pills items={human} idx={idx} scores={human.map((h) => { const a = answer(h.id); return displayLevel(a.score, a.scale); })} onPick={(i) => { clearTimeout(advanceTimer.current); setFlash(null); setAxisDraft(null); setIdx(i); }} />
+            <IconBtn label="下一项 (J)" size="xs" onClick={() => go(1)} disabled={idx === human.length - 1}><ChevronRight size={14} /></IconBtn>
+          </div>
 
-              <div className="ss-q">
-                <div className="row gap-s wrap">
-                  <span className="ss-qn">第 {idx + 1} 题</span><span className="mono xs muted">{it.id}</span><DimChip id={it.dim} />
-                  {shown != null ? <Badge tone="ok">已选 {shown}</Badge> : <Badge tone="warn">待评</Badge>}
-                  {spec?.judge === 'pairwise' && <Badge tone="muted">也可两两比较</Badge>}
-                </div>
-                <p className="ss-desc">{it.desc}</p>
-                {spec?.evidence && <p className="ss-evi">看什么：{spec.evidence}</p>}
-                {cur.score != null && cur.scale !== 'human-10' && shown != null && <p className="ss-legacy">以前的四档，现在亮在 {shown}。点别的档才按 1–10 重记。</p>}
-              </div>
-
+          <div className="ss-q">
+            <div className="ss-meta">
+              <span className="ss-qn">第 {idx + 1} 题</span>
+              <span className="mono xs muted">{it.id}</span>
+              <DimChip id={it.dim} />
               <div className="ss-mode" role="group" aria-label="作答方式">
-                <button type="button" className={cls(mode === 'choice' && 'on')} onClick={() => setMode('choice')}>选择题</button>
+                <button type="button" className={cls(mode === 'choice' && 'on')} onClick={() => setMode('choice')}>选择</button>
                 <button type="button" className={cls(mode === 'axis' && 'on')} onClick={() => setMode('axis')}>竖轴</button>
               </div>
+              {spec?.judge === 'pairwise' && <span className="ss-pair">两两比较</span>}
+              {shown != null ? <Badge tone="ok">已选 {shown}</Badge> : <Badge tone="warn">待评</Badge>}
+            </div>
+            <p className="ss-desc">{it.desc}{spec?.evidence ? <span className="ss-evi"> · {spec.evidence}</span> : null}</p>
+            {cur.score != null && cur.scale !== 'human-10' && shown != null && <p className="ss-legacy">旧档亮在 {shown}，改选别的档才按 1–10 重记</p>}
+            {noteOpen && (
+              <div className="ss-note">
+                <textarea ref={noteRef} rows={2} className="input sm" placeholder={cur.score == null ? '备注，选分时一起保存' : '备注，Enter 保存'}
+                  value={cur.note} onChange={(e) => setNote(e.target.value)} onBlur={commitNote}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); } }} />
+              </div>
+            )}
+          </div>
 
-              {levels.length !== 10 ? <p className="muted small">这道题还没有 10 档分辨文案。</p> : mode === 'choice' ? (
-                <div className="ss-opts" role="radiogroup" aria-label={`${it.id} 选择 1 到 10 分`}>
-                  {levels.map((a, i) => {
-                    const level = i + 1;
-                    const on = shown === level;
-                    const band = levelBand(level);
-                    return (
-                      <button key={level} type="button" role="radio" aria-checked={on} className={cls('ss-opt', `s${band}`, on && 'on', on && flash === `${it.id}:${level}` && 'pop')}
-                        onClick={() => choose(level, { advance: false })} title={on ? `已选 ${level} 分` : `选 ${level} 分`}>
-                        <span className="ss-radio" aria-hidden>{on && <Check size={12} strokeWidth={3} />}</span>
-                        <span className="ss-opt-t">{a}</span>
-                        <span className="ss-opt-k">{LEVEL_LETTERS[i]}<i>{level}</i></span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="ss-axis">
-                  <input className="ss-range" type="range" min={1} max={10} step={1} value={axisValue} aria-valuemin={1} aria-valuemax={10} aria-valuenow={axisValue} aria-valuetext={axisText}
-                    onChange={(e) => setAxisDraft(Number(e.target.value))}
-                    onPointerUp={(e) => { const n = Number((e.target as HTMLInputElement).value); setAxisDraft(null); choose(n, { advance: false }); }}
-                    onKeyUp={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.stopPropagation(); const n = Number((e.target as HTMLInputElement).value); setAxisDraft(null); choose(n, { advance: false }); } }}
-                    onBlur={(e) => { if (axisDraft != null) { const n = Number(e.target.value); setAxisDraft(null); choose(n, { advance: false }); } }} />
-                  <div className="ss-axis-read">
-                    <b>{shown == null && axisDraft == null ? '—' : axisValue}</b>
-                    <span className="muted xs">{LEVEL_LETTERS[axisValue - 1]} · {axisValue} 分</span>
-                    <p>{axisText}</p>
-                  </div>
-                </div>
-              )}
-
-              {noteOpen ? (
-                <div className="ss-note">
-                  <textarea ref={noteRef} rows={2} className="input sm" placeholder={cur.score == null ? '备注（先写也行，选分时一起保存）' : '备注（Enter 保存，Shift+Enter 换行）'}
-                    value={cur.note} onChange={(e) => setNote(e.target.value)} onBlur={commitNote}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); } }} />
-                  {cur.score == null && cur.note.trim() && <span className="muted xs">草稿 · 选分时一起保存</span>}
-                </div>
-              ) : (
-                <button type="button" className="ss-note-add" onClick={() => { setNoteOpen(true); requestAnimationFrame(() => noteRef.current?.focus()); }}>
-                  <MessageSquarePlus size={13} />添加备注（可选）<Kbd>N</Kbd>
-                </button>
-              )}
-
-              {allDone && (
-                <div className="ss-done"><PartyPopper size={15} /><span className="grow small">人工项全部评完{inflight ? '，正在保存…' : ''}</span></div>
-              )}
-              <div className="ss-keys muted xs"><Kbd>1</Kbd>–<Kbd>9</Kbd> 打分 · <Kbd>0</Kbd> 是 10 分 · <Kbd>J</Kbd>/<Kbd>K</Kbd> 切题 · <Kbd>⌫</Kbd> 清除</div>
+          {levels.length !== 10 ? <p className="muted small">这道题还没有 10 档分辨文案。</p> : mode === 'choice' ? (
+            <div className="ss-opts" role="radiogroup" aria-label={`${it.id} 选择 1 到 10 分`}>
+              {levels.map((a, i) => {
+                const level = i + 1;
+                const on = shown === level;
+                const band = levelBand(level);
+                return (
+                  <button key={level} type="button" role="radio" aria-checked={on} className={cls('ss-opt', `s${band}`, on && 'on', on && flash === `${it.id}:${level}` && 'pop')}
+                    onClick={() => choose(level, { advance: false })} title={on ? `已选 ${level} 分` : `选 ${level} 分`}>
+                    <span className="ss-radio" aria-hidden>{on && <Check size={12} strokeWidth={3} />}</span>
+                    <span className="ss-opt-t">{a}</span>
+                    <span className="ss-opt-k"><b>{level}</b><i>{LEVEL_LETTERS[i]}</i></span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="ss-axis">
+              <input className="ss-range" type="range" min={1} max={10} step={1} value={axisValue} aria-valuemin={1} aria-valuemax={10} aria-valuenow={axisValue} aria-valuetext={axisText}
+                onChange={(e) => setAxisDraft(Number(e.target.value))}
+                onPointerUp={(e) => { const n = Number((e.target as HTMLInputElement).value); setAxisDraft(null); choose(n, { advance: false }); }}
+                onKeyUp={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.stopPropagation(); const n = Number((e.target as HTMLInputElement).value); setAxisDraft(null); choose(n, { advance: false }); } }}
+                onBlur={(e) => { if (axisDraft != null) { const n = Number(e.target.value); setAxisDraft(null); choose(n, { advance: false }); } }} />
+              <div className="ss-axis-read">
+                <b>{shown == null && axisDraft == null ? '—' : axisValue}</b>
+                <span className="muted xs">{LEVEL_LETTERS[axisValue - 1]} · {axisValue} 分</span>
+                <p>{axisText}</p>
+              </div>
             </div>
           )}
-          {agentPending > 0 && (
-            <div className="ss-agent"><Bot size={15} /><span className="grow small">{agentPending} 个 Agent 审查项仍是 0–3</span><Btn size="xs" tone="tinted" onClick={() => void aiPrompt()}>复制 AI 评审提示词</Btn></div>
-          )}
-        </>
+          {allDone && <div className="ss-done"><PartyPopper size={14} /><span className="small">人工项已评完{inflight ? '，正在保存…' : ''}</span></div>}
+        </div>
+      )}
+      <div className="ss-keys">
+        <span><Kbd>1</Kbd>–<Kbd>9</Kbd> 打分</span>
+        <span><Kbd>0</Kbd> 即 10</span>
+        <span><Kbd>J</Kbd><Kbd>K</Kbd> 切题</span>
+      </div>
+      {agentPending > 0 && (
+        <div className="ss-agent"><Bot size={14} /><span className="grow small">{agentPending} 个 Agent 项仍是 0–3</span><Btn size="xs" tone="tinted" onClick={() => void aiPrompt()}>复制提示词</Btn></div>
       )}
     </aside>
   );

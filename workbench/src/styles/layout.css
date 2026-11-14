@@ -9,8 +9,10 @@
 .side { display: flex; flex-direction: column; min-height: 0; border-radius: var(--r-2xl); padding: 12px 10px 10px; }
 .side-top { display: flex; align-items: flex-start; gap: 4px; }
 .side-top .side-brand { flex: 1; min-width: 0; }
-.side-mode { flex: none; margin-top: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 650; color: var(--text-2); background: var(--fill-2); }
-.side-mode.on, .side-mode:hover { color: var(--text); background: var(--fill-3, var(--fill-2)); }
+.side-mode { flex: none; align-self: center; height: 26px; padding: 0 8px; border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-size: 11px; font-weight: 680; letter-spacing: .02em; color: var(--text-2); background: transparent; box-shadow: inset 0 0 0 1px var(--hair); }
+.side-mode:hover { color: var(--text); background: var(--fill-1); }
+.side-mode.on { color: var(--text); background: var(--fill-2); }
+.app.side-score .side-brand { padding-bottom: 8px; }
 .app.side-score { --side-w: 372px; }
 .side-score-scroll { display: flex; flex-direction: column; }
 .side-brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 14px; min-width: 0; }

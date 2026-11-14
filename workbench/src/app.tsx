@@ -31,7 +31,7 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const [collapsed, setCollapsed] = useLocal('nav.collapsed', false);
   const [theme, setTheme] = useLocal<'dark' | 'light'>('theme', (document.documentElement.dataset.theme as 'dark' | 'light') || 'light');
-  const [scoreRun, setScoreRun] = useLocal<string | null>('stage.score', null);
+  const [scoreRun] = useLocal<string | null>('stage.score', null);
   const [preferScore, setPreferScore] = useLocal('stage.sideScore', true);
   const scoring = route.view === 'stage' && !!scoreRun;
   const showScore = scoring && preferScore && !collapsed;
@@ -64,7 +64,7 @@ export function App() {
 
   return (
     <div className={cls('app', collapsed && !showScore && 'side-collapsed', showScore && 'side-score')}>
-      <Sidebar route={route} collapsed={collapsed} setCollapsed={setCollapsed} theme={theme} setTheme={setTheme} showScore={showScore} scoring={scoring} scoreRun={scoreRun} setScoreRun={setScoreRun} onToggleScore={() => { if (showScore) setPreferScore(false); else { setPreferScore(true); setCollapsed(false); } }} />
+      <Sidebar route={route} collapsed={collapsed} setCollapsed={setCollapsed} theme={theme} setTheme={setTheme} showScore={showScore} scoring={scoring} scoreRun={scoreRun} onToggleScore={() => { if (showScore) setPreferScore(false); else { setPreferScore(true); setCollapsed(false); } }} />
       <div className="main">
         <header className="toolbar glass-thin">
           <Crumbs route={route} />
@@ -88,7 +88,7 @@ export function App() {
   );
 }
 
-function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, showScore, scoring, scoreRun, setScoreRun, onToggleScore }: { route: Route; collapsed: boolean; setCollapsed: (b: boolean) => void; theme: string; setTheme: (t: 'dark' | 'light') => void; showScore: boolean; scoring: boolean; scoreRun: string | null; setScoreRun: (id: string | null) => void; onToggleScore: () => void }) {
+function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, showScore, scoring, scoreRun, onToggleScore }: { route: Route; collapsed: boolean; setCollapsed: (b: boolean) => void; theme: string; setTheme: (t: 'dark' | 'light') => void; showScore: boolean; scoring: boolean; scoreRun: string | null; onToggleScore: () => void }) {
   const wb = useWb();
   const box = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState<{ y: number; on: boolean }>({ y: 0, on: false });
@@ -116,7 +116,7 @@ function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, showScore, s
         {scoring && <button type="button" className={cls('side-mode', showScore && 'on')} aria-pressed={showScore} aria-label={showScore ? '切回左侧导航' : '显示当前评分题'} onClick={onToggleScore}>{showScore ? '导航' : '本题'}</button>}
       </div>
       <div className={cls('side-scroll', showScore && 'side-score-scroll')} ref={box}>
-        {showScore && scoreRun ? <ScoreSheet dock runId={scoreRun} onClose={() => setScoreRun(null)} /> : <>
+        {showScore && scoreRun ? <ScoreSheet dock runId={scoreRun} /> : <>
         <span className="side-thumb lens" style={{ transform: `translateY(${thumb.y}px)`, opacity: thumb.on ? 1 : 0 }} aria-hidden />
         {NAV_GROUPS.map((g) => (
           <div key={g.id} className="side-group">

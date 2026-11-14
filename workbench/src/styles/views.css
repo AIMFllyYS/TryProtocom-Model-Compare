@@ -384,11 +384,14 @@
 .score-sheet { position: absolute; right: 14px; top: 64px; z-index: 30; width: 368px; max-height: calc(100% - 80px); display: flex; flex-direction: column; border-radius: var(--r-2xl); overflow: hidden; animation: drawer-in var(--t-slow) var(--ease) both; contain: layout paint; }
 .score-sheet.glass-thick { background: color-mix(in oklab, var(--g-solid) 94%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
 .score-sheet.min { max-height: none; }
-.ss-h { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px 16px; }
+.ss-h { display: flex; align-items: center; gap: 8px; padding: 8px 8px 6px 12px; }
+.ss-ht { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.ss-ht b { font-size: 13px; }
+.ss-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-3); }
 .ss-saving { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; color: var(--text-3); }
 .ss-prog { height: 3px; margin: 0 16px; border-radius: 2px; background: var(--fill-2); overflow: hidden; }
 .ss-prog i { display: block; width: 100%; height: 100%; background: var(--ok); transform-origin: left center; transition: transform var(--t-slow) var(--ease); }
-.ss-b { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 14px; overflow: auto; overscroll-behavior: contain; }
+.ss-b { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 8px; overflow: auto; overscroll-behavior: contain; }
 .ss-nav { display: flex; align-items: center; gap: 6px; }
 .ss-pills { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
 .ss-pill { min-width: 22px; width: auto; height: 22px; padding: 0 4px; border: 0; border-radius: 7px; cursor: pointer; font-size: 11px; font-weight: 700; background: var(--fill-2); color: var(--text-3); transition: box-shadow var(--t-fast), background var(--t-fast); }
@@ -399,27 +402,31 @@
 .ss-pill.on { box-shadow: 0 0 0 2px var(--text); }
 .score-sheet.score-dock { position: static; right: auto; top: auto; width: auto; max-height: none; flex: 1; min-height: 0; border-radius: 16px; animation: none; z-index: 1; background: transparent; box-shadow: none; }
 .score-sheet.score-dock .ss-b { min-height: 0; }
-.ss-q { display: flex; flex-direction: column; gap: 6px; min-height: 108px; }
-.ss-legacy { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-3); }
-.ss-mode { display: flex; gap: 6px; }
-.ss-mode button { height: 28px; padding: 0 10px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 650; color: var(--text-3); background: var(--fill-1); }
-.ss-mode button.on { color: var(--text); background: var(--fill-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.ss-q { display: flex; flex-direction: column; gap: 4px; }
+.ss-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ss-pair { font-size: 11px; font-weight: 650; color: var(--text-3); padding: 1px 6px; border-radius: 999px; background: var(--fill-2); }
+.ss-legacy { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--text-3); }
+.ss-mode { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--fill-2); gap: 1px; }
+.ss-mode button { height: 22px; padding: 0 8px; border: 0; border-radius: 6px; cursor: pointer; font: inherit; font-size: 11px; font-weight: 680; color: var(--text-3); background: transparent; }
+.ss-mode button.on { color: var(--text); background: var(--g-solid, #fff); box-shadow: inset 0 0 0 1px var(--hair); }
 .ss-axis { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; min-height: 240px; }
 .ss-range { writing-mode: vertical-lr; direction: rtl; appearance: slider-vertical; width: 28px; height: 100%; margin: 0; accent-color: var(--accent); }
 .ss-axis-read { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
 .ss-axis-read b { font-family: var(--font-display); font-size: 28px; line-height: 1; }
 .ss-axis-read p { margin: 0; font-size: 14px; line-height: 1.5; }
-.ss-opt-k i { display: block; font-style: normal; font-size: 9px; font-weight: 650; opacity: .7; }
+.ss-opt-k { display: inline-flex; align-items: baseline; gap: 3px; min-width: 28px; height: auto; padding: 0; background: transparent; }
+.ss-opt-k b { font-size: 12px; font-weight: 720; }
+.ss-opt-k i { font-style: normal; font-size: 10px; font-weight: 650; opacity: .55; }
 .ss-qn { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--text-2); }
-.ss-desc { font-size: 15px; font-weight: 620; line-height: 1.45; color: var(--text); }
-.ss-evi { font-size: 12px; color: var(--text-3); line-height: 1.5; }
+.ss-desc { margin: 0; font-size: 14px; font-weight: 620; line-height: 1.4; color: var(--text); }
+.ss-evi { font-weight: 480; font-size: 12px; color: var(--text-3); }
 
 /* 选项：左侧单选圆点 + 锚点描述 + 右侧键位。按分数着色（0 红 / 1 橙 / 2 紫 / 3 绿），不用实心蓝 */
-.ss-opts { display: flex; flex-direction: column; gap: 6px; }
+.ss-opts { display: flex; flex-direction: column; gap: 4px; }
 .ss-opt {
   --c: var(--text-2); --c-soft: var(--fill-2);
   position: relative; display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px;
-  min-height: 42px; padding: 9px 10px 9px 12px; border: 0; border-radius: var(--r-m); cursor: pointer; text-align: left;
+  min-height: 34px; padding: 5px 8px 5px 10px; border: 0; border-radius: var(--r-m); cursor: pointer; text-align: left;
   font: inherit; font-size: 13px; line-height: 1.4; color: var(--text); background: var(--fill-1);
   box-shadow: inset 0 0 0 1px var(--hair); transition: background var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast) var(--ease-out);
 }
@@ -432,7 +439,7 @@
 .ss-opt:focus-visible { outline: 0; box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 3px color-mix(in oklab, var(--c) 25%, transparent); }
 .ss-radio { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: #fff; box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--c) 55%, var(--hair)); transition: background var(--t-fast), box-shadow var(--t-fast); }
 .ss-opt-t { color: var(--text-2); }
-.ss-opt-k { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; display: grid; place-items: center; font-family: var(--font-display); font-size: 12px; font-weight: 700; color: var(--text-3); background: var(--fill-2); }
+.ss-opt-k { min-width: 28px; color: var(--text-3); font-family: var(--font-display); background: transparent; }
 .ss-opt.on { background: var(--c-soft); box-shadow: inset 0 0 0 1.5px var(--c); }
 .ss-opt.on .ss-radio { background: var(--c); box-shadow: none; }
 .ss-opt.on .ss-opt-t { color: var(--text); font-weight: 560; }
@@ -445,8 +452,9 @@
 .ss-note-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 0; border-radius: var(--r-s, 8px); background: transparent; color: var(--text-3); font: inherit; font-size: 12px; cursor: pointer; }
 .ss-note-add:hover { background: var(--fill-1); color: var(--text-2); }
 .ss-done { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: var(--r-m); color: var(--ok); background: var(--ok-soft); }
-.ss-keys { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.ss-agent { display: flex; align-items: center; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--hair); color: var(--text-2); }
+.ss-keys { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 12px 8px; border-top: 1px solid var(--hair); color: var(--text-3); font-size: 11px; }
+.ss-keys span { display: inline-flex; align-items: center; gap: 3px; }
+.ss-agent { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px 8px; border-top: 1px solid var(--hair); color: var(--text-2); }
 @media (prefers-reduced-motion: reduce) { .ss-opt.pop .ss-radio { animation: none; } .ss-opt:active { transform: none; } }
 
 
