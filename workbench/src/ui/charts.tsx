@@ -2,6 +2,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { Copy, Download, FileImage, MoreHorizontal } from 'lucide-react';
 import { exportChart } from '../lib/exporter';
+import type { ModelImageLabel } from '../lib/modelImageLabel';
 import { Card, IconBtn, Menu } from './kit';
 import { toast } from './toast';
 
@@ -10,7 +11,7 @@ export const SERIES = ['#7c6cff', '#ff7a59', '#1fb89a', '#f2b233', '#3f9cff', '#
 export const seriesColor = (i: number) => SERIES[i % SERIES.length];
 
 // ------------------------------------------------------------ 卡片 + 导出
-export function ChartCard({ title, sub, children, extra, className, exportName, flat }: { title: ReactNode; sub?: ReactNode; children: ReactNode; extra?: ReactNode; className?: string; exportName?: string; flat?: boolean }) {
+export function ChartCard({ title, sub, children, extra, className, exportName, flat, exportModels }: { title: ReactNode; sub?: ReactNode; children: ReactNode; extra?: ReactNode; className?: string; exportName?: string; flat?: boolean; exportModels?: ModelImageLabel[] }) {
   const box = useRef<HTMLDivElement>(null);
   const name = exportName || (typeof title === 'string' ? title : '图表');
   const subText = typeof sub === 'string' ? sub : undefined;
@@ -27,7 +28,7 @@ export function ChartCard({ title, sub, children, extra, className, exportName, 
         { label: 'SVG（矢量）', icon: <Download size={15} />, onClick: () => void run('svg') },
         { label: '复制图片', icon: <Copy size={15} />, onClick: () => void run('copy') },
       ]} trigger={(p) => <IconBtn {...p} label="导出图表" size="sm"><MoreHorizontal size={16} /></IconBtn>} /></>}>
-      <div ref={box} data-chart={name} data-sub={subText} className="chart-box">{children}</div>
+      <div ref={box} data-chart={name} data-sub={subText} data-export-models={exportModels?.length ? JSON.stringify(exportModels) : undefined} className="chart-box">{children}</div>
     </Card>
   );
 }

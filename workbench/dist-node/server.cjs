@@ -38,6 +38,52 @@ var import_node_http2 = __toESM(require("node:http"), 1);
 var import_node_path9 = __toESM(require("node:path"), 1);
 var import_node_child_process5 = require("node:child_process");
 
+// shared/itemAnalysis.ts
+var itemMean = (xs) => xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : 0;
+var itemStd = (xs) => {
+  const mu = itemMean(xs);
+  return Math.sqrt(itemMean(xs.map((x) => (x - mu) ** 2)));
+};
+var roundItem = (x) => Math.round(x * 1e3) / 1e3;
+function analyzeItems(runs) {
+  const perItem = /* @__PURE__ */ new Map();
+  const itemMeta = /* @__PURE__ */ new Map();
+  for (const r of runs) for (const it of r.score?.items ?? []) {
+    if ((it.status === "scored" || it.status === "missing") && it.s != null) {
+      const key = `${r.tkey}\0${it.id}`;
+      if (!perItem.has(key)) perItem.set(key, /* @__PURE__ */ new Map());
+      const m = perItem.get(key);
+      if (!m.has(r.entrant)) m.set(r.entrant, []);
+      m.get(r.entrant).push(it.s);
+      itemMeta.set(key, { dim: it.dim, tier: it.tier, method: it.method, desc: it.desc, tk: r.tkey, id: it.id });
+    }
+  }
+  const items = [];
+  for (const key of [...perItem.keys()].sort()) {
+    const byE = perItem.get(key);
+    const allv = [...byE.values()].flat();
+    const means = [...byE.values()].map(itemMean);
+    const mu = itemMean(allv);
+    const within = itemMean([...byE.values()].map(itemStd));
+    const m = itemMeta.get(key);
+    items.push({
+      task: m.tk,
+      item_id: m.id,
+      dim: m.dim,
+      tier: m.tier,
+      method: m.method,
+      desc: m.desc,
+      mean: roundItem(mu),
+      between_sd: roundItem(itemStd(means)),
+      within_sd: roundItem(within),
+      n: allv.length,
+      flag: mu >= 0.95 ? "\u5929\u82B1\u677F" : mu <= 0.05 ? "\u5730\u677F" : means.length > 1 && itemStd(means) < 0.05 ? "\u533A\u5206\u5EA6\u4F4E" : "",
+      by_entrant: Object.fromEntries([...byE.entries()].map(([en, vs]) => [en, roundItem(itemMean(vs))]))
+    });
+  }
+  return items;
+}
+
 // shared/v2.ts
 var suiteOf = (t) => t.suite || "v1";
 function suiteOfRun(r, tasks) {
@@ -617,41 +663,7 @@ function aggregate(allRuns, spec, opts = {}) {
     rank += j - i;
     i = j;
   }
-  const perItem = /* @__PURE__ */ new Map();
-  const itemMeta = /* @__PURE__ */ new Map();
-  for (const r of runs) for (const it of r.score.items) {
-    if ((it.status === "scored" || it.status === "missing") && it.s != null) {
-      const key = `${r.tkey}\0${it.id}`;
-      if (!perItem.has(key)) perItem.set(key, /* @__PURE__ */ new Map());
-      const m = perItem.get(key);
-      if (!m.has(r.entrant)) m.set(r.entrant, []);
-      m.get(r.entrant).push(it.s);
-      itemMeta.set(key, { dim: it.dim, tier: it.tier, method: it.method, desc: it.desc, tk: r.tkey, id: it.id });
-    }
-  }
-  const items = [];
-  for (const key of [...perItem.keys()].sort()) {
-    const byE = perItem.get(key);
-    const allv = [...byE.values()].flat();
-    const means = [...byE.values()].map((vs) => vs.reduce((a, b) => a + b, 0) / vs.length);
-    const mu = allv.reduce((a, b) => a + b, 0) / allv.length;
-    const within = mean([...byE.values()].map(psd2)) ?? 0;
-    const m = itemMeta.get(key);
-    items.push({
-      task: m.tk,
-      item_id: m.id,
-      dim: m.dim,
-      tier: m.tier,
-      method: m.method,
-      desc: m.desc,
-      mean: r2(mu, 3),
-      between_sd: r2(psd2(means), 3),
-      within_sd: r2(within, 3),
-      n: allv.length,
-      flag: mu >= 0.95 ? "\u5929\u82B1\u677F" : mu <= 0.05 ? "\u5730\u677F" : means.length > 1 && psd2(means) < 0.05 ? "\u533A\u5206\u5EA6\u4F4E" : "",
-      by_entrant: Object.fromEntries([...byE.entries()].map(([en, vs]) => [en, r2(vs.reduce((a, b) => a + b, 0) / vs.length, 3)]))
-    });
-  }
+  const items = analyzeItems(runs);
   const uplift = [];
   for (const t of spec.tasks.filter((t2) => Object.keys(t2.variants || {}).length && suiteOf(t2) === suite)) {
     for (const e of entrants) {

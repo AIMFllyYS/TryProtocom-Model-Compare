@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Database, FileArchive, FileStack, FileText, FolderOpen, Images, Upload } from 'lucide-react';
 import { get, post, rawUrl } from '../api';
 import { useWb } from '../state';
-import { cls, fmt, splitEntrant } from '../lib/format';
+import { cls, fmt } from '../lib/format';
+import { modelImageLabel } from '../lib/modelImageLabel';
 import { exportAllCharts } from '../lib/exporter';
 import { Badge, Btn, Card, Empty, Field } from '../ui/kit';
 import { ChartCard, Heatmap, Pareto, Radar, seriesColor } from '../ui/charts';
@@ -28,6 +29,10 @@ export default function Exports() {
   const agg = wb.agg;
   const dims = (wb.spec?.dims || []).filter((d) => d.kind === 'quality');
   const ents = agg?.board || [];
+  const imageModel = (r: (typeof ents)[number], index?: number) => modelImageLabel(r, nm.blind ? nm.entrant(r.entrant) : undefined,
+    index === undefined ? undefined : seriesColor(index));
+  const costRows = ents.filter((b) => b.quality != null && b.suite_exp_cost_usd != null && Number.isFinite(Number(b.suite_exp_cost_usd)));
+
 
   const zip = async () => {
     setBusy('zip');
@@ -91,20 +96,20 @@ export default function Exports() {
         <div className="section-h"><h2>图表画廊</h2><p>打包导出的就是这些图</p></div>
         {!ents.length ? <Card><Empty title="还没有评分数据">评分完成后这里会出现可导出的图表。</Empty></Card> : (
           <div className="grid g-2" ref={gallery}>
-            <ChartCard title="维度雷达 · 全部参赛者">
+            <ChartCard title="维度雷达 · 全部参赛者" exportModels={ents.slice(0, 8).map(imageModel)}>
               <div className="center"><Radar axes={radarAxes(wb.spec?.dims, wb.view)} series={ents.slice(0, 8).map((b, i) => ({ key: b.entrant, label: nm.entrant(b.entrant), color: seriesColor(i), values: b.dims }))} /></div>
             </ChartCard>
-            <ChartCard title="成本 × 质量（帕累托）">
-              <Pareto points={frontier(ents.filter((b) => b.quality != null && b.suite_exp_cost_usd != null).map((b, i) => ({ key: b.entrant, label: nm.entrant(b.entrant), x: b.suite_exp_cost_usd!, y: b.quality!, color: seriesColor(i) })))} />
+            <ChartCard title="成本 × 质量（帕累托）" exportModels={costRows.map(imageModel)}>
+              <Pareto points={frontier(costRows.map((b, i) => ({ key: b.entrant, label: nm.entrant(b.entrant), x: b.suite_exp_cost_usd!, y: b.quality!, color: seriesColor(i) })))} />
             </ChartCard>
-            <ChartCard title="参赛者 × 维度" className="span-all">
+            <ChartCard title="参赛者 × 维度" exportModels={ents.map((b) => imageModel(b))} className="span-all">
               <Heatmap rows={ents.map((b) => ({ id: b.entrant, label: nm.entrant(b.entrant) }))} cols={dims.map((d) => ({ id: d.id, label: d.name, color: `var(--d-${d.id})` }))} value={(r, c) => ents.find((b) => b.entrant === r)?.dims[c] ?? null} rowW={220} cell={76} />
             </ChartCard>
-            <ChartCard title="参赛者 × 题目" className="span-all">
+            <ChartCard title="参赛者 × 题目" exportModels={ents.map((b) => imageModel(b))} className="span-all">
               <Heatmap rows={ents.map((b) => ({ id: b.entrant, label: nm.entrant(b.entrant) }))} cols={(agg?.tkeys || []).map((k) => ({ id: k, label: k }))} rowW={220} cell={64} value={(r, c) => agg?.tasks.find((t) => t.entrant === r && t.task === c)?.mean ?? null} />
             </ChartCard>
             {ents.map((b, i) => (
-              <ChartCard key={b.entrant} title={`${nm.blind ? nm.entrant(b.entrant) : splitEntrant(b.entrant).model} 维度雷达`} sub={`${splitEntrant(b.entrant).harness} · 质量 ${fmt.n(b.quality)} · #${b.rank}`}>
+              <ChartCard key={b.entrant} exportModels={[imageModel(b, i)]} title={`${nm.blind ? nm.entrant(b.entrant) : b.model} 维度雷达`} sub={`质量 ${fmt.n(b.quality)} · #${b.rank}`}>
                 <div className="center"><Radar size={320} axes={radarAxes(wb.spec?.dims, wb.view)} series={[{ key: b.entrant, label: nm.entrant(b.entrant), color: seriesColor(i), values: b.dims }]} /></div>
               </ChartCard>
             ))}

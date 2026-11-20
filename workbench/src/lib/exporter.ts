@@ -1,6 +1,7 @@
 // 图表导出：把页面里的 SVG（样式来自 CSS 变量与类）内联成独立 SVG，再光栅化为 PNG；支持复制到剪贴板与批量打包。
 import { makeZip, type ZipEntry } from './zip';
 import { download } from './format';
+import { escapeSvg as esc, loadModelIcons, modelLabelSvg, type ModelImageLabel } from './modelImageLabel';
 
 const PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity',
   'font-family', 'font-size', 'font-weight', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'paint-order', 'visibility', 'display'] as const;
@@ -18,10 +19,10 @@ function inline(src: Element, dst: Element) {
   for (let i = 0; i < src.children.length; i++) inline(src.children[i], dst.children[i]);
 }
 
-export interface ExportOpts { title?: string; subtitle?: string; bg?: string; scale?: number; pad?: number }
+export interface ExportOpts { title?: string; subtitle?: string; bg?: string; scale?: number; pad?: number; footer?: boolean }
 
 /** 生成独立 SVG 字符串（带标题与背景） */
-export function svgString(svg: SVGSVGElement, o: ExportOpts = {}): { text: string; w: number; h: number } {
+export async function svgString(svg: SVGSVGElement, o: ExportOpts = {}): Promise<{ text: string; w: number; h: number }> {
   const vb = svg.viewBox.baseVal;
   const w0 = vb && vb.width ? vb.width : svg.clientWidth || 600;
   const h0 = vb && vb.height ? vb.height : svg.clientHeight || 400;
@@ -32,28 +33,45 @@ export function svgString(svg: SVGSVGElement, o: ExportOpts = {}): { text: strin
   const text = root.getPropertyValue('--text').trim() || '#111';
   const sub = root.getPropertyValue('--text-3').trim() || '#666';
   const font = root.getPropertyValue('--font').trim();
+  const dim = root.getPropertyValue('--text-2').trim() || '#555';
+  const tile = root.getPropertyValue('--fill-2').trim() || '#eee';
+  const labels: ModelImageLabel[] = JSON.parse(svg.closest<HTMLElement>('[data-export-models]')?.dataset.exportModels || '[]');
   const pad = o.pad ?? 28;
   const head = o.title ? (o.subtitle ? 58 : 38) : 0;
-  const W = w0 + pad * 2, H = h0 + pad * 2 + head;
+  const W = w0 + pad * 2;
+  const cols = Math.max(1, Math.floor(w0 / 188));
+  const legendHeight = labels.length ? 38 * Math.ceil(labels.length / cols) + 9 : 0;
+  const H = h0 + pad * 2 + head + legendHeight;
   clone.setAttribute('x', String(pad));
   clone.setAttribute('y', String(pad + head));
   clone.setAttribute('width', String(w0));
   clone.setAttribute('height', String(h0));
   clone.removeAttribute('style');
-  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  const drawing = new XMLSerializer().serializeToString(clone);
+  let legend = '';
+  if (labels.length) {
+    const icons = await loadModelIcons(labels, text);
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    const width = w0 / cols;
+    const y = pad + head + h0 + 21;
+    legend = `<g font-family="${esc(font)}">` + labels.map((label, i) => modelLabelSvg(label, icons, { font, ink: text, dim, tile },
+      ctx, pad + (i % cols) * width, y + Math.floor(i / cols) * 38, width - 8)).join('') + '</g>';
+  }
   const out = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`
     + `<rect width="100%" height="100%" rx="24" fill="${bg}"/>`
     + (o.title ? `<text x="${pad}" y="${pad + 16}" font-family='${esc(font)}' font-size="18" font-weight="700" fill="${text}">${esc(o.title)}</text>` : '')
     + (o.subtitle ? `<text x="${pad}" y="${pad + 38}" font-family='${esc(font)}' font-size="12.5" fill="${sub}">${esc(o.subtitle)}</text>` : '')
-    + new XMLSerializer().serializeToString(clone)
-    + `<text x="${W - pad}" y="${H - 10}" text-anchor="end" font-family='${esc(font)}' font-size="10.5" fill="${sub}">TryProtocom Model-Compare · Bench Workbench</text>`
+    + drawing + legend
+    + (o.footer === false ? '' : `<text x="${W - pad}" y="${H - 10}" text-anchor="end" font-family='${esc(font)}' font-size="10.5" fill="${sub}">TryProtocom Model-Compare · Bench Workbench</text>`)
     + '</svg>';
   return { text: out, w: W, h: H };
 }
 
 export async function svgToPng(svg: SVGSVGElement, o: ExportOpts = {}): Promise<Blob> {
-  const { text, w, h } = svgString(svg, o);
-  const scale = o.scale ?? 2;
+  return rasterizeSvg(await svgString(svg, o), o.scale ?? 2);
+}
+
+export async function rasterizeSvg({ text, w, h }: Awaited<ReturnType<typeof svgString>>, scale: number): Promise<Blob> {
   const img = new Image();
   const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml;charset=utf-8' }));
   try {
@@ -71,7 +89,7 @@ const safe = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, '-').replace(/-+/g, '-
 
 export async function exportChart(svg: SVGSVGElement, kind: 'png' | 'svg' | 'copy', o: ExportOpts = {}) {
   const name = safe(o.title || 'chart');
-  if (kind === 'svg') { download(name + '.svg', svgString(svg, o).text, 'image/svg+xml'); return; }
+  if (kind === 'svg') { download(name + '.svg', (await svgString(svg, o)).text, 'image/svg+xml'); return; }
   const png = await svgToPng(svg, o);
   if (kind === 'png') { download(name + '.png', png); return; }
   if (!('ClipboardItem' in window)) throw new Error('浏览器不支持复制图片');
@@ -91,8 +109,9 @@ export async function exportAllCharts(root: ParentNode, zipName: string, formats
     while (used.has(base)) base = `${safe(title)}-${i++}`;
     used.add(base);
     const o = { title, subtitle: el.dataset.sub };
-    if (formats.includes('svg')) entries.push({ name: `svg/${base}.svg`, data: svgString(svg, o).text });
-    if (formats.includes('png')) entries.push({ name: `png/${base}.png`, data: new Uint8Array(await (await svgToPng(svg, o)).arrayBuffer()) });
+    const picture = await svgString(svg, o);
+    if (formats.includes('svg')) entries.push({ name: `svg/${base}.svg`, data: picture.text });
+    if (formats.includes('png')) entries.push({ name: `png/${base}.png`, data: new Uint8Array(await (await rasterizeSvg(picture, 2)).arrayBuffer()) });
   }
   if (!entries.length) return 0;
   download(zipName, makeZip(entries));

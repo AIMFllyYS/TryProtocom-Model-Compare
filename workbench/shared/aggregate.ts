@@ -2,7 +2,8 @@
 // 输入只依赖可移植存储文件中的 StoreRun，因此在没有 bench-data 的电脑上也能出榜。
 // 与 Python 版的唯一差异：bootstrap 使用 mulberry32 随机数，置信区间数值会有极小抖动。
 // 例外：成本 / 速度维度改由 efficiency.ts 计算（按题相对值 + 用时核实 + 额度读数），Python 报告仍是旧的期望值口径。
-import type { Aggregate, BoardRow, BoardView, Dimension, FullConfig, ItemAnalysisRow, SpecData, StoreRun, TaskRow } from './types';
+import type { Aggregate, BoardRow, BoardView, Dimension, FullConfig, SpecData, StoreRun, TaskRow } from './types';
+import { analyzeItems } from './itemAnalysis';
 import { applyView, suiteOf, suiteOfRun } from './v2';
 import { entrantEff, resolveRuns, timeFlags, type EffContext } from './efficiency';
 
@@ -170,34 +171,7 @@ export function aggregate(allRuns: StoreRun[], spec: Pick<SpecData, 'dims' | 'co
     rank += j - i; i = j;
   }
 
-  // 题目分析
-  const perItem = new Map<string, Map<string, number[]>>();
-  const itemMeta = new Map<string, { dim: string; tier: string; method: string; desc: string; tk: string; id: string }>();
-  for (const r of runs) for (const it of r.score!.items) {
-    if ((it.status === 'scored' || it.status === 'missing') && it.s != null) {
-      const key = `${r.tkey}\u0000${it.id}`;
-      if (!perItem.has(key)) perItem.set(key, new Map());
-      const m = perItem.get(key)!;
-      if (!m.has(r.entrant)) m.set(r.entrant, []);
-      m.get(r.entrant)!.push(it.s);
-      itemMeta.set(key, { dim: it.dim, tier: it.tier, method: it.method, desc: it.desc, tk: r.tkey, id: it.id });
-    }
-  }
-  const items: ItemAnalysisRow[] = [];
-  for (const key of [...perItem.keys()].sort()) {
-    const byE = perItem.get(key)!;
-    const allv = [...byE.values()].flat();
-    const means = [...byE.values()].map((vs) => vs.reduce((a, b) => a + b, 0) / vs.length);
-    const mu = allv.reduce((a, b) => a + b, 0) / allv.length;
-    const within = mean([...byE.values()].map(psd)) ?? 0;
-    const m = itemMeta.get(key)!;
-    items.push({
-      task: m.tk, item_id: m.id, dim: m.dim, tier: m.tier, method: m.method, desc: m.desc, mean: r2(mu, 3), between_sd: r2(psd(means), 3),
-      within_sd: r2(within, 3), n: allv.length,
-      flag: mu >= 0.95 ? '天花板' : mu <= 0.05 ? '地板' : means.length > 1 && psd(means) < 0.05 ? '区分度低' : '',
-      by_entrant: Object.fromEntries([...byE.entries()].map(([en, vs]) => [en, r2(vs.reduce((a, b) => a + b, 0) / vs.length, 3)])),
-    });
-  }
+  const items = analyzeItems(runs);
 
   // skill 增益
   const uplift: Aggregate['uplift'] = [];

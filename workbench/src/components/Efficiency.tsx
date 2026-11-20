@@ -6,6 +6,7 @@ import { QUOTA_UNITS } from '../../shared/quota';
 import { post } from '../api';
 import { useWb } from '../state';
 import { go } from '../lib/router';
+import { modelImageLabel } from '../lib/modelImageLabel';
 import { cls, fmt } from '../lib/format';
 import { Badge, Btn, Card, CheckBox, Empty, Field, Kv, Select, confirmDialog } from '../ui/kit';
 import { toast } from '../ui/toast';
@@ -69,7 +70,7 @@ export function EffTable({ rows }: { rows: BoardRow[] }) {
           if (!e) return null;
           return (
             <tr key={b.entrant}>
-              <td>{nm.entrant(b.entrant)}</td>
+              <td data-export-model={JSON.stringify(modelImageLabel(b, nm.blind ? nm.entrant(b.entrant) : undefined))}>{nm.entrant(b.entrant)}</td>
               <td className="num"><Score v={b.quality} /></td>
               <td className="num">{fmt.min(e.time.mean)}</td>
               <td className={cls('num', e.time.rel != null && (e.time.rel < 1 ? 'tone-text-ok' : 'tone-text-warn'))}>{relText(e.time.rel, 'time')}</td>

@@ -37,6 +37,7 @@ export function App() {
   const [preferScore, setPreferScore] = useLocal('stage.sideScore', true);
   const [showTree, setShowTree] = useState(false);
   const [treeMount, setTreeMount] = useState<HTMLDivElement | null>(null);
+  const [boardTools, setBoardTools] = useState<HTMLDivElement | null>(null);
   const full = route.view === 'stage';
   const scoreId = full && hasHumanScore(wb.store?.runs.find((r) => r.run_id === scoreRun)) ? scoreRun : null;
   const mode = full && showTree ? 'artifacts' : scoreId && preferScore ? 'score' : 'nav';
@@ -78,6 +79,7 @@ export function App() {
       <div className="main">
         <header className="toolbar glass-thin">
           <Crumbs route={route} />
+          {route.view === 'board' && <div ref={setBoardTools} className="board-toolbar-tools" />}
           <div className="grow" />
           <div className="tb-model"><span className="tb-model-l">测评中</span><ModelPicker value={wb.current} onChange={wb.setCurrent} size="sm" allowAll allLabel="全部模型" /></div>
           <button className="search-btn" onClick={() => setPalette(true)}><Command size={14} aria-hidden /><span>搜索或执行命令</span><kbd>Ctrl K</kbd></button>
@@ -87,7 +89,7 @@ export function App() {
         </header>
         <main className={cls('content', full && 'full')} id="view">
           <Suspense fallback={<div className="center pad-l"><Spinner size={22} /></div>}>
-            {full ? <Stage sidebar={stageSidebar} /> : <ViewSwitch route={route} />}
+            {full ? <Stage sidebar={stageSidebar} /> : <ViewSwitch route={route} boardTools={boardTools} />}
           </Suspense>
         </main>
       </div>
@@ -243,13 +245,13 @@ function DeliveryWatcher() {
   return null;
 }
 
-function ViewSwitch({ route }: { route: Route }) {
+function ViewSwitch({ route, boardTools }: { route: Route; boardTools: HTMLDivElement | null }) {
   switch (route.view) {
     case 'overview': return <Overview />;
     case 'models': return <Models />;
     case 'tasks': return <Tasks />;
     case 'runs': return <Runs />;
-    case 'board': return <Board />;
+    case 'board': return <Board toolbar={boardTools} />;
     case 'compare': return <Compare />;
     case 'exports': return <Exports />;
     case 'docs': return <Docs />;

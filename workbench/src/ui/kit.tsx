@@ -1,7 +1,7 @@
 // 统一组件库（Liquid Glass）：所有页面只用这里的组件，不直接使用浏览器原生 select / title 提示。
 import {
   cloneElement, forwardRef, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
-  type ButtonHTMLAttributes, type CSSProperties, type ReactElement, type ReactNode, type RefObject,
+  type ButtonHTMLAttributes, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode, type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Copy, Loader2, Search, X } from 'lucide-react';
@@ -221,13 +221,13 @@ function useThumb(dep: unknown) {
   return { box, th };
 }
 
-export function Seg<T extends string>({ value, options, onChange, size = 'sm', label, className }: { value: T; options: { value: T; label: ReactNode; title?: string }[]; onChange: (v: T) => void; size?: 'xs' | 'sm' | 'lg'; label?: string; className?: string }) {
+export function Seg<T extends string>({ value, options, onChange, onOptionContextMenu, size = 'sm', label, className }: { value: T; options: { value: T; label: ReactNode; title?: string }[]; onChange: (v: T) => void; onOptionContextMenu?: (value: T, event: MouseEvent<HTMLButtonElement>) => void; size?: 'xs' | 'sm' | 'lg'; label?: string; className?: string }) {
   const { box, th } = useThumb(value + options.length);
   return (
     <div ref={box} className={cls('seg', size !== 'sm' && size, className)} role="radiogroup" aria-label={label}>
       <span className="seg-thumb lens" style={th} aria-hidden />
       {options.map((o) => {
-        const b = <button key={o.value} type="button" role="radio" aria-checked={value === o.value} aria-label={o.title} onClick={() => onChange(o.value)}>{o.label}</button>;
+        const b = <button key={o.value} type="button" role="radio" aria-checked={value === o.value} aria-label={o.title} onClick={() => onChange(o.value)} onContextMenu={onOptionContextMenu && ((event) => onOptionContextMenu(o.value, event))}>{o.label}</button>;
         return o.title ? <Tip key={o.value} text={o.title}>{b}</Tip> : b;
       })}
     </div>
