@@ -15,8 +15,9 @@ import { toast } from '../ui/toast';
 import { Score, useNamer } from '../components/common';
 import { EffTable, radarAxes, TimeReviewList } from '../components/Efficiency';
 import { BoardModelPicker } from '../components/BoardModelPicker';
+import { EFFICIENCY_SECTION, EfficiencyExportTables, USD_TO_CNY } from '../components/EfficiencyExportTables';
 import { boardModelIndex, modelKey, type ModelSelection } from '../lib/boardModels';
-import { picturePanels, saveBoardImage } from '../lib/boardImage';
+import { picturePanels, saveBoardImage, saveEfficiencyImages } from '../lib/boardImage';
 import { modelImageLabel } from '../lib/modelImageLabel';
 import { SCORE_BANDS, scoreBand } from '../lib/boardScores';
 import { analyzeItems } from '../../shared/itemAnalysis';
@@ -104,15 +105,20 @@ export default function Board({ toolbar }: { toolbar: HTMLDivElement | null }) {
     try {
       flushSync(() => setCapture(picker));
       const root = captureBox.current!;
+      const viewLabel = BOARD_VIEWS.find((v) => v.id === view)?.label;
+      const count = exportFilter === null ? available.length : exportFilter.length;
+      const scope = `${viewLabel} · 已选 ${count} 个模型${n1 ? ' · 仅 n=1' : ''}`;
+      if (picker.section === EFFICIENCY_SECTION) {
+        await saveEfficiencyImages(root, EFFICIENCY_SECTION, scope, USD_TO_CNY);
+        toast.ok('速度榜与价格榜已打包');
+        return;
+      }
       const section = picker.section || (picker.tab === 'board' ? '总榜' : undefined);
       const target = section ? [...root.querySelectorAll<HTMLElement>('[data-board-section], section.card')].find((el) => sectionName(el) === section)
         ?? (picker.section ? undefined : root) : root;
       const panels = target ? picturePanels(target, exportName) : [];
       if (!panels.length) throw new Error('所选模型在这张榜单中没有可导出数据');
-      const viewLabel = BOARD_VIEWS.find((v) => v.id === view)?.label;
-      const count = exportFilter === null ? available.length : exportFilter.length;
-      const task = saveBoardImage(panels, exportName, `${viewLabel} · 已选 ${count} 个模型${n1 ? ' · 仅 n=1' : ''}`);
-      await task;
+      await saveBoardImage(panels, exportName, scope);
       toast.ok('已导出榜单高清图片');
     } finally {
       setCapture(null);
@@ -155,18 +161,21 @@ export default function Board({ toolbar }: { toolbar: HTMLDivElement | null }) {
           if (!(event.target instanceof Element)) return;
           const element = event.target.closest<HTMLElement>('[data-board-section]') || event.target.closest<HTMLElement>('section.card');
           const section = element && sectionName(element);
-          if (section && element && picturePanels(element, section).length) openExport({ tab, section }, event);
+          if (section && element && (section === EFFICIENCY_SECTION || picturePanels(element, section).length)) openExport({ tab, section }, event);
         }}>
-          <BoardContents data={data} tab={tab} sort={sort} setSort={setSort} sel={scopeSel} toggle={toggle} />
+          <BoardContents data={data} tab={tab} sort={sort} setSort={setSort} sel={scopeSel} toggle={toggle}
+            exportEfficiency={() => openExport({ tab, section: EFFICIENCY_SECTION })} />
         </div>
       </>}
       {picker && <BoardModelPicker key={picker.kind === 'export' ? exportName : 'filter'} anchor={filterButton} models={picker.kind === 'export' ? available : index.models}
         value={picker.kind === 'export' ? exportFilter : filter} onChange={picker.kind === 'export' ? setExportFilter : setFilter}
         onClose={() => setPicker(null)} blind={nm.blind} modelName={modelName} exportName={exportName}
+        pairedExport={picker.kind === 'export' && picker.section === EFFICIENCY_SECTION}
         onExport={picker.kind === 'export' ? save : undefined} canExport={!!available.length && (exportFilter === null || exportFilter.length > 0)} />}
       {capture && renderedExport && createPortal(
         <div className="board-export-source" ref={captureBox} aria-hidden="true" inert>
-          <BoardContents data={renderedExport} tab={capture.tab} sort={sort} sel={[]} />
+          {capture.section === EFFICIENCY_SECTION ? <EfficiencyExportTables agg={renderedExport.agg} />
+            : <BoardContents data={renderedExport} tab={capture.tab} sort={sort} sel={[]} />}
         </div>, document.body)}
     </div>
   );
@@ -202,9 +211,9 @@ function BoardScoreLegend() {
   </div>;
 }
 
-function BoardContents({ data, tab, sort, setSort, sel, toggle }: {
+function BoardContents({ data, tab, sort, setSort, sel, toggle, exportEfficiency }: {
   data: Data; tab: Tab; sort: { k: SortK; asc: boolean }; setSort?: (sort: { k: SortK; asc: boolean }) => void;
-  sel: string[]; toggle?: (entrant: string) => void;
+  sel: string[]; toggle?: (entrant: string) => void; exportEfficiency?: () => void;
 }) {
   const wb = useWb();
   const nm = useNamer();
@@ -245,10 +254,10 @@ function BoardContents({ data, tab, sort, setSort, sel, toggle }: {
                 return (
                   <tr key={b.entrant} className={cls('clickable', sel.includes(b.entrant) && 'on')} onClick={() => toggle?.(b.entrant)} onMouseEnter={() => setHover(b.entrant)} onMouseLeave={() => setHover(null)}>
                     <td data-export-skip onClick={(e) => e.stopPropagation()}><CheckBox checked={sel.includes(b.entrant)} onChange={() => toggle?.(b.entrant)} label={`选择 ${nm.entrant(b.entrant)}`} /></td>
-                    <td className="mono b">{b.rank}{view === 'simple' && b.star && <span title={`部分题目用了多次运行取最高（n=${nRange(b)}）`} className="tone-text-warn">*</span>}</td>
+                    <td className="mono b" data-export-number>{b.rank}{view === 'simple' && b.star && <span title={`部分题目用了多次运行取最高（n=${nRange(b)}）`} className="tone-text-warn">*</span>}</td>
                     <td data-export-model={JSON.stringify(exportRow(b))}><span className="row gap-s"><ModelAvatar vendor={vendor} model={model} size="sm" blind={nm.blind} dot={color(b.entrant)} /><span className="who-t"><b>{nm.blind ? nm.entrant(b.entrant) : model}</b>{!nm.blind && <span title={`${HARNESS_GROUPS[harnessGroup(harness)].label}：${HARNESS_GROUPS[harnessGroup(harness)].hint}`}>{harness}</span>}</span></span></td>
                     <td className="board-quality" data-board-score={scoreBand(b.quality) ?? 'none'}>{fmt.n(b.quality)}</td>
-                    <td data-export-text={b.ci_low == null || b.ci_high == null ? '—' : fmt.n(b.ci_low) + '–' + fmt.n(b.ci_high)}><CiBar v={b.quality} lo={b.ci_low} hi={b.ci_high} color={color(b.entrant)} /></td>
+                    <td data-export-number data-export-text={b.ci_low == null || b.ci_high == null ? '—' : fmt.n(b.ci_low) + '–' + fmt.n(b.ci_high)}><CiBar v={b.quality} lo={b.ci_low} hi={b.ci_high} color={color(b.entrant)} /></td>
                     {dims.map((d) => <td key={d.id} className="num heat-td" data-board-score={scoreBand(b.dims[d.id]) ?? 'none'}>{fmt.n(b.dims[d.id], 0)}</td>)}
                     {view === 'simple' && <td className="num mono">{nRange(b)}</td>}
                     {view === 'full' && <td className="num">{b.availability != null ? `${fmt.n(b.availability, 0)}%` : '—'}</td>}
@@ -272,7 +281,7 @@ function BoardContents({ data, tab, sort, setSort, sel, toggle }: {
               <QualityCi rows={agg.board} color={color} label={nm.entrant} />
             </ChartCard>
           </div>
-          <EffTable rows={board} />
+          <EffTable rows={board} onExport={exportEfficiency} />
           {(agg.pending.time_review || 0) > 0 && <div data-board-no-export><TimeReviewList /></div>}
         </>
       )}
@@ -297,7 +306,7 @@ function BoardContents({ data, tab, sort, setSort, sel, toggle }: {
           <ChartCard title="用时 × 质量" exportModels={timeRows.map(exportRow)} sub="标准整套预计用时（按相对速度折算，分钟，对数）">
             <Pareto xLabel="标准整套预计用时（分钟，对数）" points={frontier(timeRows.map((b) => ({ key: b.entrant, label: nm.entrant(b.entrant), x: agg.eff![b.entrant].time.suite_est!, y: b.quality!, color: color(b.entrant) })))} />
           </ChartCard>
-          <div className="span-all"><EffTable rows={agg.board} /><div data-board-no-export><TimeReviewList /></div></div>
+          <div className="span-all"><EffTable rows={agg.board} onExport={exportEfficiency} /><div data-board-no-export><TimeReviewList /></div></div>
           <Card title="期望值明细" sub="期望 = 单次平均 ÷ 达标率（达标率为 0 时为无穷）" className="span-all" pad={false}>
             <div className="tbl-wrap"><table className="tbl">
               <thead><tr><th>参赛者</th><th className="num">质量</th><th className="num">达标率</th><th className="num">整套期望成本</th><th className="num">整套期望用时</th><th>成本覆盖</th></tr></thead>

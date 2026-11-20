@@ -8,7 +8,7 @@
 .board-score-legend [data-board-score] { padding: 3px 8px; border-radius: 99px; }
 .board-score-legend > span:first-child { margin-inline-end: 3px; }
 .board-quality { font-size: 18px; font-weight: 760; text-align: right; font-variant-numeric: tabular-nums; }
-.board-score-legend [data-board-score], .board-tbl td[data-board-score] { background-color: var(--band-bg); color: var(--band-fg); }
+.board-score-legend [data-board-score], .board-tbl td[data-board-score], .efficiency-export-table td[data-board-score] { background-color: var(--band-bg); color: var(--band-fg); }
 [data-board-score="90"] { --band-bg: #a8e5ce; --band-fg: #124536; }
 [data-board-score="80"] { --band-bg: #b9d9ff; --band-fg: #153c69; }
 [data-board-score="70"] { --band-bg: #d9cbff; --band-fg: #3f2876; }
@@ -77,6 +77,8 @@
 .board-export-source [data-export-skip] { display: none; }
 .board-export-source td[data-export-model] { min-width: 222px; }
 .board-export-source .board-tbl th:last-child { min-width: 64px; }
+.board-export-source .efficiency-export-table { width: 1100px; }
+.efficiency-export-table td[data-board-score="none"] { --band-bg: #ebedf0; --band-fg: #535965; }
 @media (max-width: 850px) { .board-filter-label { display: none; } }
 @media (max-width: 560px) {
   .board-picker-inner { padding: 12px; gap: 9px; }

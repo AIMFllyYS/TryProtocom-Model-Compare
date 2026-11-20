@@ -15,11 +15,12 @@ interface Props {
   modelName: (vendor: string, name: string) => string;
   blind: boolean;
   exportName?: string;
+  pairedExport?: boolean;
   onExport?: () => Promise<void>;
   canExport?: boolean;
 }
 
-export function BoardModelPicker({ models, anchor, value, onChange: changeSelection, onClose, modelName, blind, exportName, onExport, canExport }: Props) {
+export function BoardModelPicker({ models, anchor, value, onChange: changeSelection, onClose, modelName, blind, exportName, pairedExport, onExport, canExport }: Props) {
   const { pop, style } = usePopPosition(anchor, true, 'bottom-start', 10);
   const search = useRef<HTMLInputElement>(null);
   const closeTimer = useRef<number>(undefined);
@@ -99,7 +100,7 @@ export function BoardModelPicker({ models, anchor, value, onChange: changeSelect
             <span className="board-picker-symbol" aria-hidden>{exportName ? <Download size={20} /> : <ListFilter size={20} />}</span>
             <div className="grow">
               <h2 id="board-model-picker-title">{exportName ? '导出高清图片' : '筛选榜单模型'}</h2>
-              {exportName && <span className="small muted">{exportName} · 3× PNG</span>}
+              {exportName && <span className="small muted">{pairedExport ? '速度榜 + 价格榜 · 2 张高清 PNG' : `${exportName} · 3× PNG`}</span>}
             </div>
             <IconBtn label="关闭模型选择 (Esc)" onClick={() => dismiss()}><X size={17} /></IconBtn>
           </header>
@@ -153,7 +154,7 @@ export function BoardModelPicker({ models, anchor, value, onChange: changeSelect
               try { await onExport(); dismiss(); }
               catch (e) { setError(e instanceof Error ? e.message : '导出榜单图片失败'); }
               finally { setBusy(false); }
-            }}>下载 PNG</Btn> : <Btn size="sm" tone="primary" onClick={() => dismiss()}>完成</Btn>}
+            }}>{pairedExport ? '下载 ZIP' : '下载 PNG'}</Btn> : <Btn size="sm" tone="primary" onClick={() => dismiss()}>完成</Btn>}
             {error && <div className="board-picker-error" role="alert">{error}</div>}
           </footer>
         </div>

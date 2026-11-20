@@ -55,10 +55,15 @@ items = [dict(task="V01", item_id=item["id"], desc=item["desc"], method="human",
 uplift = [dict(entrant=b["entrant"], A_mean=60, C_mean=80, uplift=20) for b in board]
 failures = [dict(entrant=b["entrant"], task="V01", run_id=r["run_id"], total=25, tags="Fixture failure <tag> & notes")
             for b, r in zip(board, runs)]
-metric = dict(mean=1.5, rel=.9, tasks=1, tasks_total=1, suite_est=10)
+metric = dict(mean=1.5, rel=.9, tasks=1, tasks_total=1, suite_est=36, unc=.2, level="中")
 base_aggregate = dict(board=board, entrants=[b["entrant"] for b in board], pending={}, tasks=tasks, items=items,
                       tkeys=["V01"], failures=failures, uplift=uplift, run_eff={r["run_id"]: {"minutes": 22} for r in runs},
-                      eff={b["entrant"]: dict(time=metric, cost=metric) for b in board})
+                      eff_baseline=dict(time={"V01": 40},cost={"V01": 12}),
+                      eff={
+                          board[0]["entrant"]: dict(time=dict(metric, rel=.7, suite_est=28), cost={}),
+                          board[1]["entrant"]: dict(time=dict(metric, mean=.9), cost=dict(metric, rel=1.3, suite_est=15.6)),
+                          board[2]["entrant"]: dict(time=dict(metric, mean=2.1, rel=.55, suite_est=22), cost=dict(metric, rel=.5, suite_est=6)),
+                      })
 writes = []
 
 
@@ -182,8 +187,9 @@ try:
         ns = {"s": "http://www.w3.org/2000/svg"}
         labels = root.findall(".//s:g[@data-model-label='true']", ns)
         assert len(labels) == 3 and all(x.find("s:image", ns).get("href").startswith("data:image/svg+xml,") for x in labels)
-        quality = next(t for t in root.findall(".//s:text", ns) if t.findtext("s:tspan", namespaces=ns) == "94.0")
-        assert quality.get("text-anchor") == "middle"
+        for label in ["94.0", "93.0–95.0", "80%", "$1.00", "22 分", "名次", "95% CI"]:
+            cells = [t for t in root.findall(".//s:text", ns) if t.findtext("s:tspan", namespaces=ns) == label]
+            assert cells and all(t.get("text-anchor") == "middle" for t in cells), label
         table_text = {tuple(s.text for s in t.findall("s:tspan", ns)) for t in root.findall(".//s:text", ns)}
         assert all((name,) in table_text for name in ["质量分", "95% CI", "期望成本", "期望用时"] + [d["name"] for d in dimensions])
         expect(tabs.get_by_role("radio", name=previous_tab)).to_be_checked()
@@ -203,12 +209,36 @@ try:
         tabs.get_by_role("radio", name="效率", exact=True).click()
         effort_table = page.locator(".card").filter(has_text="速度与价格权衡").locator("table")
         effort_table.locator("th").get_by_text("速度", exact=True).click(button="right")
-        save_png(page, dialog, "efficiency-table")
-        grouped = ET.fromstring(page.evaluate("() => window.boardExportSvg.at(-1)"))
-        entries = [(t.findtext("s:tspan", namespaces=ns), float(t.get("x"))) for t in grouped.findall(".//s:text", ns) if len(t.findall("s:tspan", ns)) == 1]
-        by_label = {label: x for label, x in entries}
-        assert by_label["时间覆盖"] < by_label["标准整套"] < by_label["价格"] < by_label["费用覆盖"]
-        assert sum(label == "平均每题" for label, _ in entries) == 2
+        expect(dialog.get_by_text("速度榜 + 价格榜 · 2 张高清 PNG")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(dialog).to_have_count(0)
+        page.get_by_role("button", name="导出速度榜和价格榜", exact=True).click()
+        dialog.get_by_role("button", name="全选", exact=True).click()
+        page.evaluate("window.boardExportSvg.length = 0")
+        with page.expect_download() as archive_download:
+            dialog.get_by_role("button", name="下载 ZIP").click()
+        expect(dialog).to_have_count(0)
+        with ZipFile(archive_download.value.path()) as archive:
+            assert archive.namelist() == ["速度榜.png", "价格榜.png"]
+            for image in archive.namelist():
+                png = archive.read(image)
+                assert png[:8] == b"\x89PNG\r\n\x1a\n"
+                assert struct.unpack(">II", png[16:24])[0] > 3000
+        speed, price = page.evaluate("() => Promise.all(window.boardExportSvg)")
+        assert "#e8f0f9" in speed and "#f6eee4" in price
+        for image in [speed, price]:
+            assert "换算汇率 1 USD = ¥6.8" in image
+            tree = ET.fromstring(image)
+            text = {tuple(s.text for s in t.findall("s:tspan", ns)) for t in tree.findall(".//s:text", ns)}
+            assert all((t,) in text for t in ["质量分", "整套预计用时（分钟）", "整套估算费用（元）", "¥40.80", "¥106.08"])
+            assert len(tree.findall(".//s:g[@data-model-label='true']", ns)) == 4
+            numeric = {"排名", "质量分", "整套预计用时（分钟）", "整套估算费用（元）", "¥40.80", "¥106.08", "1 / 1 题", "±20% · 中"}
+            cells = [t for t in tree.findall(".//s:text", ns) if t.findtext("s:tspan", namespaces=ns) in numeric]
+            assert {t.findtext("s:tspan", namespaces=ns) for t in cells} == numeric and all(t.get("text-anchor") == "middle" for t in cells)
+        assert "按每题平均用时升序" in speed and "每题平均用时（分钟）" in speed and ">-18<" in speed and "相对价格" not in speed
+        assert "相对价格" in price and "0.50×" in price and "整套较基线（分钟）" not in price
+        assert speed.index("@ cli") < speed.index("Gemini Example") < speed.index("@ desktop") < speed.index("暂无可比用时") < speed.index("Atlas Old")
+        assert price.index("@ desktop") < price.index("@ cli") < price.index("暂无可比费用") < price.index("Gemini Example") < price.index("Atlas Old")
         tabs.get_by_role("radio", name="维度").click()
         page.locator('[data-chart="参赛者 × 维度"]').click(button="right")
         expect(dialog.get_by_text("参赛者 × 维度 · 3× PNG")).to_be_visible()

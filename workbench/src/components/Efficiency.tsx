@@ -7,6 +7,7 @@ import { post } from '../api';
 import { useWb } from '../state';
 import { go } from '../lib/router';
 import { modelImageLabel } from '../lib/modelImageLabel';
+import { EFFICIENCY_SECTION } from './EfficiencyExportTables';
 import { cls, fmt } from '../lib/format';
 import { Badge, Btn, Card, CheckBox, Empty, Field, Kv, Select, confirmDialog } from '../ui/kit';
 import { toast } from '../ui/toast';
@@ -42,7 +43,7 @@ function Cover({ m }: { m: EffMetric }) {
 }
 
 /** 速度与价格权衡表 */
-export function EffTable({ rows }: { rows: BoardRow[] }) {
+export function EffTable({ rows, onExport }: { rows: BoardRow[]; onExport?: () => void }) {
   const wb = useWb();
   const nm = useNamer();
   const eff = wb.agg?.eff || {};
@@ -51,9 +52,10 @@ export function EffTable({ rows }: { rows: BoardRow[] }) {
     : sort === 'time' ? (eff[a.entrant]?.time.rel ?? 1e9) - (eff[b.entrant]?.time.rel ?? 1e9) : (eff[a.entrant]?.cost.rel ?? 1e9) - (eff[b.entrant]?.cost.rel ?? 1e9));
   const pend = wb.agg?.pending.time_review || 0;
   return (
-    <Card title="速度与价格权衡" pad={false} className="mt-l"
+    <Card title={EFFICIENCY_SECTION} pad={false} className="mt-l"
       sub="平均值看量级，相对值看快慢：每题与该题各参赛者的中位数比，按题几何加权并向基线收缩；± 是相对不确定性"
       extra={<>
+        {onExport && <Btn size="sm" onClick={onExport}>导出速度榜和价格榜</Btn>}
         {pend > 0 && <Btn size="sm" tone="tinted" icon={<Hourglass size={13} />} onClick={() => document.getElementById('time-review')?.scrollIntoView({ behavior: 'smooth' })}>{pend} 次用时待核实</Btn>}
         <select className="input sm" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="排序"><option value="quality">按质量</option><option value="time">按速度</option><option value="cost">按价格</option></select>
       </>}>
