@@ -29,34 +29,82 @@ async function tablePictures(table: HTMLTableElement, title: string | null, { fo
   const bounds = table.getBoundingClientRect();
   const context = document.createElement('canvas').getContext('2d')!;
   const heat = table.classList.contains('board-tbl');
-  const w = Math.ceil(bounds.width) + 2 * PAD;
-  const maxRowsHeight = Math.max(1, Math.floor(Math.min(MAX_AREA / (w * SCALE * SCALE), MAX_HEIGHT / SCALE)) - 175);
-  const rows = Array.from(table.rows).map((row) => {
+  const widths: number[] = [];
+  const occupiedUntil: number[] = [];
+  const scoreColumns = new Set<number>();
+  const source = Array.from(table.rows).map((row, index) => {
     const head = row.parentElement === table.tHead;
+    const remaining = (row.parentElement as HTMLTableSectionElement | null)?.rows?.length ?? 1;
+    let column = 0;
     const cells = Array.from(row.cells).filter((c) => !c.hasAttribute('data-export-skip')).map((cell) => {
+      while (occupiedUntil[column] > index) column++;
+      const from = column;
+      const to = from + cell.colSpan;
+      const span = Math.min(cell.rowSpan || remaining, remaining - row.sectionRowIndex);
+      for (; column < to; column++) {
+        occupiedUntil[column] = index + span;
+        widths[column] ??= 0;
+      }
       const pos = cell.getBoundingClientRect();
+      if (cell.colSpan === 1) {
+        const measured = Math.ceil(pos.right - bounds.left) - Math.ceil(pos.left - bounds.left);
+        widths[from] = Math.max(widths[from], measured);
+      }
       const style = getComputedStyle(cell);
       const score = cell.hasAttribute('data-board-score');
+      if (score) scoreColumns.add(from);
       const numeric = cell.classList.contains('num');
       const weight = head || score ? 680 : 480;
       const model: ModelImageLabel | undefined = cell.dataset.exportModel ? JSON.parse(cell.dataset.exportModel) : undefined;
       const label = model ? '' : (cell.dataset.exportText ?? cell.textContent ?? '').trim().replace(/\s+/g, ' ');
+      context.font = `${weight} 14px ${font}`;
+      const minWidth = (head || score) && label ? Math.ceil(context.measureText(label).width) + 22 : 0;
+      return { from, to, minWidth, label, weight, numeric, score, centered: score || cell.classList.contains('center'), span, model,
+        fill: score ? style.backgroundColor : '', ink: score ? style.color : head ? dim : text };
+    });
+    return { head, cells };
+  });
+  // Fit the complete header before laying out rows. A grouped header can widen all of its columns.
+  const fitted = source.flatMap((row) => row.cells).filter((cell) => cell.minWidth > 0);
+  for (const cell of fitted.filter((c) => c.to === c.from + 1)) {
+    widths[cell.from] = Math.max(widths[cell.from], cell.minWidth);
+  }
+  for (const cell of fitted.filter((c) => c.to > c.from + 1)) {
+    const width = widths.slice(cell.from, cell.to).reduce((sum, w) => sum + w, 0);
+    const share = Math.max(0, cell.minWidth - width) / (cell.to - cell.from);
+    for (let i = cell.from; i < cell.to; i++) {
+      widths[i] += Math.round((i + 1 - cell.from) * share) - Math.round((i - cell.from) * share);
+    }
+  }
+  const edges = [PAD];
+  for (const width of widths) edges.push(edges.at(-1)! + width);
+  const w = edges.at(-1)! + PAD;
+  const offset = title ? 0 : -34;
+  const rowsTop = (heat ? 81 : 59) + offset;
+  const canvasWidth = Math.max(480, w) + 2 * PAD;
+  // Leave room for the panel's bottom padding and the outer title and footer.
+  const maxRowsHeight = Math.max(1, Math.floor(Math.min(MAX_AREA / (canvasWidth * SCALE ** 2), MAX_HEIGHT / SCALE)) - rowsTop - 138);
+  const rows = source.map(({ head, cells }) => {
+    const layout = cells.map((cell) => {
+      const { label, weight } = cell;
+      const x = edges[cell.from];
+      const width = edges[cell.to] - x;
+      const centered = cell.centered || (head && cell.to === cell.from + 1 && scoreColumns.has(cell.from));
+      if (head || cell.score) return { ...cell, x, w: width, centered, lines: label ? [label] : [] };
       const lines: string[] = [];
       context.font = `${weight} 14px ${font}`;
       let start = 0, end = 0;
       while (end < label.length) {
         end++;
-        if (end < label.length && context.measureText(label.slice(start, end + 1)).width <= pos.width - 22) continue;
+        if (end < label.length && context.measureText(label.slice(start, end + 1)).width <= width - 22) continue;
         const space = label.lastIndexOf(' ', end - 1);
         if (end < label.length && space > start) end = space + 1;
         lines.push(label.slice(start, end).trim());
         start = end;
       }
-      return { x: Math.round(pos.left - bounds.left) + PAD, w: Math.round(pos.width),
-        lines, weight, numeric, centered: score || cell.classList.contains('center'), span: cell.rowSpan, model,
-        fill: score ? style.backgroundColor : '', ink: score ? style.color : head ? dim : text };
+      return { ...cell, x, w: width, centered, lines };
     });
-    return { head, cells, h: Math.max(head ? 37 : cells.some((c) => c.model) ? 42 : 36, 12 + 18 * Math.max(1, ...cells.map((c) => c.lines.length))) };
+    return { head, cells: layout, h: Math.max(head ? 37 : layout.some((c) => c.model) ? 42 : 36, 12 + 18 * Math.max(1, ...layout.map((c) => c.lines.length))) };
   });
   const headers = rows.filter((r) => r.head);
   const body = rows.filter((r) => !r.head);
@@ -71,7 +119,6 @@ async function tablePictures(table: HTMLTableElement, title: string | null, { fo
     height += row.h;
   }
   const legend = table.closest('.board-export-section')?.querySelector('.board-score-legend');
-  const offset = title ? 0 : -34;
   const bands = [...SCORE_BANDS, { min: 'none', label: '— 无数据' }];
   const scale = heat ? `<g transform="translate(0 ${offset})">` + bands.map((band, i) => {
     const swatch = legend?.querySelector(`[data-board-score="${band.min}"]`);
@@ -83,7 +130,7 @@ async function tablePictures(table: HTMLTableElement, title: string | null, { fo
   const icons = await loadModelIcons(labels, text);
   return pages.map((page, pageIndex) => {
     const all = [...headers, ...page];
-    let y = (heat ? 81 : 59) + offset;
+    let y = rowsTop;
     const grid = all.map((row, index) => {
       const start = y;
       y += row.h;

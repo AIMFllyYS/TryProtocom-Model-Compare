@@ -25,7 +25,8 @@ models = [
     dict(vendor="Google", name="Gemini Example (HiGh)", created_at="2026-04-01"),
     dict(vendor="Google", name="Unranked Fixture", created_at="2026-03-01"),
 ]
-dimensions = [dict(id=f"d{i}", name=f"维度 {i}", kind="quality") for i in range(6)]
+dimensions = [dict(id=f"d{i}", name=name, kind="quality") for i, name in enumerate(
+    ["3D", "动画动效", "前端 UI/UX", "后端", "工程化", "需求理解"])]
 item = dict(id="H0", dim="d0", tier="basic", method="human", desc="构图与辨识度", status="scored")
 task = dict(id="V01", name="Fixture", suite="v2", variants={}, items=[item], dims={"d0": 1})
 
@@ -54,8 +55,10 @@ items = [dict(task="V01", item_id=item["id"], desc=item["desc"], method="human",
 uplift = [dict(entrant=b["entrant"], A_mean=60, C_mean=80, uplift=20) for b in board]
 failures = [dict(entrant=b["entrant"], task="V01", run_id=r["run_id"], total=25, tags="Fixture failure <tag> & notes")
             for b, r in zip(board, runs)]
+metric = dict(mean=1.5, rel=.9, tasks=1, tasks_total=1, suite_est=10)
 base_aggregate = dict(board=board, entrants=[b["entrant"] for b in board], pending={}, tasks=tasks, items=items,
-                      tkeys=["V01"], failures=failures, uplift=uplift, run_eff={r["run_id"]: {"minutes": 22} for r in runs})
+                      tkeys=["V01"], failures=failures, uplift=uplift, run_eff={r["run_id"]: {"minutes": 22} for r in runs},
+                      eff={b["entrant"]: dict(time=metric, cost=metric) for b in board})
 writes = []
 
 
@@ -181,6 +184,8 @@ try:
         assert len(labels) == 3 and all(x.find("s:image", ns).get("href").startswith("data:image/svg+xml,") for x in labels)
         quality = next(t for t in root.findall(".//s:text", ns) if t.findtext("s:tspan", namespaces=ns) == "94.0")
         assert quality.get("text-anchor") == "middle"
+        table_text = {tuple(s.text for s in t.findall("s:tspan", ns)) for t in root.findall(".//s:text", ns)}
+        assert all((name,) in table_text for name in ["质量分", "95% CI", "期望成本", "期望用时"] + [d["name"] for d in dimensions])
         expect(tabs.get_by_role("radio", name=previous_tab)).to_be_checked()
         tabs.get_by_role("radio", name="总榜").click()
         expect(rows).to_have_count(2)
@@ -195,6 +200,15 @@ try:
         for title in titles:
             tabs.get_by_role("radio", name=title, exact=True).click(button="right")
             save_png(page, dialog, title)
+        tabs.get_by_role("radio", name="效率", exact=True).click()
+        effort_table = page.locator(".card").filter(has_text="速度与价格权衡").locator("table")
+        effort_table.locator("th").get_by_text("速度", exact=True).click(button="right")
+        save_png(page, dialog, "efficiency-table")
+        grouped = ET.fromstring(page.evaluate("() => window.boardExportSvg.at(-1)"))
+        entries = [(t.findtext("s:tspan", namespaces=ns), float(t.get("x"))) for t in grouped.findall(".//s:text", ns) if len(t.findall("s:tspan", ns)) == 1]
+        by_label = {label: x for label, x in entries}
+        assert by_label["时间覆盖"] < by_label["标准整套"] < by_label["价格"] < by_label["费用覆盖"]
+        assert sum(label == "平均每题" for label, _ in entries) == 2
         tabs.get_by_role("radio", name="维度").click()
         page.locator('[data-chart="参赛者 × 维度"]').click(button="right")
         expect(dialog.get_by_text("参赛者 × 维度 · 3× PNG")).to_be_visible()

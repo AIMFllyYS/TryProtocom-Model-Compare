@@ -77,7 +77,6 @@
 .board-export-source [data-export-skip] { display: none; }
 .board-export-source td[data-export-model] { min-width: 222px; }
 .board-export-source .board-tbl th:last-child { min-width: 64px; }
-.board-export-source .board-tbl th:nth-last-child(2), .board-export-source .board-tbl th:nth-last-child(3) { min-width: 82px; }
 @media (max-width: 850px) { .board-filter-label { display: none; } }
 @media (max-width: 560px) {
   .board-picker-inner { padding: 12px; gap: 9px; }
