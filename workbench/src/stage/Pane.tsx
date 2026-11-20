@@ -1,6 +1,6 @@
 // 预览窗格：地址栏 + 设备/缩放/旋转 + 视口（网页版 iframe，桌面版 Chromium webview）+ 可停靠的 F12 面板。
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Bug, Camera, ExternalLink, Maximize2, Minimize2, MonitorSmartphone, RotateCcw, RotateCw, ScanSearch, Smartphone, Terminal, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bug, Camera, ClipboardCheck, ExternalLink, Maximize2, Minimize2, MonitorSmartphone, RotateCcw, RotateCw, ScanSearch, Smartphone, Terminal, X } from 'lucide-react';
 import type { LogEntry, PreviewSession } from '../../shared/types';
 import { desktop, post, rawUrl } from '../api';
 import { bus, logKey, navKey, perfKey, useBus } from '../state';
@@ -12,20 +12,23 @@ import { DevTools } from './DevTools';
 import { DEVICES, deviceById, ZOOMS } from './devices';
 
 export type PaneSrc = { type: 'session'; sid: string } | { type: 'video'; path: string; label: string };
-export interface PaneState { id: string; src: PaneSrc; device: string; zoom: number | 'fit'; rotate: boolean; devtools: boolean; custom?: { w: number; h: number }; title?: string }
+export interface PaneState { id: string; src: PaneSrc; device: string; zoom: number | 'fit'; rotate: boolean; devtools: boolean; custom?: { w: number; h: number }; title?: string; artifactRef?: string }
 
 interface WebviewEl extends HTMLElement {
   getWebContentsId(): number; reload(): void; goBack(): void; goForward(): void; canGoBack(): boolean; canGoForward(): boolean; loadURL(u: string): Promise<void>;
   setZoomFactor(f: number): void; getURL(): string; getTitle(): string; openDevTools(): void; isDevToolsOpened(): boolean; closeDevTools(): void; executeJavaScript(code: string): Promise<unknown>;
 }
 
-type PaneProps = { pane: PaneState; session?: PreviewSession; focused: boolean; onFocus: () => void; onChange: (p: Partial<PaneState>) => void; onClose: () => void; dtHeight?: number };
+type PaneProps = { pane: PaneState; session?: PreviewSession; focused: boolean; onFocus: () => void; onChange: (p: Partial<PaneState>) => void; onClose: () => void; dtHeight?: number;
+  scoreId?: string; scoring?: boolean; scoreUnavailable?: string; onScore?: (runId: string) => void;
+};
 
 /** 舞台每次收到存储 / 任务推送都会重渲染；窗格（iframe + F12 面板）只在自己的数据变化时才重渲染。
  *  回调由 Stage 通过 ref 转发到最新实现，所以比较时可以忽略函数引用。 */
-export const Pane = memo(PaneImpl, (a, b) => a.pane === b.pane && a.session === b.session && a.focused === b.focused && a.dtHeight === b.dtHeight);
+export const Pane = memo(PaneImpl, (a, b) => a.pane === b.pane && a.session === b.session && a.focused === b.focused && a.dtHeight === b.dtHeight
+  && a.scoreId === b.scoreId && a.scoring === b.scoring && a.scoreUnavailable === b.scoreUnavailable);
 
-function PaneImpl({ pane, session, focused, onFocus, onChange, onClose, dtHeight = 260 }: PaneProps) {
+function PaneImpl({ pane, session, focused, onFocus, onChange, onClose, dtHeight = 260, scoreId, scoring, scoreUnavailable, onScore }: PaneProps) {
   const box = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -161,6 +164,15 @@ function PaneImpl({ pane, session, focused, onFocus, onChange, onClose, dtHeight
   const openDevtoolsNative = () => { if (isDesk && wcId != null) void D!.openDevTools(wcId, 'right'); };
 
   const label = pane.src.type === 'video' ? pane.src.label : session?.label || '（会话已关闭）';
+  const sameOrigin = (url: string) => !url || (session && URL.canParse(url, session.url) && new URL(url, session.url).origin === new URL(session.url).origin);
+  const scoreButton = (scoreId || scoreUnavailable) && (!session || (sameOrigin(src) && sameOrigin(nav?.url || ''))) && (
+    <IconBtn label={scoreUnavailable ? `人工评分：${scoreUnavailable}` : '人工评分'} size="xs" active={scoreId ? scoring : undefined}
+      aria-disabled={scoreUnavailable ? true : undefined} onClick={() => {
+        if (!scoreId) return;
+        if (document.fullscreenElement === root.current) void document.exitFullscreen();
+        onScore?.(scoreId);
+      }}><ClipboardCheck size={14} /></IconBtn>
+  );
   return (
     <div ref={root} className={cls('pane', focused && 'focused', full && 'is-full')} onMouseDown={onFocus}>
       <div className="pane-bar">
@@ -177,6 +189,7 @@ function PaneImpl({ pane, session, focused, onFocus, onChange, onClose, dtHeight
         )}
         {pane.src.type === 'video' && <span className="pane-title ellipsis grow"><b>视频</b> {label}</span>}
         <div className="pane-tools">
+          {pane.src.type === 'video' && scoreButton}
           {pane.src.type === 'session' && (
             <>
               <Select size="xs" value={pane.device} onChange={(v) => onChange({ device: v })} label="设备" place="bottom-end"
@@ -189,6 +202,7 @@ function PaneImpl({ pane, session, focused, onFocus, onChange, onClose, dtHeight
               )}
               {!fill && <IconBtn label="旋转（横竖屏）" size="xs" active={pane.rotate} onClick={() => onChange({ rotate: !pane.rotate })}><RotateCcw size={14} /></IconBtn>}
               <IconBtn label="快速切换手机 / 桌面" size="xs" onClick={() => onChange({ device: dev.mobile ? 'd1440' : 'iphone16' })}>{dev.mobile ? <MonitorSmartphone size={14} /> : <Smartphone size={14} />}</IconBtn>
+              {scoreButton}
               <Select size="xs" value={String(pane.zoom)} onChange={(v) => onChange({ zoom: v === 'fit' ? 'fit' : Number(v) })} label="缩放" place="bottom-end"
                 options={[{ value: 'fit', label: fill ? '100%' : `适应 ${Math.round(scale * 100)}%` }, ...ZOOMS.map((z) => ({ value: String(z), label: `${Math.round(z * 100)}%` }))]} />
               <IconBtn label={isDesk ? '截图（保存 PNG）' : '无头截图 + 报错检查'} size="xs" onClick={() => void screenshot()} disabled={probing}>{probing ? <Spinner size={13} /> : <Camera size={14} />}</IconBtn>

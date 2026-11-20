@@ -3,15 +3,16 @@ Run after npm run build: python tests/preview-ui.test.py
 """
 import copy
 import json
+import os
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote, urlencode
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[2]
-DIST = ROOT / "workbench/dist"
+DIST = Path(os.environ.get("WB_PREVIEW_TEST_DIST", ROOT / "workbench/dist")).resolve()
 OUT = ROOT / "workbench/.runtime/preview-ui"
 OUT.mkdir(parents=True, exist_ok=True)
 keys = ["T01", "T02", "T03A", "T03C", "T04", "T05", "T06", "T07", "T08"]
@@ -34,9 +35,14 @@ store.update(runs=runs, workspaces=workspaces, models=[dict(vendor="Test", name=
 board = [dict(entrant=m+" @ test", model=m, harness="test", vendor="Test", rank=str(i+1), quality=80, dims={}, pass_rate=1, suite_exp_cost_usd=1, suite_exp_min=1) for i,m in enumerate(models)]
 aggregate = dict(board=board, entrants=[b["entrant"] for b in board], tkeys=keys, tasks=[], items=[], uplift=[], failures=[], pending={})
 sessions = []
+processes = []
 preview_requests = []
 unexpected_writes = []
+manual_writes = []
 file_reads = []
+allow_manual = False
+slow_save_started = threading.Event()
+release_save = threading.Event()
 def ent(path, directory=False):
     return dict(path=path,name=path.split('/')[-1],dir=directory,size=64,mtime=0)
 file_dirs = {"": [ent("model", True),ent("workbench",True),ent("README.md")], "model": [ent("model/Alpha",True)], "model/Alpha": [ent("model/Alpha/T01",True)], "model/Alpha/T01": [ent("model/Alpha/T01/r1",True)], "model/Alpha/T01/r1": [ent("model/Alpha/T01/r1/index.html"),ent("model/Alpha/T01/r1/notes.txt")], "workbench/.runtime": [ent("workbench/.runtime/snapshot.json")]}
@@ -65,20 +71,47 @@ class Handler(SimpleHTTPRequestHandler):
         if path=="/test-artifact":
             data=b"<!doctype html><html><body style='background:#e6eff6;font:24px sans-serif'><h1>Interactive artifact</h1><button onclick='this.textContent=\"Clicked\"'>Test interaction</button></body></html>"
             self.send_response(200); self.send_header("Content-Type","text/html"); self.end_headers(); self.wfile.write(data); return
-        values={"/api/session":dict(token="fixture",desktop=False,root=str(ROOT),version="test"), "/api/spec":spec, "/api/store":store, "/api/aggregate":aggregate, "/api/preview":sessions, "/api/jobs":[], "/api/procs":[], "/api/harness":[]}
+        values={"/api/session":dict(token="fixture",desktop=False,root=str(ROOT),version="test"), "/api/spec":spec, "/api/store":store, "/api/aggregate":aggregate, "/api/preview":sessions, "/api/jobs":[], "/api/procs":processes, "/api/harness":[]}
         if path=="/api/events":
             self.send_response(200); self.send_header("Content-Type","text/event-stream"); self.end_headers()
             for item in sessions: self.wfile.write(("data: "+json.dumps(dict(type="session",id=item["id"],session=item))+"\n\n").encode())
             return
         if path in values: self.send_json(values[path]); return
+        if path.startswith("/api/preview/"):
+            entry=next((s for s in sessions if s["id"] == path.rsplit("/",1)[-1]), None)
+            if entry: self.send_json(entry); return
         if path.startswith("/api/"): self.send_json([]); return
         super().do_GET()
     def do_POST(self):
         body=json.loads(self.rfile.read(int(self.headers.get("Content-Length","0"))) or "{}")
         if self.path=="/api/preview":
             preview_requests.append(body)
-            item=session("fixture-"+str(len(sessions)),body.get("label","Artifact"),base)
-            sessions.append(item); self.send_json(item); return
+            entry=session("fixture-"+str(len(sessions)),body.get("label","Artifact"),base)
+            if body.get("ref"):
+                entry.update(kind="static", root=str(ROOT / "model" / body["ref"]), entry=body.get("entry", ""))
+            sessions.append(entry); self.send_json(entry); return
+        if allow_manual and self.path.startswith("/api/runs/") and self.path.endswith("/manual"):
+            run_id=unquote(self.path.split("/")[3])
+            run=next(r for r in runs if r["run_id"] == run_id)
+            result=next(i for i in run["score"]["items"] if i["id"] == body["item"] and i["method"] == "human")
+            value=body["score"]
+            manual_writes.append((run_id, result["id"], value))
+            if value == 9:
+                slow_save_started.set()
+                if not release_save.wait(8): self.send_json({"error":"Test action timed out"},500); return
+            if value == 4: self.send_json({"error":"Fixture save failed"},500); return
+            if value == "":
+                run["manual"].pop(result["id"], None)
+                result.update(status="pending",s=None)
+            else:
+                run["manual"][result["id"]]=dict(score=value,note=body["note"],scale=body["scale"])
+                result.update(status="scored",s=value/10)
+            score=run["score"]
+            counted=[i for i in score["items"] if i["status"] in ("scored","missing")]
+            score["total"]=round(100*sum(i["weight"]*i["s"] for i in counted)/sum(i["weight"] for i in counted),2)
+            score["pending"]=[i["id"] for i in score["items"] if i["status"]=="pending"]
+            score["complete"]=not score["pending"]
+            self.send_json(dict(score=score,manual=run["manual"])); return
         unexpected_writes.append(self.path); self.send_json({"error":"Unexpected write"},403)
 
 server=ThreadingHTTPServer(("127.0.0.1",0),partial(Handler,directory=str(DIST)))
@@ -224,8 +257,192 @@ try:
         small=sheet.bounding_box(); bounds=page.locator(".stage").bounding_box()
         assert small["x"]+small["width"] <= bounds["x"]+2
         assert not unexpected_writes,unexpected_writes
+
+        page.set_viewport_size({"width":1440,"height":920})
+        first_run, second_run, proxy_run = runs[:3]
+        second_item={**item,"id":"H2","desc":"第二个人工项"}
+        spec["tasks"][0]["items"].append(second_item)
+        first_run["score"]["items"].extend([
+            {**second_item,"status":"pending","s":None},
+            {**item,"id":"A1","method":"auto","weight":2,"status":"scored","s":.75},
+            {**item,"id":"A2","method":"auto","weight":1,"status":"missing","s":0},
+            {**item,"id":"A3","method":"auto","weight":6,"status":"na","s":None},
+            {**item,"id":"G1","method":"agent","weight":1,"status":"scored","s":.5},
+            {**item,"id":"G2","method":"agent","weight":4,"status":"pending","s":None},
+        ])
+        first_run["score"].update(complete=False,pending=["H1","H2","G2"])
+        second_run["score"].update(total=40,complete=False,capped=True,cap_value=40)
+        proxy_run["score"].update(total=0,complete=False,gate_pass=False)
+        proxy_run["score"]["items"].append({**item,"id":"A0","method":"auto","weight":1,"status":"scored","s":0})
+        video_run=next(r for r in runs if r["tkey"]=="T04")
+        video_ws=next(w for w in workspaces if w["ref"]==video_run["ws_ref"])
+        video_ws["entry"]="sample.mp4"
+        workspaces.append({**workspaces[0], "ref":"Test/UI Alpha/T01/r10", "index":10, "grader_run_id":None})
+        runs[-2]["dir"]=runs[-1]["dir"]="bench-data/runs/shared"
+        sessions.extend([
+            {**session("old-static","Recovered artifact",base), "kind":"static", "root":str(ROOT / "model" / first_run["ws_ref"]), "entry":"index.html"},
+            {**session("dev-proxy","Dev preview",base), "kind":"proxy", "proc_id":"dev"},
+            {**session("unregistered-static","Unregistered artifact",base), "kind":"static", "root":str(ROOT / "model" / "Test/UI Alpha/T01/r10"), "entry":"index.html"},
+            {**session("ambiguous-static","Ambiguous artifact",base), "kind":"static", "root":str(ROOT / "bench-data/runs/shared"), "entry":"index.html"},
+            {**session("plain-static","Ordinary file",base), "kind":"static", "root":str(ROOT / "docs"), "entry":"index.html"},
+        ])
+        processes.append(dict(id="dev",name="Fixture",cwd=str(ROOT / "model" / proxy_run["ws_ref"] / "app"),cmd="fixture",status="exited",started_at=1,session_id="dev-proxy"))
+        page.evaluate("""() => {
+            localStorage.setItem('wb.stage.panes', '[]'); localStorage.removeItem('wb.stage.score');
+            localStorage.removeItem('wb.stage.sideScore'); localStorage.setItem('wb.stage.layout', '\"cols\"');
+        }""")
+        page.reload()
+        folder=page.get_by_role("button",name="运行产物",exact=True)
+        nav_link=page.get_by_role("link",name="总览",exact=True)
+        dock=page.locator("#stage-artifact-panel")
+        search=dock.get_by_role("textbox",name="搜索运行产物")
+        tree=dock.get_by_role("tree",name="运行产物")
+        separator=page.get_by_role("separator",name="调整左侧栏宽度")
+        summary=sheet.get_by_role("group",name="评分摘要")
+        scores=summary.locator(".ss-summary-number")
+        expect(page.locator(".stage-empty")).to_be_visible()
+        folder.click(); expect(tree).to_be_visible(); expect(nav_link).to_be_hidden()
+        folder.click(); expect(nav_link).to_be_visible()
+        folder.click(); search.fill("UI Alpha T01 r2")
+        tree.locator('[role="treeitem"][aria-level="3"]').click()
+        r2_pane=page.locator(".stage-grid .pane").first
+        r2_score=r2_pane.get_by_role("button",name="人工评分",exact=True)
+        expect(r2_score).to_be_visible()
+        tree.locator('[role="treeitem"][aria-level="3"]').press("Enter")
+        expect(page.locator(".stage-tab")).to_have_count(1)
+        expect(tree).to_be_visible()
+        page.screenshot(path=str(OUT/"stage-artifact-sidebar.png"))
+        r2_pane.locator("iframe").content_frame.get_by_role("button",name="Test interaction").click()
+        r2_score.click(); expect(sheet.locator(".ss-ht")).to_contain_text("r2")
+        expect(summary).to_contain_text("封顶 40")
+        expect(scores).to_have_text(["40.0","—"])
+        expect(tree).to_be_hidden()
+        # A repeated direct action on the same run must reopen scoring.
+        page.get_by_role("button",name="切回左侧导航").click(); expect(sheet).to_be_hidden()
+        page.keyboard.press("1")
+        assert not manual_writes
+        r2_score.click(); expect(sheet).to_be_visible()
+        expect(r2_pane.locator("iframe").content_frame.get_by_role("button",name="Clicked")).to_be_visible()
+        for _ in range(2):
+            page.evaluate("hash => { location.hash = hash; }", "/stage?"+urlencode({"score":second_run["run_id"]}))
+            expect(sheet).to_be_visible()
+            page.wait_for_function("location.hash === '#/stage'")
+            page.get_by_role("button",name="切回左侧导航").click()
+        page.get_by_role("button",name="打开评分面板").click()
+        page.get_by_role("option",name="T01 · UI Alpha · r2",exact=False).click()
+        expect(sheet.locator(".ss-ht")).to_contain_text("r2")
+        page.get_by_role("button",name="切回左侧导航").click()
+        page.get_by_role("button",name="显示当前评分题").click()
+        folder.click(); expect(search).to_have_value("UI Alpha T01 r2")
+        folder.click(); expect(sheet.locator(".ss-ht")).to_contain_text("r2")
+
+        # Restored static, proxy, and plain external sessions are resolved by their source.
+        for sid in ("old-static","dev-proxy","stage-0","unregistered-static","ambiguous-static","plain-static"):
+            page.evaluate("id => { location.hash = '/stage?session=' + id; }", sid)
+            page.wait_for_function("location.hash === '#/stage'")
+        page.get_by_role("button",name="Recovered artifact",exact=True).click()
+        expect(sheet.locator(".ss-ht")).to_contain_text("r2")
+        focused=page.locator(".stage-grid .pane.focused")
+        focused.get_by_role("button",name="人工评分",exact=True).click()
+        expect(sheet.locator(".ss-ht")).to_contain_text("r1")
+        expect(scores).to_have_text(["50.0","50.0"])
+        expect(summary).to_contain_text("1 项待评")
+        expect(sheet.get_by_role("button",name="复制 Agent 评分提示词")).to_be_visible()
+        assert summary.bounding_box()["height"] <= 62
+        sheet.get_by_role("button",name="H2 · 待评").click()
+        expect(sheet.locator(".ss-desc")).to_contain_text("第二个人工项")
+        folder.click(); expect(search).to_have_value("UI Alpha T01 r2")
+        page.keyboard.press("2")
+        folder.click(); expect(sheet.locator(".ss-desc")).to_contain_text("第二个人工项")
+        expect(page.locator(".side")).to_have_css("width","372px")
+        separator.focus(); separator.press("ArrowRight")
+        expect(page.locator(".side")).to_have_css("width","388px")
+        rect=separator.bounding_box()
+        x,y=rect["x"]+rect["width"]/2,rect["y"]+rect["height"]/2
+        page.mouse.move(x,y); page.mouse.down(); page.mouse.move(x+90,y+220,steps=5); page.mouse.up()
+        expect(page.locator(".side")).to_have_css("width","478px")
+        expect(r2_pane.locator("iframe").content_frame.get_by_role("button",name="Clicked")).to_be_visible()
+        assert page.evaluate("JSON.parse(localStorage.getItem('wb.stage.sidebarWidth'))")==478
+
+        allow_manual=True
+        sheet.get_by_role("radio").nth(7).click(); expect(scores).to_have_text(["56.0","50.0"])
+        sheet.get_by_role("radio").nth(3).click()
+        expect(page.get_by_text("H2 保存失败",exact=False)).to_be_visible()
+        expect(sheet.get_by_role("radio").nth(7)).to_have_attribute("aria-checked","true")
+        expect(scores).to_have_text(["56.0","50.0"])
+        page.keyboard.press("Backspace"); expect(scores).to_have_text(["50.0","50.0"])
+        sheet.get_by_role("radio").nth(8).click()
+        assert slow_save_started.wait(3)
+        expect(sheet.get_by_text("保存中")).to_be_visible()
+        page.get_by_role("button",name="Dev preview",exact=True).click()
+        focused.get_by_role("button",name="人工评分",exact=True).click()
+        expect(sheet.locator(".ss-ht")).to_contain_text("r3")
+        expect(summary).to_contain_text("门槛未通过")
+        release_save.set(); expect(scores).to_have_text(["0.0","0.0"])
+        page.get_by_role("button",name="Recovered artifact",exact=True).click()
+        focused.get_by_role("button",name="人工评分",exact=True).click()
+        expect(scores).to_have_text(["58.0","50.0"])
+        assert manual_writes==[(first_run["run_id"],"H2",score) for score in (8,4,"",9)],manual_writes
+        if page.locator(".toast.error").count():
+            page.locator(".toast.error").get_by_role("button",name="关闭").click()
+        page.screenshot(path=str(OUT/"stage-score-sidebar.png"))
+        for title in ("Stage tab 0", "Ambiguous artifact", "Ordinary file"):
+            page.get_by_role("button",name=title,exact=True).click()
+            expect(focused.get_by_role("button",name="人工评分",exact=False)).to_have_count(0)
+        page.get_by_role("button",name="Unregistered artifact",exact=True).click()
+        expect(focused.get_by_role("button",name="人工评分：运行尚无评分结果，暂不可人工评分")).to_have_attribute("aria-disabled","true")
+
+        # Play a synthetic stream to exercise the actual video element without touching production fixtures.
+        page.evaluate("ref => { location.hash = '/stage?' + new URLSearchParams({open: 'ws:' + ref}); }",video_ws["ref"])
+        video=focused.locator("video")
+        expect(video).to_be_visible()
+        video.evaluate("""video => {
+            const canvas = document.createElement('canvas'); canvas.width = 80; canvas.height = 60;
+            const context = canvas.getContext('2d'); window.videoFixtureFrames = 0;
+            window.videoFixtureTimer = setInterval(() => {
+                context.fillStyle = window.videoFixtureFrames++ % 2 ? 'navy' : 'teal'; context.fillRect(0,0,80,60);
+            }, 45);
+            video.srcObject = canvas.captureStream(20); video.muted = true;
+        }""")
+        focused.get_by_role("button",name="播放 (空格)").click()
+        page.wait_for_function("document.querySelector('.pane.focused video')?.currentTime > 0.15")
+        playing=video.element_handle()
+        t=video.evaluate("video => video.currentTime")
+        focused.get_by_role("button",name="人工评分",exact=True).click()
+        expect(sheet.locator(".ss-ht")).to_contain_text("T04")
+        expect(summary).to_contain_text("未评完")
+        folder.click(); folder.click()
+        assert video.evaluate("(video, previous) => video === previous && !video.paused",playing)
+        page.wait_for_function("t => document.querySelector('.pane.focused video')?.currentTime > t", arg=t)
+        page.evaluate("clearInterval(window.videoFixtureTimer)")
+
+        # Reduced motion, drawer close, blind labels, persisted width and no page overflow.
+        page.emulate_media(reduced_motion="reduce")
+        expect(page.locator(".stage-shell")).to_have_css("transition-property","none")
+        expect(page.locator("#stage-score-panel")).to_have_css("animation-name","none")
+        page.set_viewport_size({"width":390,"height":620})
+        expect(sheet).to_be_visible()
+        expect(separator).to_be_hidden()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        expect(summary).to_be_visible()
+        assert summary.bounding_box()["height"] <= 68
+        page.screenshot(path=str(OUT/"score-drawer.png"))
+        sheet.locator("xpath=ancestor::nav").get_by_role("button",name="切换到深色").click()
+        expect(page.locator("html")).to_have_attribute("data-theme","dark")
+        expect(scores).to_have_text(["50.0","—"])
+        page.screenshot(path=str(OUT/"score-drawer-dark.png"))
+        sheet.locator("xpath=ancestor::nav").get_by_role("button",name="切换到浅色").click()
+        page.get_by_role("button",name="切回左侧导航").click(); expect(sheet).to_be_hidden()
+        page.set_viewport_size({"width":1440,"height":920})
+        page.get_by_role("button",name="盲评模式：点击隐藏模型名").click()
+        folder.click(); search.fill("T01")
+        expect(tree.get_by_role("treeitem",name="模型 A",exact=True)).to_be_visible()
+        expect(tree.get_by_role("treeitem",name="UI Alpha",exact=True)).to_have_count(0)
+        page.reload(); folder.click()
+        expect(page.locator(".side")).to_have_css("width","478px")
+        assert not unexpected_writes,unexpected_writes
         assert not errors,errors
-        print(json.dumps(dict(ok=True,task_rows=9,tiles=18,highest_score_and_tie=True,lazy_mount=True,interactive_iframes=True,expand=True,tab_tree=True,task_first_tree=True,expand_collapse_all=True,keyboard_tree_navigation=True,repository_file_preview=True,aligned_34px_rows=True,close_others=True,score_dock=True,ten_levels=True,nav_toggle=True,unexpected_writes=unexpected_writes,page_errors=errors),ensure_ascii=True))
+        print(json.dumps(dict(ok=True,task_rows=9,tiles=18,highest_score_and_tie=True,lazy_mount=True,interactive_iframes=True,tab_tree=True,repository_file_preview=True,score_dock=True,ten_levels=True,stage_tree=True,resize=True,run_bound_scoring=True,video_playback=True,race_safe_saves=True,narrow_drawer=True,unexpected_writes=unexpected_writes,page_errors=errors),ensure_ascii=True))
         browser.close()
 finally:
     server.shutdown(); server.server_close()

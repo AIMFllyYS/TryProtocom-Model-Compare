@@ -1,6 +1,7 @@
 // 预览舞台：多窗格并排查看模型产物（HTML / 开发服务器 / 视频 / 外部地址），每个窗格独立设备、缩放与 F12 面板。
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Columns2, Grid2x2, MonitorPlay, Plus, Rows2, Square, Server, StopCircle, Link2, Link2Off } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Columns2, FolderTree, Grid2x2, MonitorPlay, Plus, Rows2, Square, Server, StopCircle, Link2, Link2Off } from 'lucide-react';
 import type { PreviewSession } from '../../shared/types';
 import { del, get, post } from '../api';
 import { useWb } from '../state';
@@ -14,12 +15,14 @@ import { Pane, type PaneState } from '../stage/Pane';
 import { OpenDialog } from '../stage/OpenDialog';
 import { ProcOutput } from '../stage/DevTools';
 import { StageTabMenu } from '../stage/StageTabMenu';
+import { ArtifactTree } from '../stage/ArtifactTree';
+import { hasHumanScore, stageRunLookup, type StageSidebar } from '../stage/runScoring';
 import { workspaceForRun } from '../../shared/artifact-selection';
 
 type Layout = '1' | 'cols' | 'rows' | 'grid';
 const newId = () => Math.random().toString(36).slice(2, 9);
 
-export default function Stage() {
+export default function Stage({ sidebar }: { sidebar: StageSidebar }) {
   const wb = useWb();
   const route = useRoute();
   const nm = useNamer();
@@ -29,35 +32,50 @@ export default function Stage() {
   const [focus, setFocus] = useState<string | null>(null);
   const [openDlg, setOpenDlg] = useState(false);
   const [showProcs, setShowProcs] = useState(false);
-  const [scoreRun, setScoreRun] = useLocal<string | null>('stage.score', null);
+  const [treeVisited, setTreeVisited] = useState(false);
+  useEffect(() => { if (sidebar.treeOpen) setTreeVisited(true); }, [sidebar.treeOpen]);
   const handled = useRef('');
+  const opening = useRef(new Set<string>());
   const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const activeId = panes.some((p) => p.id === focus) ? focus : panes[0]?.id;
+  const paneList = useRef(panes);
+  paneList.current = panes;
+  const changePanes = (change: (current: PaneState[]) => PaneState[]) => {
+    const next = change(paneList.current);
+    paneList.current = next;
+    setPanes(next);
+  };
+  const matchRun = useMemo(() => stageRunLookup(wb.store, wb.session.root), [wb.store, wb.session.root]);
 
   const addPane = (p: Omit<PaneState, 'id' | 'device' | 'zoom' | 'rotate' | 'devtools'> & Partial<PaneState>, replaceFocused = false) => {
-    const base = panes.find((x) => x.id === focus) || panes[0];
+    const existing = !replaceFocused && paneList.current.find(({ src }) => src.type === 'session' ? p.src.type === 'session' && p.src.sid === src.sid : p.src.type === 'video' && p.src.path === src.path);
+    if (existing) {
+      if (p.artifactRef && p.artifactRef !== existing.artifactRef) update(existing.id, { artifactRef: p.artifactRef });
+      setFocus(existing.id);
+      return;
+    }
+    const base = paneList.current.find((x) => x.id === focus) || paneList.current[0];
     const np: PaneState = { id: newId(), device: sync && base ? base.device : 'fill', zoom: 'fit', rotate: false, devtools: false, ...p };
-    setPanes((ps) => {
-      if (replaceFocused && ps.length) return ps.map((x) => (x.id === (focus || ps[0].id) ? { ...np, device: x.device, zoom: x.zoom, devtools: x.devtools } : x));
-      return [...ps, np];
-    });
+    changePanes((current) => replaceFocused && base
+      ? current.map((x) => x.id === base.id ? { ...np, device: x.device, zoom: x.zoom, devtools: x.devtools } : x)
+      : [...current, np]);
     setFocus(np.id);
   };
-  const openSession = (s: PreviewSession, replace = false) => {
-    const existing = panes.find((p) => p.src.type === 'session' && p.src.sid === s.id);
-    if (existing && !replace) setFocus(existing.id);
-    else addPane({ src: { type: 'session', sid: s.id } }, replace);
-  };
+  const openSession = (s: PreviewSession, replace = false, artifactRef?: string) => addPane({ src: { type: 'session', sid: s.id }, artifactRef }, replace);
 
   // 深链：?session= / ?path= / ?url= / ?open=ws:<ref>,run:<id>
   useEffect(() => {
     const key = route.query.toString();
-    if (!key || handled.current === key) return;
+    if (!key) { handled.current = ''; return; }
+    if (!wb.store || handled.current === key) return;
     handled.current = key;
     const q = route.query;
+    const hash = location.hash;
+    const id = q.get('score');
+    if (id) sidebar.openScore(id);
     void (async () => {
       try {
-        if (q.get('session')) { const s = wb.previews.find((p) => p.id === q.get('session')) || (await get<PreviewSession>(`/api/preview/${q.get('session')}`)); if (!panes.some((p) => p.src.type === 'session' && p.src.sid === s.id)) openSession(s); else setFocus(panes.find((p) => p.src.type === 'session' && p.src.sid === s.id)!.id); }
+        if (q.get('session')) openSession(wb.previews.find((p) => p.id === q.get('session')) || (await get<PreviewSession>(`/api/preview/${q.get('session')}`)));
         if (q.get('path')) {
           const p = q.get('path')!;
           if (isVideo(p)) addPane({ src: { type: 'video', path: p, label: p.split('/').pop()! } });
@@ -65,29 +83,37 @@ export default function Stage() {
         }
         if (q.get('url')) openSession(await post<PreviewSession>('/api/preview', { url: q.get('url') }));
         if (q.get('ref')) await openRef('ws:' + q.get('ref'));
-        if (q.get('score')) setScoreRun(q.get('score'));
         if (q.get('open')) {
           const list = q.get('open')!.split(',').filter(Boolean);
           if (list.length > 1) setLayout(list.length > 2 ? 'grid' : 'cols');
           for (const x of list) await openRef(x);
         }
       } catch (e: any) { toast.error(e.message); }
-      go('stage', [], undefined, true);
+      if (location.hash === hash) go('stage', [], undefined, true);
     })();
-  }, [route.query.toString()]); // eslint-disable-line
+  }, [route.query.toString(), wb.store]); // eslint-disable-line
 
   async function openRef(x: string) {
-    const store = wb.store!;
+    const store = wb.store;
+    if (!store || opening.current.has(x)) return;
+    const current = paneList.current.find((pane) => pane.artifactRef === x && (pane.src.type === 'video' || wb.previews.some((session) => pane.src.type === 'session' && session.id === pane.src.sid)));
+    if (current) { setFocus(current.id); return; }
     const ws = x.startsWith('ws:') ? store.workspaces.find((w) => w.ref === x.slice(3)) : undefined;
     const run = x.startsWith('run:') ? store.runs.find((r) => r.run_id === x.slice(4)) : ws?.grader_run_id ? store.runs.find((r) => r.run_id === ws.grader_run_id) : undefined;
     const label = ws ? nm.ref(ws.ref) : run ? nm.run(run) : x;
     const a = resolveArtifact(ws || (run ? workspaceForRun(run, store.workspaces) : undefined), run, label);
-    if (a.kind === 'video') addPane({ src: { type: 'video', path: a.path, label } });
-    else if (a.kind === 'static') openSession(await post<PreviewSession>('/api/preview', a.body));
-    else toast.warn(`${label}：${a.reason}`);
+    if (a.kind === 'video') addPane({ src: { type: 'video', path: a.path, label }, artifactRef: x });
+    else if (a.kind === 'static') {
+      opening.current.add(x);
+      try { openSession(await post<PreviewSession>('/api/preview', a.body), false, x); }
+      finally { opening.current.delete(x); }
+    } else toast.warn(`${label}：${a.reason}`);
   }
+  const openRefAction = useRef(openRef);
+  openRefAction.current = openRef;
+  const openFromTree = useCallback((ref: string) => void openRefAction.current(ref).catch((error) => toast.error(error.message)), []);
 
-  const update = (id: string, patch: Partial<PaneState>) => setPanes((ps) => ps.map((p) => {
+  const update = (id: string, patch: Partial<PaneState>) => changePanes((ps) => ps.map((p) => {
     if (p.id === id) return { ...p, ...patch };
     if (sync && (patch.device || patch.zoom || patch.rotate !== undefined || patch.custom)) {
       const { device, zoom, rotate, custom } = patch;
@@ -95,10 +121,10 @@ export default function Stage() {
     }
     return p;
   }));
-  const close = (id: string) => setPanes((ps) => ps.filter((p) => p.id !== id));
+  const close = (id: string) => changePanes((ps) => ps.filter((p) => p.id !== id));
   // 窗格被 memo：回调经 ref 调到最新实现（update 依赖 sync 等最新状态）
-  const act = useRef({ update, close, setFocus });
-  act.current = { update, close, setFocus };
+  const act = useRef({ update, close, setFocus, openScore: sidebar.openScore });
+  act.current = { update, close, setFocus, openScore: sidebar.openScore };
   // 清理引用了已关闭会话的窗格：保留，显示“已关闭”，由用户关闭
 
   const running = wb.procs.filter((p) => p.status === 'running');
@@ -118,6 +144,7 @@ export default function Stage() {
           { value: 'rows', label: <Rows2 size={13} />, title: '上下并排' },
           { value: 'grid', label: <Grid2x2 size={13} />, title: '2×2 网格' },
         ]} />
+        <IconBtn label="运行产物" active={sidebar.treeOpen} aria-controls="stage-artifact-panel" onClick={sidebar.toggleTree}><FolderTree size={16} /></IconBtn>
         <IconBtn label={sync ? '设备/缩放同步：开（改一个窗格，全部跟随）' : '设备/缩放同步：关'} active={sync} onClick={() => setSync(!sync)}>{sync ? <Link2 size={15} /> : <Link2Off size={15} />}</IconBtn>
         <div className="stage-tabs">
           {panes.map((p) => {
@@ -132,9 +159,9 @@ export default function Stage() {
           <Select size="sm" value="" onChange={(id) => { const s = wb.previews.find((x) => x.id === id); if (s) openSession(s); }} label="已打开的预览会话" placeholder={`会话（${wb.previews.length}）`} place="bottom-end"
             options={unusedSessions.map((s) => ({ value: s.id, label: s.label, desc: s.kind === 'proxy' ? '开发服务器' : s.kind === 'url' ? '外部地址' : '静态' }))} />
         )}
-        {!scoreRun && (wb.store?.runs || []).length > 0 && (
-          <Select size="sm" value="" onChange={(id) => setScoreRun(id)} label="打开评分面板" placeholder="评分面板" place="bottom-end" searchable
-            options={(wb.store?.runs || []).filter((r) => r.score?.items.some((i) => i.method === 'human')).map((r) => ({ value: r.run_id, label: `${r.tkey} · ${nm.blind ? r.alias || '匿名' : r.model}`, desc: r.score?.pending.length ? `待评 ${r.score.pending.length}` : '已完成' }))} />
+        {!sidebar.scoreId && wb.store?.runs.some(hasHumanScore) && (
+          <Select size="sm" value="" onChange={sidebar.openScore} label="打开评分面板" placeholder="评分面板" place="bottom-end" searchable
+            options={wb.store.runs.filter(hasHumanScore).map((r) => ({ value: r.run_id, label: `${r.tkey} · ${nm.model(r.vendor, r.model)} · r${r.run_index ?? '?'}`, desc: r.score?.pending.length ? `待评 ${r.score.pending.length}` : '已完成' }))} />
         )}
         <Btn size="sm" tone={showProcs ? 'primary' : 'default'} icon={<Server size={14} />} onClick={() => setShowProcs(!showProcs)}>开发服务器{running.length ? ` · ${running.length}` : ''}</Btn>
       </div>
@@ -152,17 +179,26 @@ export default function Stage() {
         </div>
       ) : (
         <div className={cls('stage-grid', `lay-${layout}`, `n-${shown.length}`)}>
-          {shown.map((p) => (
-            <Pane key={p.id} pane={p} session={p.src.type === 'session' ? wb.previews.find((s) => s.id === (p.src as { sid: string }).sid) : undefined}
-              focused={activeId === p.id} onFocus={() => act.current.setFocus(p.id)} onChange={(patch) => act.current.update(p.id, patch)} onClose={() => act.current.close(p.id)} dtHeight={shown.length > 2 ? 200 : 280} />
-          ))}
+          {shown.map((p) => {
+            const src = p.src;
+            const session = src.type === 'session' ? wb.previews.find((s) => s.id === src.sid) : undefined;
+            const proc = session?.kind === 'proxy' ? wb.procs.find((process) => process.id === session.proc_id || process.session_id === session.id) : undefined;
+            const path = src.type === 'video' ? src.path : session?.kind === 'static' && session.root ? `${session.root}/${session.entry || ''}` : proc?.cwd;
+            const match = src.type === 'video' || (session && session.kind !== 'url') ? matchRun(p.artifactRef, path) : undefined;
+            const scoreId = hasHumanScore(match?.run) ? match?.run?.run_id : undefined;
+            const scoreUnavailable = match && !scoreId ? match.run?.score ? '这次运行没有可用的人工评分项' : '运行尚无评分结果，暂不可人工评分' : undefined;
+            return <Pane key={p.id} pane={p} session={session} focused={activeId === p.id} scoreId={scoreId} scoring={!!scoreId && scoreId === sidebar.scoreId}
+              scoreUnavailable={scoreUnavailable} onScore={(id) => { act.current.setFocus(p.id); act.current.openScore(id); }}
+              onFocus={() => act.current.setFocus(p.id)} onChange={(patch) => act.current.update(p.id, patch)} onClose={() => act.current.close(p.id)} dtHeight={shown.length > 2 ? 200 : 280} />;
+          })}
         </div>
       )}
       {tabMenu && <StageTabMenu x={tabMenu.x} y={tabMenu.y} selected={tabMenu.id} tabs={panes.map((p) => ({ id: p.id, label: paneLabel(p) }))}
         onDismiss={() => { document.getElementById('stage-tab-' + tabMenu.id)?.focus({ preventScroll: true }); setTabMenu(null); }} onSelect={setFocus} onCloseTab={() => close(tabMenu.id)}
-        onCloseOthers={() => { setPanes((ps) => ps.filter((p) => p.id === tabMenu.id)); setFocus(tabMenu.id); }}
-        onOpen={(ref) => void openRef(ref).catch((e) => toast.error(e.message))} />}
-      {openDlg && <OpenDialog onClose={() => setOpenDlg(false)} onOpenSession={(s, rep) => openSession(s, rep)} onOpenVideo={(path, label) => addPane({ src: { type: 'video', path, label } })} onOpenRef={(x) => void openRef(x).catch((e) => toast.error(e.message))} />}
+        onCloseOthers={() => { changePanes((ps) => ps.filter((p) => p.id === tabMenu.id)); setFocus(tabMenu.id); }}
+        onOpen={openFromTree} />}
+      {openDlg && <OpenDialog onClose={() => setOpenDlg(false)} onOpenSession={(s, rep) => openSession(s, rep)} onOpenVideo={(path, label) => addPane({ src: { type: 'video', path, label } })} onOpenRef={openFromTree} />}
+      {sidebar.treeMount && (treeVisited || sidebar.treeOpen) && createPortal(<ArtifactTree onOpen={openFromTree} openOnSelect />, sidebar.treeMount)}
     </div>
   );
 }

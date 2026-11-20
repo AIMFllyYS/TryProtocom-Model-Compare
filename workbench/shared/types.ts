@@ -75,6 +75,7 @@ export interface RunScore {
   items: ItemScore[]; na_ratio: number; low_confidence: boolean; pending: string[]; complete: boolean; passed: boolean;
   tier0_pass?: boolean | null; tier0_fail?: { id: string; desc: string; value: unknown }[];
   editions?: Record<string, number | null>; modules?: Record<string, { score: number | null; items: string[] }>;
+  capped?: boolean; cap_value?: number | null;
 }
 export interface Usage {
   wall_min?: number; active_min?: number; input_tokens?: number; output_tokens?: number;

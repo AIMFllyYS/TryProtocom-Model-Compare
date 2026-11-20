@@ -10,6 +10,8 @@ import { IconBtn, Popover, Spinner, Tip } from './ui/kit';
 import { ModelPicker } from './components/pickers';
 import { LaunchPadHost } from './components/LaunchPad';
 import { ScoreSheet } from './components/ScoreSheet';
+import { hasHumanScore, type StageSidebar } from './stage/runScoring';
+import { useStageSidebarResize } from './stage/useStageSidebarResize';
 import { toast } from './ui/toast';
 import { GithubIcon } from './ui/brand';
 import { desktop, post } from './api';
@@ -31,16 +33,25 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const [collapsed, setCollapsed] = useLocal('nav.collapsed', false);
   const [theme, setTheme] = useLocal<'dark' | 'light'>('theme', (document.documentElement.dataset.theme as 'dark' | 'light') || 'light');
-  const [scoreRun] = useLocal<string | null>('stage.score', null);
+  const [scoreRun, setScoreRun] = useLocal<string | null>('stage.score', null);
   const [preferScore, setPreferScore] = useLocal('stage.sideScore', true);
-  const scoring = route.view === 'stage' && !!scoreRun;
-  const showScore = scoring && preferScore && !collapsed;
-  const prevScore = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    if (prevScore.current === undefined) { prevScore.current = scoreRun; return; }
-    if (scoreRun && scoreRun !== prevScore.current) { setPreferScore(true); if (collapsed) setCollapsed(false); }
-    prevScore.current = scoreRun;
-  }, [scoreRun]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [showTree, setShowTree] = useState(false);
+  const [treeMount, setTreeMount] = useState<HTMLDivElement | null>(null);
+  const full = route.view === 'stage';
+  const scoreId = full && hasHumanScore(wb.store?.runs.find((r) => r.run_id === scoreRun)) ? scoreRun : null;
+  const mode = full && showTree ? 'artifacts' : scoreId && preferScore ? 'score' : 'nav';
+  const showPanel = mode !== 'nav';
+  const sidebarResize = useStageSidebarResize(showPanel);
+  const openScore = (runId: string) => {
+    const run = wb.store?.runs.find((r) => r.run_id === runId);
+    if (!hasHumanScore(run)) { toast.warn(run ? '这次运行没有可用的人工评分项' : '找不到这次评分运行'); return; }
+    setScoreRun(runId);
+    setShowTree(false);
+    setPreferScore(true);
+  };
+  const showNav = () => { setShowTree(false); setPreferScore(false); };
+  const stageSidebar: StageSidebar = { treeOpen: mode === 'artifacts', treeMount, scoreId: mode === 'score' ? scoreId : null, toggleTree: () => setShowTree((open) => !open), openScore };
+  useEffect(() => { if (!full) setShowTree(false); }, [full]);
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
   useEffect(() => {
@@ -60,11 +71,10 @@ export function App() {
 
   const cur = navOf(route.view);
   document.title = `${cur.label} · Bench Workbench`;
-  const full = route.view === 'stage';
 
   return (
-    <div className={cls('app', collapsed && !showScore && 'side-collapsed', showScore && 'side-score')}>
-      <Sidebar route={route} collapsed={collapsed} setCollapsed={setCollapsed} theme={theme} setTheme={setTheme} showScore={showScore} scoring={scoring} scoreRun={scoreRun} onToggleScore={() => { if (showScore) setPreferScore(false); else { setPreferScore(true); setCollapsed(false); } }} />
+    <div className={cls('app', full && 'stage-shell', collapsed && !showPanel && 'side-collapsed', showPanel && 'side-stage-panel', sidebarResize.dragging && 'side-resizing')} style={sidebarResize.style}>
+      <Sidebar route={route} collapsed={collapsed} setCollapsed={setCollapsed} theme={theme} setTheme={setTheme} mode={mode} scoreId={scoreId} onNavigate={showNav} onScore={openScore} resize={sidebarResize.handle} setTreeMount={setTreeMount} />
       <div className="main">
         <header className="toolbar glass-thin">
           <Crumbs route={route} />
@@ -77,7 +87,7 @@ export function App() {
         </header>
         <main className={cls('content', full && 'full')} id="view">
           <Suspense fallback={<div className="center pad-l"><Spinner size={22} /></div>}>
-            <ViewSwitch route={route} />
+            {full ? <Stage sidebar={stageSidebar} /> : <ViewSwitch route={route} />}
           </Suspense>
         </main>
       </div>
@@ -88,7 +98,16 @@ export function App() {
   );
 }
 
-function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, showScore, scoring, scoreRun, onToggleScore }: { route: Route; collapsed: boolean; setCollapsed: (b: boolean) => void; theme: string; setTheme: (t: 'dark' | 'light') => void; showScore: boolean; scoring: boolean; scoreRun: string | null; onToggleScore: () => void }) {
+type SidebarProps = {
+  route: Route; collapsed: boolean; setCollapsed: (b: boolean) => void;
+  theme: string; setTheme: (t: 'dark' | 'light') => void;
+  mode: 'nav' | 'score' | 'artifacts'; scoreId: string | null;
+  onNavigate: () => void; onScore: (id: string) => void;
+  resize: ReturnType<typeof useStageSidebarResize>['handle'];
+  setTreeMount: (node: HTMLDivElement | null) => void;
+};
+
+function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, mode, scoreId, onNavigate, onScore, resize, setTreeMount }: SidebarProps) {
   const wb = useWb();
   const box = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState<{ y: number; on: boolean }>({ y: 0, on: false });
@@ -101,22 +120,24 @@ function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, showScore, s
     const ro = new ResizeObserver(place);
     if (box.current) ro.observe(box.current);
     return () => ro.disconnect();
-  }, [route.view, collapsed]);
+  }, [route.view, collapsed, mode]);
   const pend = (wb.agg?.pending.human || 0) + (wb.agg?.pending.agent || 0);
   const live = (wb.store?.workspaces || []).filter((w) => !w.grader_run_id && (w.started_at || w.detect?.dir_exists)).length;
   const badge = (id: string) => id === 'runs' ? (live ? { n: live, c: 'live' } : pend ? { n: pend, c: '' } : null) : id === 'stage' && wb.previews.length ? { n: wb.previews.length, c: '' } : id === 'models' && wb.store ? null : null;
   const gh = wb.session.github;
   return (
-    <nav className="side glass-thin" aria-label="主导航">
+    <nav className="side glass-thin" aria-label="主导航" onKeyDown={(event) => {
+      if (mode !== 'nav' && event.key === 'Escape' && !event.defaultPrevented && !(event.target as HTMLElement).closest('input, textarea, [contenteditable]')) onNavigate();
+    }}>
       <div className="side-top">
         <a className="side-brand" href={href('overview')} style={{ textDecoration: 'none', color: 'inherit' }}>
           <span className="logo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l5-6 4 4 7-9" /><circle cx="20" cy="6" r="1.2" fill="#fff" /></svg></span>
           <span className="side-brand-t"><b>Model Compare</b><span>{wb.spec ? `${wb.spec.cfg.name} ${wb.spec.cfg.version}` : 'Bench Workbench'}</span></span>
         </a>
-        {scoring && <button type="button" className={cls('side-mode', showScore && 'on')} aria-pressed={showScore} aria-label={showScore ? '切回左侧导航' : '显示当前评分题'} onClick={onToggleScore}>{showScore ? '导航' : '本题'}</button>}
+        {mode !== 'nav' ? <button type="button" className="side-mode on" aria-label="切回左侧导航" onClick={onNavigate}>导航</button>
+          : scoreId && <button type="button" className="side-mode" aria-label="显示当前评分题" onClick={() => onScore(scoreId)}>本题</button>}
       </div>
-      <div className={cls('side-scroll', showScore && 'side-score-scroll')} ref={box}>
-        {showScore && scoreRun ? <ScoreSheet dock runId={scoreRun} /> : <>
+      <div className="side-scroll side-stage-view" hidden={mode !== 'nav'} ref={box}>
         <span className="side-thumb lens" style={{ transform: `translateY(${thumb.y}px)`, opacity: thumb.on ? 1 : 0 }} aria-hidden />
         {NAV_GROUPS.map((g) => (
           <div key={g.id} className="side-group">
@@ -138,15 +159,19 @@ function Sidebar({ route, collapsed, setCollapsed, theme, setTheme, showScore, s
           <div className="side-gl"><span>系统</span></div>
           {(() => { const a = <a href={href('settings')} className={cls('side-i', route.view === 'settings' && 'on')}><SETTINGS_NAV.icon size={17} aria-hidden /><span className="side-l">设置</span>{wb.jobs.some((j) => j.status === 'running') && <span className="side-b live"><Loader2 size={11} className="spin" /></span>}</a>; return collapsed ? <Tip text="设置" place="right-start">{a}</Tip> : a; })()}
         </div>
-        </>}
       </div>
+      {scoreId && <div id="stage-score-panel" className="side-tool side-stage-view" hidden={mode !== 'score'}>
+        <ScoreSheet key={scoreId} runId={scoreId} active={mode === 'score'} />
+      </div>}
+      {route.view === 'stage' && <div id="stage-artifact-panel" className="side-tool side-artifacts side-stage-view" hidden={mode !== 'artifacts'} ref={setTreeMount} />}
+      {mode !== 'nav' && <div className="side-resize" {...resize} />}
       <div className="side-foot">
         <IconBtn label="GitHub 开源仓库" onClick={() => { const D = desktop(); if (D) void D.openExternal(gh); else window.open(gh, '_blank', 'noopener'); }}><GithubIcon size={16} /></IconBtn>
         <IconBtn label="下载源码（ZIP，不含隐藏测试）" onClick={() => { location.href = '/api/source.zip'; }}><CloudDownload size={16} /></IconBtn>
         <IconBtn label={theme === 'dark' ? '切换到浅色' : '切换到深色'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</IconBtn>
         <span className="grow hide-c" />
         <Tip text={wb.conn === 'open' ? `服务已连接 · v${wb.session.version}` : wb.conn === 'down' ? '与服务断开，正在重连…' : '连接中…'}><span className={cls('conn-dot', wb.conn)} /></Tip>
-        <IconBtn label={collapsed ? '展开侧栏' : '收起侧栏'} onClick={() => setCollapsed(!collapsed)}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</IconBtn>
+        <IconBtn label={mode !== 'nav' || !collapsed ? '收起侧栏' : '展开侧栏'} onClick={() => { if (mode !== 'nav') { onNavigate(); setCollapsed(true); } else setCollapsed(!collapsed); }}>{mode === 'nav' && collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</IconBtn>
       </div>
     </nav>
   );
@@ -224,7 +249,6 @@ function ViewSwitch({ route }: { route: Route }) {
     case 'models': return <Models />;
     case 'tasks': return <Tasks />;
     case 'runs': return <Runs />;
-    case 'stage': return <Stage />;
     case 'board': return <Board />;
     case 'compare': return <Compare />;
     case 'exports': return <Exports />;

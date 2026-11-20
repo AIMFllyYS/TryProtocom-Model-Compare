@@ -2,7 +2,7 @@
    06 · 预览舞台 / F12 面板 / 文件 / 视频
    ============================================================ */
 
-.stage { position: relative; display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
+.stage { position: relative; display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; container-type: inline-size; }
 .stage-bar {
   position: relative; display: flex; align-items: center; gap: 8px; min-height: 50px; padding: 8px 10px; border-radius: var(--r-xl); flex: none;
   background: var(--g-thin); -webkit-backdrop-filter: blur(var(--blur-thin)) saturate(var(--sat)); backdrop-filter: blur(var(--blur-thin)) saturate(var(--sat));
@@ -30,6 +30,12 @@
 .addr input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: 12px var(--mono); color: var(--text); }
 .addr .badge { height: 20px; }
 .pane-tools { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.pane-tools .icon-btn[aria-disabled="true"] { opacity: .45; cursor: default; }
+@container (max-width: 660px) {
+  .stage-bar { flex-wrap: wrap; }
+  .stage-bar .stage-tabs { order: 1; flex-basis: 100%; }
+  .stage-bar .stage-tabs:empty { display: none; }
+}
 .custom-size { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-3); }
 .custom-size .input { width: 70px; min-height: 24px; padding: 2px 6px; }
 .pane-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -136,6 +142,10 @@
 
 /* Resource explorer: shared single-line geometry for artifacts and repository files. */
 .artifact-browser { display: flex; flex-direction: column; gap: 0; min-height: 0; }
+.side-artifacts .artifact-browser { flex: 1; padding: 0 3px; }
+.side-artifacts .artifact-tree { flex: 1; min-height: 0; max-height: none; }
+.side-artifacts .explorer-caption { flex-wrap: wrap; gap: 4px; }
+.side-artifacts .explorer-toolbar .search-in { flex-basis: 100%; }
 .explorer-toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 0 10px; flex-wrap: wrap; }
 .explorer-toolbar .search-in { flex: 1; min-width: 160px; }
 .explorer-caption { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; color: var(--text-3); font-size: 11px; border-bottom: 1px solid var(--hair); }

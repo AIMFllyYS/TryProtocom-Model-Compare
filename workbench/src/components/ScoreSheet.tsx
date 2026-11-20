@@ -9,18 +9,19 @@ import { useWb } from '../state';
 import { cls, copyText } from '../lib/format';
 import { displayLevel, LEVEL_LETTERS, levelBand } from '../lib/humanScale';
 import { useLocal } from '../lib/router';
-import { Badge, Btn, IconBtn, Kbd } from '../ui/kit';
+import { Badge, IconBtn, Kbd } from '../ui/kit';
 import { toast } from '../ui/toast';
-import { DimChip, Score, useNamer } from './common';
+import { DimChip, useNamer } from './common';
 
 type Answer = { score: number | null; note: string; draft?: boolean; scale?: string };
 const ADVANCE_MS = 240;
+const scoreSaves = new Map<string, Promise<void>>();
 
 function levelsOf(spec?: SpecItem): string[] {
   return spec?.levels && spec.levels.length === 10 ? spec.levels : [];
 }
 
-export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: () => void; dock?: boolean }) {
+export function ScoreSheet({ runId, active }: { runId: string; active: boolean }) {
   const wb = useWb();
   const nm = useNamer();
   const run: StoreRun | undefined = wb.store?.runs.find((r) => r.run_id === runId);
@@ -43,10 +44,9 @@ export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: (
   const [flash, setFlash] = useState<string | null>(null);
   const [axisDraft, setAxisDraft] = useState<number | null>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const advanceTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => clearTimeout(advanceTimer.current), []);
-  useEffect(() => { setLocal({}); setAxisDraft(null); }, [runId]);
+  useEffect(() => { if (!active) clearTimeout(advanceTimer.current); }, [active]);
 
   const it = human[Math.min(idx, Math.max(human.length - 1, 0))];
   const spec: SpecItem | undefined = task?.items.find((x) => x.id === it?.id);
@@ -56,18 +56,28 @@ export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: (
   const allDone = human.length > 0 && scoredCount === human.length;
   useEffect(() => { setNoteOpen(!!cur?.note); setAxisDraft(null); }, [it?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const persist = (id: string, score: number | null, note: string, prev: Answer, scale?: string) => {
+  const persist = (id: string, submitted: Answer) => {
+    const { score, note, scale } = submitted;
     setInflight((n) => n + 1);
-    queue.current = queue.current.then(async () => {
+    const save = (scoreSaves.get(runId) ?? Promise.resolve()).then(async () => {
       try {
         const r = await post<{ score: RunScore; manual: Record<string, ManualScore> }>(`/api/runs/${encodeURIComponent(runId)}/manual`, { item: id, score: score ?? '', note, by: 'human', scale: score == null ? '' : (scale || '') });
-        if (r?.score) wb.patchRun(runId, { score: r.score, manual: r.manual });
-        setLocal((m) => { const x = m[id]; if (!x || x.draft || x.score !== score || x.note !== note || x.scale !== scale) return m; const c = { ...m }; delete c[id]; return c; });
+        if (!r?.score || !r.manual) throw new Error('未收到最新评分结果');
+        wb.patchRun(runId, { score: r.score, manual: r.manual });
       } catch (e: any) {
-        setLocal((m) => ({ ...m, [id]: prev }));
         toast.error(`${id} 保存失败：${e.message || e}`);
-      } finally { setInflight((n) => n - 1); }
+      } finally {
+        setLocal((m) => {
+          if (m[id] !== submitted) return m;
+          const next = { ...m };
+          delete next[id];
+          return next;
+        });
+        setInflight((n) => n - 1);
+      }
     });
+    scoreSaves.set(runId, save);
+    void save.then(() => { if (scoreSaves.get(runId) === save) scoreSaves.delete(runId); });
   };
 
   const nextPending = (from: number, scoredId: string) => {
@@ -81,11 +91,11 @@ export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: (
   const choose = (s: number | null, opts: { advance?: boolean; note?: string } = {}) => {
     if (!it || !cur) return;
     if (s != null && displayLevel(cur.score, cur.scale) === s) return;
-    const prev = cur;
     const note = (opts.note ?? cur.note).trim();
     const scale = s == null ? undefined : 'human-10';
-    setLocal((m) => ({ ...m, [it.id]: { score: s, note, scale } }));
-    persist(it.id, s, note, prev, scale);
+    const submitted = { score: s, note, scale };
+    setLocal((m) => ({ ...m, [it.id]: submitted }));
+    persist(it.id, submitted);
     if (s == null) return;
     setFlash(`${it.id}:${s}`);
     if (opts.advance !== false) {
@@ -97,22 +107,29 @@ export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: (
 
   const setNote = (v: string) => { if (it && cur) setLocal((m) => ({ ...m, [it.id]: { score: cur.score, note: v, scale: cur.scale, draft: true } })); };
   const commitNote = () => {
-    if (!it || !cur) return;
+    if (!it || !cur?.draft) return;
     const v = cur.note.trim();
     if (cur.score == null) {
       if (/^(10|[1-9])$/.test(v)) choose(Number(v), { note: '' });
       return;
     }
     const saved = run?.manual[it.id];
-    setLocal((m) => ({ ...m, [it.id]: { score: cur.score, note: v, scale: cur.scale } }));
-    if (v !== (saved?.note || '') || saved?.score !== cur.score) persist(it.id, cur.score, v, { score: saved?.score ?? null, note: saved?.note || '', scale: saved?.scale }, cur.scale);
+    if (v === (saved?.note || '') && saved?.score === cur.score && saved?.scale === cur.scale && !inflight) {
+      setLocal((m) => { const next = { ...m }; delete next[it.id]; return next; });
+      return;
+    }
+    const submitted = { score: cur.score, note: v, scale: cur.scale };
+    setLocal((m) => ({ ...m, [it.id]: submitted }));
+    persist(it.id, submitted);
   };
 
   const go = (d: number) => { clearTimeout(advanceTimer.current); setFlash(null); setAxisDraft(null); setIdx((i) => Math.max(0, Math.min(human.length - 1, i + d))); };
 
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e: KeyboardEvent) => {
+    if (!active || e.defaultPrevented || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     const t = e.target as HTMLElement;
+    if (t?.closest('.vplayer, [role="listbox"], [role="tree"]')) return;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) { if (e.key === 'Escape') t.blur(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey || !it) return;
     if (e.key === '0') { e.preventDefault(); choose(10); }
@@ -123,10 +140,11 @@ export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: (
     else if (e.key === 'Backspace' || e.key === 'Delete') { if (cur?.score != null) { e.preventDefault(); choose(null); } }
   };
   useEffect(() => {
+    if (!active) return;
     const h = (e: KeyboardEvent) => keyRef.current(e);
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, []);
+  }, [active]);
 
   if (!run) return null;
   const aiPrompt = async () => { const r = await get<{ text: string }>('/api/review-prompt', { run_id: run.run_id }); if (await copyText(r.text)) toast.ok('已复制 AI 评审提示词：粘贴给评分 Agent'); };
@@ -135,11 +153,11 @@ export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: (
   const axisText = levels[axisValue - 1] || '';
 
   return (
-    <aside className={cls('score-sheet', dock && 'score-dock', !dock && 'glass-thick')} aria-label="评分面板">
+    <aside className="score-sheet score-dock" aria-label="评分面板">
       <header className="ss-h">
         <div className="grow">
-          <div className="ss-ht"><b>{task?.id}{run.variant || ''}</b><span className="ss-model">{nm.blind ? run.alias || '匿名' : run.model}</span>{run.score && <Score v={run.score.total} />}</div>
-          <div className="muted xs">人工 {scoredCount}/{human.length}{inflight > 0 ? <span className="ss-saving"><Loader2 size={11} className="spin" /></span> : run.score && !run.score.complete ? ' · 未完成' : ''}</div>
+          <div className="ss-ht"><b>{run.tkey}</b><span className="ss-model">{nm.blind ? run.alias || '匿名' : run.model}</span><span className="muted xs nowrap">r{run.run_index ?? '?'}</span></div>
+          <div className="muted xs">人工 {scoredCount}/{human.length}{inflight > 0 && <span className="ss-saving" role="status"><Loader2 size={11} className="spin" />保存中</span>}</div>
         </div>
         <IconBtn label={noteOpen ? '收起备注' : '添加备注'} size="xs" active={noteOpen} onClick={() => { setNoteOpen((o) => !o); if (!noteOpen) requestAnimationFrame(() => noteRef.current?.focus()); }}><MessageSquarePlus size={14} /></IconBtn>
       </header>
@@ -212,12 +230,45 @@ export function ScoreSheet({ runId, dock = false }: { runId: string; onClose?: (
         <span><Kbd>1</Kbd>–<Kbd>9</Kbd> 打分</span>
         <span><Kbd>0</Kbd> 即 10</span>
         <span><Kbd>J</Kbd><Kbd>K</Kbd> 切题</span>
+        {agentPending > 0 && <IconBtn className="ss-agent-copy" size="xs" label="复制 Agent 评分提示词" onClick={() => void aiPrompt()}><Bot size={14} /></IconBtn>}
       </div>
-      {agentPending > 0 && (
-        <div className="ss-agent"><Bot size={14} /><span className="grow small">{agentPending} 个 Agent 项仍是 0–3</span><Btn size="xs" tone="tinted" onClick={() => void aiPrompt()}>复制提示词</Btn></div>
-      )}
+      {run.score && <ScoreSummary score={run.score} />}
     </aside>
   );
+}
+
+function ScoreSummary({ score }: { score: RunScore }) {
+  let weight = 0, points = 0, pending = 0;
+  for (const item of score.items) {
+    if (item.method !== 'auto' && item.method !== 'agent') continue;
+    if (item.status === 'pending') pending++;
+    if (!Number.isFinite(item.weight) || item.weight <= 0) continue;
+    if (item.status === 'missing') weight += item.weight;
+    else if (item.status === 'scored' && item.s != null && Number.isFinite(item.s)) {
+      weight += item.weight;
+      points += item.s * item.weight;
+    }
+  }
+  const gated = !score.gate_pass;
+  const capped = !!(score.capped || score.tier0_fail?.length);
+  const complete = score.complete && !score.items.some((item) => item.status === 'pending');
+  return <div className="ss-summary" role="group" aria-label="评分摘要" aria-live="polite">
+    <div className="ss-summary-segment ss-summary-total">
+      <span className="ss-summary-label">当前总分</span>
+      <strong className="ss-summary-number">{Number.isFinite(score.total) ? score.total.toFixed(1) : '—'}</strong>
+      <div className="ss-summary-status">
+        {!complete && <span>未评完</span>}
+        {gated && <span className="ss-summary-alert">门槛未通过</span>}
+        {capped && <span className="ss-summary-alert">封顶{score.cap_value != null ? ` ${score.cap_value}` : ''}</span>}
+        {complete && !gated && !capped && <span>已评完</span>}
+      </div>
+    </div>
+    <div className="ss-summary-segment">
+      <span className="ss-summary-label">其他项总分</span>
+      <strong className="ss-summary-number">{weight > 0 ? (100 * points / weight).toFixed(1) : '—'}</strong>
+      <div className="ss-summary-status"><span>脚本 + Agent</span>{pending > 0 && <span>{pending} 项待评</span>}</div>
+    </div>
+  </div>;
 }
 
 const Pills = memo(function Pills({ items, idx, scores, onPick }: { items: { id: string }[]; idx: number; scores: (number | null)[]; onPick: (i: number) => void }) {

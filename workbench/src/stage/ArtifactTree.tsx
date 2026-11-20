@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { ChevronsDownUp, ChevronsUpDown, FileVideo, MonitorPlay, Search, X } from 'lucide-react';
 import { artifactChoices } from '../../shared/artifact-selection';
 import { useWb } from '../state';
@@ -7,7 +7,7 @@ import { ExplorerTree, type ExplorerNode } from '../components/ExplorerTree';
 import { Btn, Empty, IconBtn } from '../ui/kit';
 import { isVideo } from '../lib/format';
 
-export function ArtifactTree({ onOpen, picked, onPick }: { onOpen: (ref: string) => void; picked?: Set<string>; onPick?: (ref: string) => void }) {
+export const ArtifactTree = memo(function ArtifactTree({ onOpen, picked, onPick, openOnSelect = false }: { onOpen: (ref: string) => void; picked?: Set<string>; onPick?: (ref: string) => void; openOnSelect?: boolean }) {
   const wb = useWb();
   const nm = useNamer();
   const [query, setQuery] = useState('');
@@ -57,9 +57,9 @@ export function ArtifactTree({ onOpen, picked, onPick }: { onOpen: (ref: string)
       <Btn size="xs" tone="ghost" icon={<ChevronsUpDown size={13} />} onClick={() => { setExpanded(new Set(branches)); setSearchCollapsed(new Set()); }}>全部展开</Btn>
       <Btn size="xs" tone="ghost" icon={<ChevronsDownUp size={13} />} onClick={() => { setExpanded(new Set()); setSearchCollapsed(new Set(branches)); }}>全部折叠</Btn>
     </div>
-    <div className="explorer-caption"><span>题目 <span aria-hidden>›</span> AI 模型 <span aria-hidden>›</span> 运行轮次</span><span>{query.trim() ? '搜索结果自动展开' : '双击或 Enter 打开产物'}</span></div>
+    <div className="explorer-caption"><span>题目 <span aria-hidden>›</span> AI 模型 <span aria-hidden>›</span> 运行轮次</span><span>{query.trim() ? '搜索结果自动展开' : `${openOnSelect ? '点击' : '双击'}或 Enter 打开产物`}</span></div>
     <ExplorerTree className="artifact-tree" label="运行产物" nodes={groups} expanded={visibleExpanded} onToggle={toggle} selected={selected}
-      onSelect={(id) => { setSelected(id); if (onPick && !picked?.has(id)) onPick(id); }} onCheck={onPick} onActivate={onOpen} />
+      onSelect={(id) => { setSelected(id); if (openOnSelect) onOpen(id); else if (onPick && !picked?.has(id)) onPick(id); }} onCheck={onPick} onActivate={onOpen} />
     {!groups.length && <Empty title="没有匹配的运行产物">试试题号或模型名称。</Empty>}
   </div>;
-}
+});
