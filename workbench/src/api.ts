@@ -34,6 +34,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
 }
 export const get = <T = unknown>(p: string, query?: Q) => api<T>(p, { query });
 export const post = <T = unknown>(p: string, body: unknown = {}) => api<T>(p, { method: 'POST', body });
+export const patch = <T = unknown>(p: string, body: unknown) => api<T>(p, { method: 'PATCH', body });
 export const del = <T = unknown>(p: string) => api<T>(p, { method: 'DELETE' });
 
 /** 仓库内文件的原始地址（图片、视频、下载）。 */

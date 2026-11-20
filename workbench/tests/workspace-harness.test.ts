@@ -14,6 +14,7 @@ test('v1/v2 引用、创建、提示词留档、扫描和修改均支持 B1–B8
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-v2-workspaces-'));
   try {
     const ws = new Workspaces(path.join(tmp, 'model'));
+    const models = [ws.upsertModel({ vendor: 'MiniMax', name: 'MiniMax M3.1 Flash' })];
     const ids = ['T01', 'T03', ...Array.from({ length: 8 }, (_, i) => `B${i + 1}`), ...Array.from({ length: 8 }, (_, i) => `V0${i + 1}`)];
     for (const id of ids) {
       const variant = id === 'T03' ? 'C' : null;
@@ -29,7 +30,7 @@ test('v1/v2 引用、创建、提示词留档、扫描和修改均支持 B1–B8
       assert.equal(ws.patchRun(run.ref, { harness: '私有 Agent' }).harness, '私有 Agent');
       assert.equal(ws.nextIndex('MiniMax', 'MiniMax M3.1 Flash', run.tkey), 2);
     }
-    assert.equal(ws.listRuns().length, ids.length);
+    assert.equal(ws.listRuns(models).length, ids.length);
     assert.equal(ws.parseRef('MiniMax/MiniMax M3.1 Flash/B1/r2').task, 'B1');
     for (const tkey of ['B0', 'B9', 'B01', 'V1', 'T1', '../B1', 'B1/..']) {
       assert.equal(TASK_DIR.test(tkey), false);
@@ -44,14 +45,14 @@ test('旧失败的空 r1/r2 不当成运行，不回收编号；正常历史目�
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-v2-orphans-'));
   try {
     const ws = new Workspaces(path.join(tmp, 'model'));
-    ws.upsertModel({ vendor: 'MiniMax', name: 'MiniMax M3.1 Flash' });
+    const models = [ws.upsertModel({ vendor: 'MiniMax', name: 'MiniMax M3.1 Flash' })];
     const base = path.join(tmp, 'model', 'MiniMax', 'MiniMax M3.1 Flash', 'B1');
     fs.mkdirSync(path.join(base, 'r1', '.git'), { recursive: true });
     fs.mkdirSync(path.join(base, 'r2', '.git'), { recursive: true });
-    assert.deepEqual(ws.listRuns(), []);
+    assert.deepEqual(ws.listRuns(models), []);
     assert.equal(ws.nextIndex('MiniMax', 'MiniMax M3.1 Flash', 'B1'), 3);
     fs.writeFileSync(path.join(base, 'r2', 'README.md'), '历史产物');
-    assert.deepEqual(ws.listRuns().map((r) => r.ref), ['MiniMax/MiniMax M3.1 Flash/B1/r2']);
+    assert.deepEqual(ws.listRuns(models).map((r) => r.ref), ['MiniMax/MiniMax M3.1 Flash/B1/r2']);
     assert.equal(fs.existsSync(path.join(base, 'r1', '.git')), true);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });

@@ -299,9 +299,16 @@ Python ${s.python || "\u672A\u627E\u5230"}`);
     }
     case "model": {
       if (sub !== "add" || !rest[0]) die("\u7528\u6CD5\uFF1Awb model add <\u6A21\u578B\u540D> \u6216 <\u4F9B\u5E94\u5546>/<\u6A21\u578B> [--harness X] [--notes \u2026]");
+      if (rest.length !== 1) die('\u6A21\u578B\u540D\u79F0\u542B\u7A7A\u683C\u65F6\u8BF7\u7528\u5F15\u53F7\u62EC\u8D77\u5B8C\u6574\u540D\u79F0\uFF0C\u4F8B\u5982 wb model add "OpenAI/GPT 6.2 Sol High"');
       const hasVendor = rest[0].includes("/");
       const [vendor, ...n] = rest[0].split("/");
-      const m = await post("/api/models", hasVendor ? { vendor, name: n.join("/"), harness: str("harness"), notes: str("notes"), family: str("family") } : { input: rest[0], vendor: str("vendor"), harness: str("harness"), notes: str("notes"), family: str("family") });
+      const m = await post("/api/models", {
+        ...hasVendor ? { vendor, name: n.join("/") } : { input: rest[0], vendor: str("vendor") },
+        create: true,
+        harness: str("harness"),
+        notes: str("notes"),
+        family: str("family")
+      });
       return out(m, () => console.log(`\u2714 \u6A21\u578B ${m.vendor}/${m.name}
   \u5DE5\u4F5C\u533A ${import_node_path.default.join(ROOT, "model", m.vendor, m.name)}`));
     }
@@ -606,6 +613,7 @@ async function runCmd(sub, rest) {
     case "new": {
       const [mv, task] = rest;
       if (!mv || !task) die("\u7528\u6CD5\uFF1Awb run new <\u4F9B\u5E94\u5546>/<\u6A21\u578B> <T05> [--variant A] [--harness X]");
+      if (rest.length !== 2) die('\u7528\u6CD5\uFF1Awb run new "\u4F9B\u5E94\u5546/\u6A21\u578B\u5168\u540D" <\u9898\u53F7>\uFF0C\u542B\u7A7A\u683C\u7684\u6A21\u578B\u540D\u79F0\u987B\u52A0\u5F15\u53F7');
       const [vendor, ...n] = mv.split("/");
       const r = await post("/api/ws/create", { vendor, model: n.join("/"), task: task.toUpperCase().replace(/[AC]$/, ""), variant: str("variant") || (/^T\d{2}([AC])$/i.exec(task)?.[1]?.toUpperCase() ?? null), harness: str("harness") || "" });
       return out(r, () => {

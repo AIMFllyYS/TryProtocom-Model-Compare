@@ -86,7 +86,15 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
   const refresh = useCallback<Wb['refresh']>(async (what = ['spec', 'store', 'agg', 'jobs', 'previews', 'procs', 'harness']) => {
     const tasks: Promise<unknown>[] = [];
     if (what.includes('spec')) tasks.push(get<SpecData>('/api/spec').then(setSpec));
-    if (what.includes('store')) tasks.push(get<BenchStore>('/api/store').then((s) => { setStore(s); if (localStorage.getItem('wb.current') === null && s.settings.current_model) setCurrentS(s.settings.current_model); }));
+    if (what.includes('store')) tasks.push(get<BenchStore>('/api/store').then((s) => {
+      setStore(s);
+      const local = localStorage.getItem('wb.current');
+      const key = local ?? s.settings.current_model ?? '';
+      if (key && (s.model_deletions?.[key] || !s.models.some((m) => `${m.vendor}/${m.name}` === key))) {
+        localStorage.setItem('wb.current', '');
+        setCurrentS('');
+      } else if (local === null) setCurrentS(key);
+    }));
     if (what.includes('agg')) tasks.push(get<Aggregate>('/api/aggregate', { view: viewRef.current }).then(setAgg));
     if (what.includes('jobs')) tasks.push(get<JobInfo[]>('/api/jobs').then(setJobs));
     if (what.includes('previews')) tasks.push(get<PreviewSession[]>('/api/preview').then(setPreviews));

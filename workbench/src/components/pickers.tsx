@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, FolderPlus, Layers, Plus, Sparkles, Wand2 } from 'lucide-react';
 import type { ModelProfile } from '../../shared/types';
-import { HARNESSES, harnessById, harnessByName, customHarnessNames, normalizeHarnessName, VENDORS, vendorById } from '../../shared/vendors';
-import { get, post } from '../api';
+import { HARNESSES, harnessById, harnessByName, customHarnessNames, normalizeHarnessName, parseModelInput, VENDORS, vendorById } from '../../shared/vendors';
+import { get, patch, post } from '../api';
 import { useWb } from '../state';
 import { cls } from '../lib/format';
 import { Btn, Field, Modal, Select, type Opt } from '../ui/kit';
@@ -22,7 +22,7 @@ export function ModelPicker({ value, onChange, size, glassy = true, block, place
   const [add, setAdd] = useState(false);
   // 「全部」用空串表示：与筛选器默认值一致，选中即不筛选模型
   const all: Opt[] = allowAll ? [{ value: '', text: '全部模型', group: '全部', label: allLabel, desc: '不筛选模型', icon: <AllIcon size="sm" /> }] : [];
-  const opts: Opt[] = [...all, ...(store?.models || []).map((m) => ({
+  const opts: Opt[] = [...all, ...(store?.models || []).filter((m) => !store?.model_deletions?.[modelKey(m)]).map((m) => ({
     value: modelKey(m), text: `${m.vendor} ${m.name} ${m.display || ''}`, group: vendorById(m.vendor)?.name || m.vendor,
     label: m.display || m.name, desc: m.harness ? `${m.vendor} · ${m.harness}` : m.vendor,
     icon: <ModelAvatar vendor={m.vendor} model={m.name} size="sm" blind={blind} />,
@@ -88,30 +88,31 @@ export function AddModelDialog({ onClose, onSaved, init }: { onClose: () => void
   const wb = useWb();
   const edit = !!init;
   const [raw, setRaw] = useState(init ? init.name : '');
-  const [inf, setInf] = useState<Infer | null>(null);
-  const [vendor, setVendor] = useState<string>(init?.vendor || '');
-  const [vendorTouched, setVendorTouched] = useState(!!init);
-  const [harness, setHarness] = useState(init?.harness || '');
-  const [harnessTouched, setHarnessTouched] = useState(!!init?.harness);
+  const [suggestion, setSuggestion] = useState<{ input: string; result: Infer } | null>(null);
+  const [chosenVendor, setVendor] = useState<string | null>(null);
+  const [chosenHarness, setHarness] = useState<string | null>(null);
   const [more, setMore] = useState(edit);
   const [f, setF] = useState<Partial<ModelProfile>>(init || {});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (edit) return;
     const s = raw.trim();
-    if (!s) { setInf(null); return; }
+    if (edit || !s) return;
+    let stale = false;
     const t = setTimeout(() => void get<Infer>('/api/models/infer', { name: s }).then((r) => {
-      setInf(r);
-      if (!vendorTouched) setVendor(r.vendor || '');
-      if (!harnessTouched && r.harness) setHarness(r.harness.name);
+      if (!stale) setSuggestion({ input: s, result: r });
     }).catch(() => {}), 180);
-    return () => clearTimeout(t);
-  }, [raw]); // eslint-disable-line
+    return () => { stale = true; clearTimeout(t); };
+  }, [raw, edit]);
 
-  const name = edit ? init!.name : (inf?.name || raw.trim().split('/').pop() || '').trim();
+  const parsed = parseModelInput(raw);
+  const inf = suggestion?.input === raw.trim() ? suggestion.result : null;
+  const vendor = init?.vendor ?? chosenVendor ?? parsed.vendor ?? '';
+  const harness = chosenHarness ?? init?.harness ?? (inf?.vendor === vendor ? inf?.harness?.name || '' : '');
+  const name = init?.name ?? parsed.name;
   const bad = /[<>:"/\\|?*]/;
-  const errN = name && (bad.test(name) || /[. ]$/.test(name)) ? '名称不能含 <>:"/\\|?*，不能以点或空格结尾' : null;
+  const errN = !edit && /%[0-9a-f]{2}/i.test(name) ? '请使用原始名称，去掉 URL 转义'
+    : name && (bad.test(name) || /[. ]$/.test(name)) ? '名称不能含 <>:"/\\|?*，不能以点或空格结尾' : null;
   const errV = vendor && bad.test(vendor) ? '供应商不能含特殊字符' : null;
   const existingVendors = useMemo(() => [...new Set([...(inf?.vendors || []), ...(wb.store?.models || []).map((m) => m.vendor)])], [inf, wb.store]);
   const vendorOpts: Opt[] = [
@@ -124,10 +125,13 @@ export function AddModelDialog({ onClose, onSaved, init }: { onClose: () => void
   const hdef = harnessByName(harness);
   const installed = hdef ? wb.harness.find((h) => h.id === hdef.id)?.installed : undefined;
 
+  const canSave = !busy && !!name && !!vendor && !errN && !errV && !dup;
   const save = async () => {
+    if (!canSave) return;
     setBusy(true);
     try {
-      const m = await post<ModelProfile>('/api/models', { ...f, vendor, name, harness, tags: typeof f.tags === 'string' ? String(f.tags).split(/[,，\s]+/).filter(Boolean) : f.tags });
+      const write = edit ? patch<ModelProfile> : post<ModelProfile>;
+      const m = await write('/api/models', { ...f, vendor, name, create: !edit, harness: edit || chosenHarness !== null ? harness : harness || undefined, tags: typeof f.tags === 'string' ? String(f.tags).split(/[,，\s]+/).filter(Boolean) : f.tags });
       toast.ok(edit ? `已更新 ${m.name}` : `已新增 ${m.name} · 目录 model/${m.vendor}/${m.name}/ 已创建`);
       await wb.refresh(['store']);
       if (!edit) wb.setCurrent(modelKey(m));
@@ -143,12 +147,12 @@ export function AddModelDialog({ onClose, onSaved, init }: { onClose: () => void
         {!edit && <Btn tone="ghost" size="sm" icon={<ChevronRight size={14} style={{ transform: more ? 'rotate(90deg)' : undefined, transition: 'transform .2s' }} />} onClick={() => setMore(!more)}>更多信息</Btn>}
         <span className="grow" />
         <Btn tone="ghost" onClick={onClose}>取消</Btn>
-        <Btn tone="primary" busy={busy} disabled={!name || !vendor || !!errN || !!errV || dup} onClick={save}>{edit ? '保存' : '新增并设为当前模型'}</Btn>
+        <Btn tone="primary" busy={busy} disabled={!canSave} onClick={save}>{edit ? '保存' : '新增并设为当前模型'}</Btn>
       </>}>
       <div className="stack l">
         {!edit && (
           <div className="add-hero">
-            <input className="input lg" autoFocus value={raw} onChange={(e) => setRaw(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && name && vendor && !dup) void save(); }}
+            <input className="input lg" autoFocus value={raw} onChange={(e) => setRaw(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
               placeholder="例如 GPT-6.1-Sol、claude-opus-5.5、DeepSeek-V4" aria-label="模型名称" spellCheck={false} />
           </div>
         )}
@@ -156,7 +160,7 @@ export function AddModelDialog({ onClose, onSaved, init }: { onClose: () => void
           <div className="add-preview glass">
             <ModelAvatar vendor={vendor} model={name} size="xl" />
             <div className="grow stack s">
-              <div className="row gap-s wrap"><b className="add-name">{name || '—'}</b>{inf?.inferred && inf.vendor && !vendorTouched && <span className="badge tone-accent"><Wand2 size={11} /> 自动识别</span>}{dup && <span className="badge tone-warn">已存在</span>}</div>
+              <div className="row gap-s wrap"><b className="add-name">{name || '—'}</b>{!edit && parsed.inferred && parsed.vendor && chosenVendor === null && <span className="badge tone-accent"><Wand2 size={11} /> 自动识别</span>}{dup && <span className="badge tone-warn">已存在</span>}</div>
               <div className="add-path mono"><FolderPlus size={13} />model/<b className={cls(newVendorDir && 'new')}>{vendor || '？'}</b>/<b className="new">{name || '？'}</b>/</div>
               <div className="muted xs">{!vendor ? '无法识别供应商，请在下方选择或输入' : newVendorDir ? `将新建供应商目录 ${vendor}/ 与模型目录` : `供应商目录已存在，将新建模型目录`}</div>
             </div>
@@ -164,15 +168,15 @@ export function AddModelDialog({ onClose, onSaved, init }: { onClose: () => void
         )}
         <div className="form-grid">
           <Field label="供应商" hint={vendor && !vendorById(vendor) ? '自定义供应商' : undefined} error={errV}>
-            <Select value={vendor} onChange={(v) => { setVendor(v); setVendorTouched(true); }} options={vendorOpts} searchable block disabled={edit} placeholder="选择供应商"
+            <Select value={vendor} onChange={setVendor} options={vendorOpts} searchable block disabled={edit} placeholder="选择供应商"
               render={(o) => vendor ? <><BrandIcon icon={vendorById(vendor)?.icon || null} fallback={vendor} size="xs" /><span>{o?.label || vendor}</span></> : <span className="sel-ph">选择供应商</span>}
-              footer={<div className="row gap-s pad" style={{ padding: 6 }}><input className="input sm" placeholder="自定义供应商目录名" value={customV} onChange={(e) => setCustomV(e.target.value)} onKeyDown={(e) => e.stopPropagation()} /><Btn size="sm" disabled={!customV.trim()} onClick={() => { setVendor(customV.trim()); setVendorTouched(true); }}>使用</Btn></div>} />
+              footer={<div className="row gap-s pad" style={{ padding: 6 }}><input className="input sm" placeholder="自定义供应商目录名" value={customV} onChange={(e) => setCustomV(e.target.value)} onKeyDown={(e) => e.stopPropagation()} /><Btn size="sm" disabled={!customV.trim()} onClick={() => setVendor(customV.trim())}>使用</Btn></div>} />
           </Field>
           <Field label="默认 harness" hint={hdef ? (installed ? `本机已安装 · ${hdef.kind === 'cli' ? '命令行' : hdef.kind === 'ide' ? 'IDE' : '桌面应用'}` : '本机未检测到，仍可手动使用') : '被测模型运行所在的 Agent 软件'}>
-            <HarnessPicker value={harness} onChange={(v) => { setHarness(v); setHarnessTouched(true); }} block />
+            <HarnessPicker value={harness} onChange={setHarness} block />
           </Field>
         </div>
-        {inf?.harness && !harnessTouched && <div className="alert info"><Sparkles size={14} />已根据供应商与本机安装情况推荐 <b>{inf.harness.name}</b>；复制提示词时可一键打开它。</div>}
+        {inf?.vendor === vendor && inf?.harness && chosenHarness === null && <div className="alert info"><Sparkles size={14} />已根据供应商与本机安装情况推荐 <b>{inf.harness.name}</b>；复制提示词时可一键打开它。</div>}
         {more && (
           <div className="form-grid">
             <Field label="显示名"><input value={f.display || ''} onChange={set('display')} placeholder={name || 'GPT-6.1 Sol'} /></Field>

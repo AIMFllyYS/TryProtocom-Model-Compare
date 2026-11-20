@@ -19,9 +19,10 @@ test('复制提示词 API：v2 空壳恢复、创建/复用、切换 harness、�
     const md = path.join(modelDir, 'MiniMax', 'MiniMax M3.1 Flash');
     fs.mkdirSync(path.join(md, 'B1', 'r1', '.git'), { recursive: true });
     fs.mkdirSync(path.join(md, 'B1', 'r2', '.git'), { recursive: true });
-    fs.writeFileSync(path.join(md, 'model.json'), JSON.stringify({ schema: 1, vendor: 'MiniMax', name: 'MiniMax M3.1 Flash', harness: 'DeepSeek Harness' }));
+    const existing = { schema: 1, vendor: 'MiniMax', name: 'MiniMax M3.1 Flash', harness: 'DeepSeek Harness' };
+    fs.writeFileSync(path.join(md, 'model.json'), JSON.stringify(existing));
     const storeFile = path.join(root, 'store.json');
-    fs.writeFileSync(storeFile, JSON.stringify({ schema: 'bench-store/1', settings: {}, models: [], runs: [], workspaces: [], spec }));
+    fs.writeFileSync(storeFile, JSON.stringify({ schema: 'bench-store/1', settings: {}, models: [existing], runs: [], workspaces: [], spec }));
     server = await startServer({ root, modelDir, storeFile, port: 0, python: null, runtimeDir: root, scratchDir: path.join(root, 'scratch'), benchData: path.join(root, 'bench-data'), graderDir: path.join(root, 'grader') });
     const url = `http://127.0.0.1:${server.server.address().port}`;
     const api = async (route, body, expected = 200) => {
@@ -50,7 +51,7 @@ test('复制提示词 API：v2 空壳恢复、创建/复用、切换 harness、�
     await api('/api/settings', { custom_harnesses: ['bad\nname'] }, 400);
     const inferred = await api('/api/models/infer?' + new URLSearchParams({ name: 'MiniMax API Fixture' }));
     assert.equal(inferred.harness.name, custom.name);
-    const model = await api('/api/models', { vendor: 'MiniMax', name: 'MiniMax API Fixture' });
+    const model = await api('/api/models', { vendor: 'MiniMax', name: 'MiniMax API Fixture', create: true });
     assert.equal(model.harness, custom.name);
     const visual = await api('/api/ws/claim', { vendor: 'MiniMax', model: model.name, task: 'V01', start: false, open: false });
     assert.equal(visual.run.task, 'V01');

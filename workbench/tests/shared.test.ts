@@ -134,6 +134,9 @@ test('回收站：作废的运行移出所有评估入口，可恢复，永久�
   try {
     const ws = new Workspaces(path.join(tmp, 'model'));
     const store = new StoreFile(path.join(tmp, 'store.json'));
+    const models = [ws.upsertModel({ vendor: 'OpenAI', name: 'GPT-X' })];
+    store.data.models = models;
+    const sync = () => store.syncFrom([], models, ws.listRuns(models));
     const task = { id: 'T01', variants: {}, deliverable: 'pelican-bike' } as any;
     const mk = () => ws.createRun({ vendor: 'OpenAI', model: 'GPT-X', task, variant: null, harness: 'Codex', taskDir: path.join(tmp, 'no-task'), prompt: 'p' });
     const r1 = mk(), r2 = mk();
@@ -142,20 +145,20 @@ test('回收站：作废的运行移出所有评估入口，可恢复，永久�
     ws.patchRun(r1.ref, { grader_run_id: 'T01-aaaa' });
     const storeRun = { run_id: 'T01-aaaa', task: 'T01', variant: null, tkey: 'T01', model: 'GPT-X', vendor: 'OpenAI', harness: 'Codex', entrant: 'GPT-X @ Codex', run_index: 1, date: null, alias: null, ws_ref: r1.ref, graded: true, score: null, usage: {}, manual: {}, artifacts: {}, notes: [], dir: '', has_final_message: false, synced_at: '' } as any;
     store.data.runs = [storeRun];
-    store.syncFrom([], ws.listModels(), ws.listRuns());
+    sync();
     assert.equal(store.data.workspaces.length, 2);
 
     // 作废 r2（误点的第二次发车）和已登记的 r1
     ws.patchRun(r2.ref, { discarded: { at: '2026-09-30T12:40:00.000Z', stopped: true, from: '进行中', set_ended: true }, ended_at: '2026-09-30T12:40:00.000Z' });
     ws.patchRun(r1.ref, { discarded: { at: '2026-09-30T12:41:00.000Z', from: '已完成' } });
-    store.syncFrom([], ws.listModels(), ws.listRuns());
+    sync();
     assert.deepEqual(store.data.workspaces.map((w) => w.ref), []);
     assert.equal(store.data.runs.length, 0, '评分记录也要移出 runs，排行榜看不到');
     assert.deepEqual(store.data.trash!.map((t) => t.id), [r1.ref, r2.ref]);
     assert.equal(store.data.trash![0].run?.run_id, 'T01-aaaa');
     assert.equal(store.data.trash![1].stopped, true);
     // 再同步一次（例如 Python 快照）也不会让它回到评估里
-    store.syncFrom([], ws.listModels(), ws.listRuns());
+    sync();
     assert.equal(store.data.runs.length, 0);
     const spec = { dims: [], tasks: [], cfg: { runs_per_task: 3, pass_threshold: 60 }, config_full: { runs_per_task: 3, pass_threshold: 60, efficiency: { cost: { best: 0, worst: 1 }, speed: { best: 0, worst: 1 } } } } as any;
     assert.equal(aggregate(store.data.runs, spec).board.length, 0);
@@ -164,7 +167,7 @@ test('回收站：作废的运行移出所有评估入口，可恢复，永久�
 
     // 恢复 r1：评分记录回到 runs
     ws.patchRun(r1.ref, { discarded: null });
-    store.syncFrom([], ws.listModels(), ws.listRuns());
+    sync();
     assert.deepEqual(store.data.workspaces.map((w) => w.ref), [r1.ref]);
     assert.deepEqual(store.data.runs.map((r) => r.run_id), ['T01-aaaa']);
     assert.deepEqual(store.data.trash!.map((t) => t.id), [r2.ref]);
@@ -174,7 +177,7 @@ test('回收站：作废的运行移出所有评估入口，可恢复，永久�
     const removed = ws.purgeRun(r2.ref);
     assert.ok(removed.length >= 3);
     store.dropTrash([r2.ref]);
-    store.syncFrom([], ws.listModels(), ws.listRuns());
+    sync();
     const left = fs.readdirSync(path.join(tmp, 'model', 'OpenAI', 'GPT-X', 'T01')).sort();
     assert.deepEqual(left, ['r1', 'r1.prompt.md', 'r1.run.json']);
     assert.equal(store.data.trash!.length, 0);

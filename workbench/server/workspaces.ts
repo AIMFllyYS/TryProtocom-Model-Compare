@@ -15,9 +15,10 @@ import { HttpError } from './http';
 import { TASK_DIR } from '../shared/workspace-ref';
 
 const BAD = /[<>:"/\\|?*\u0000-\u001f]/;
+const DEVICE = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i;
 export function checkName(kind: string, s: unknown): string {
   const v = String(s ?? '').trim();
-  if (!v || v === '.' || v === '..' || BAD.test(v) || v.length > 80 || /[. ]$/.test(v)) throw new HttpError(400, `${kind}名称不合法：“${v}”（不能含 <>:"/\\|?* ，不能以点或空格结尾）`);
+  if (!v || BAD.test(v) || DEVICE.test(v) || v.length > 80 || /[. ]$/.test(v)) throw new HttpError(400, `${kind}名称不合法：“${v}”`);
   return v;
 }
 
@@ -60,39 +61,48 @@ export class Workspaces {
 
   modelPath(vendor: string, name: string) { return path.join(this.modelDir, vendor, name); }
 
-  listModels(): ModelProfile[] {
-    const out: ModelProfile[] = [];
-    for (const v of this.dirs(this.modelDir)) {
-      if (v.startsWith('.') || v.startsWith('_')) continue;
-      for (const m of this.dirs(path.join(this.modelDir, v))) {
-        if (m.startsWith('.') || m.startsWith('_')) continue;
-        const p = path.join(this.modelDir, v, m, 'model.json');
-        const prof = readJson<ModelProfile>(p);
-        if (prof) out.push({ ...prof, vendor: v, name: m });
-        else {
-          const created: ModelProfile = { schema: 1, vendor: v, name: m, created_at: this.mtime(path.join(this.modelDir, v, m)) };
-          writeJson(p, created);
-          out.push(created);
-        }
+  /** Require the literal registered path, including casing, on Windows. */
+  checkedModelPath(vendor: string, name: string): { dir: string; exists: boolean } {
+    if (checkName('供应商', vendor) !== vendor || checkName('模型', name) !== name) throw new HttpError(400, '需要原始模型路径');
+    const root = path.resolve(this.modelDir);
+    if (!fs.lstatSync(root).isDirectory() || path.relative(root, fs.realpathSync(root))) throw new HttpError(409, '模型根目录经过链接或目录联接');
+    let dir = root;
+    let exists = true;
+    for (const part of [vendor, name]) {
+      const parent = dir;
+      dir = path.join(parent, part);
+      if (!exists) continue;
+      const entries = fs.readdirSync(parent);
+      const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
+      if (stat && (!entries.includes(part) || !stat.isDirectory() || path.relative(dir, fs.realpathSync(dir)))) {
+        throw new HttpError(409, `模型路径存在别名、链接或并非目录：${dir}`);
       }
+      exists = !!stat;
     }
-    return out.sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
+    return { dir, exists };
   }
-  vendors(): string[] { return this.dirs(this.modelDir).filter((v) => !v.startsWith('.') && !v.startsWith('_')); }
+
+  localModels(registered: ModelProfile[]): ModelProfile[] {
+    return registered.filter((m) => {
+      try { return this.checkedModelPath(m.vendor, m.name).exists; } catch { return false; }
+    });
+  }
 
   upsertModel(input: Partial<ModelProfile> & { vendor: string; name: string }): ModelProfile {
     const vendor = checkName('供应商', input.vendor), name = checkName('模型', input.name);
-    const dir = this.modelPath(vendor, name);
-    const cur = readJson<ModelProfile>(path.join(dir, 'model.json'));
-    const prof: ModelProfile = { schema: 1, created_at: cur?.created_at || new Date().toISOString(), ...(cur || {}), ...input, vendor, name } as ModelProfile;
+    const { dir } = this.checkedModelPath(vendor, name);
+    const file = path.join(dir, 'model.json');
+    const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (stat && (!stat.isFile() || stat.nlink !== 1)) throw new HttpError(409, '模型档案路径并非独立文件');
+    const prof: ModelProfile = { created_at: new Date().toISOString(), ...input, schema: 1, vendor, name };
     fs.mkdirSync(dir, { recursive: true });
-    writeJson(path.join(dir, 'model.json'), prof);
+    writeJson(file, prof);
     return prof;
   }
 
-  listRuns(): WorkspaceRun[] {
+  listRuns(models: ModelProfile[], strict = false): WorkspaceRun[] {
     const out: WorkspaceRun[] = [];
-    for (const m of this.listModels()) {
+    for (const m of models) {
       const md = this.modelPath(m.vendor, m.name);
       for (const t of this.dirs(md)) {
         const tm = TASK_DIR.exec(t);
@@ -107,7 +117,9 @@ export class Workspaces {
           seen.add(n);
           // 旧解析错误留下的 Git 空壳不算运行；保留目录和编号，避免覆盖已有文件。
           const base = path.join(td, `r${n}`);
-          if (!fs.existsSync(`${base}.run.json`) && isDir(base) && fs.readdirSync(base).every((name) => name === '.git')) continue;
+          const metadata = `${base}.run.json`;
+          if (strict && fs.existsSync(metadata) && !readJson<WorkspaceRun>(metadata)) throw new HttpError(409, `无法读取运行登记：${metadata}`);
+          if (!fs.existsSync(metadata) && isDir(base) && fs.readdirSync(base).every((name) => name === '.git')) continue;
           out.push(this.readRun(m.vendor, m.name, t, n));
         }
       }
@@ -240,7 +252,6 @@ export class Workspaces {
     if (input.variant && !(task.variants || {})[input.variant]) throw new HttpError(400, `${task.id} 没有变体 ${input.variant}`);
     // 在创建目录、复制素材或初始化 Git 之前验证，避免失败后留下空 rN/。
     this.parseRef(`${vendor}/${model}/${task.id}${input.variant || ''}/r1`);
-    if (!this.listModels().some((m) => m.vendor === vendor && m.name === model)) this.upsertModel({ vendor, name: model, harness: input.harness });
     const tkey = task.id + (input.variant || '');
     const td = path.join(this.modelPath(vendor, model), tkey);
     fs.mkdirSync(td, { recursive: true });

@@ -242,9 +242,13 @@ async function main() {
     }
     case 'model': {
       if (sub !== 'add' || !rest[0]) die('用法：wb model add <模型名> 或 <供应商>/<模型> [--harness X] [--notes …]');
+      if (rest.length !== 1) die('模型名称含空格时请用引号括起完整名称，例如 wb model add "OpenAI/GPT 6.2 Sol High"');
       const hasVendor = rest[0].includes('/');
       const [vendor, ...n] = rest[0].split('/');
-      const m = await post('/api/models', hasVendor ? { vendor, name: n.join('/'), harness: str('harness'), notes: str('notes'), family: str('family') } : { input: rest[0], vendor: str('vendor'), harness: str('harness'), notes: str('notes'), family: str('family') });
+      const m = await post('/api/models', {
+        ...(hasVendor ? { vendor, name: n.join('/') } : { input: rest[0], vendor: str('vendor') }),
+        create: true, harness: str('harness'), notes: str('notes'), family: str('family'),
+      });
       return out(m, () => console.log(`✔ 模型 ${m.vendor}/${m.name}\n  工作区 ${path.join(ROOT, 'model', m.vendor, m.name)}`));
     }
     case 'run': return runCmd(sub, rest);
@@ -487,6 +491,7 @@ async function runCmd(sub: string | undefined, rest: string[]) {
     case 'new': {
       const [mv, task] = rest;
       if (!mv || !task) die('用法：wb run new <供应商>/<模型> <T05> [--variant A] [--harness X]');
+      if (rest.length !== 2) die('用法：wb run new "供应商/模型全名" <题号>，含空格的模型名称须加引号');
       const [vendor, ...n] = mv.split('/');
       const r = await post('/api/ws/create', { vendor, model: n.join('/'), task: task.toUpperCase().replace(/[AC]$/, ''), variant: str('variant') || (/^T\d{2}([AC])$/i.exec(task)?.[1]?.toUpperCase() ?? null), harness: str('harness') || '' });
       return out(r, () => {

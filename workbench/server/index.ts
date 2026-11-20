@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { execFile, spawn, spawnSync } from 'node:child_process';
-import type { Aggregate, BoardView, JobInfo, JobKind, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
+import type { Aggregate, BoardView, JobInfo, JobKind, ModelProfile, SessionInfo, SpecData, SpecTask, StoreRun, WorkspaceRun } from '../shared/types';
 import { aggregate } from '../shared/aggregate';
 import { FINAL_FILE } from '../shared/deliverables';
 import { petJobs } from '../shared/activity';
@@ -16,12 +16,13 @@ import { loadConfig, PREVIEW_PORT_RANGE, VERSION, type Config } from './config';
 import { listDir, readText, resolveSafe, sendRaw, toRel } from './fsapi';
 import { EventHub, HttpError, mimeOf, readJson, Router, sendJson, type Req, type Res } from './http';
 import { Jobs } from './jobs';
+import { inspectModelDeletion } from './model-delete';
 import { Previews } from './preview';
 import { Procs } from './procs';
 import { callBridge } from './python';
 import { listReports, modelReport, writeModelReport } from './report';
 import { StoreFile, stageLabel, trashEntryOf } from './store';
-import { Workspaces } from './workspaces';
+import { checkName, Workspaces } from './workspaces';
 
 export interface StartedServer { cfg: Config; server: http.Server; url: string; close: () => Promise<void> }
 
@@ -33,6 +34,25 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   const procs = new Procs(hub, previews);
   const ws = new Workspaces(cfg.modelDir);
   const store = new StoreFile(cfg.storeFile);
+  const modelKey = (vendor: string, name: string) => `${vendor}/${name}`;
+  const findModel = (vendor: string, name: string) => store.data.models.find((m) => m.vendor === vendor && m.name === name);
+  const deletion = (key: string) => store.data.model_deletions?.[key];
+  const assertWritableModel = (key: string) => {
+    if (deletion(key)) throw new HttpError(409, `模型已删除或正在清理：${key}`);
+  };
+  const requireModel = (vendor: string, name: string) => {
+    const key = modelKey(vendor, name);
+    assertWritableModel(key);
+    const model = findModel(vendor, name);
+    if (!model) throw new HttpError(404, `模型尚未登记：${key}。请先新增模型或使用 wb model add`);
+    return model;
+  };
+  const guardRef = (ref: string) => {
+    const { vendor, model } = ws.parseRef(ref);
+    assertWritableModel(modelKey(vendor, model));
+  };
+  const localModels = () => ws.localModels(store.data.models.filter((m) => !deletion(modelKey(m.vendor, m.name))));
+  const publishStore = () => hub.emit({ type: 'store', updated_at: store.data.updated_at });
   const R = new Router();
   const startedAt = Date.now();
   const bench = path.join(cfg.graderDir, 'scripts', 'bench.py');
@@ -78,7 +98,8 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const p = (async () => {
       let snap: { runs: any[] } = { runs: [] };
       if (fs.existsSync(path.join(cfg.benchData, 'runs'))) snap = await callBridge(cfg, ['snapshot', '--data', cfg.benchData, '--root', cfg.root], 600000);
-      store.syncFrom(snap.runs, ws.listModels(), ws.listRuns());
+      const models = localModels();
+      store.syncFrom(snap.runs, models, ws.listRuns(models));
       store.log('sync', `同步 ${snap.runs.length} 次运行`);
       store.save();
       hub.emit({ type: 'store', updated_at: store.data.updated_at });
@@ -88,7 +109,8 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     try { return await p; } finally { syncing = null; }
   }
   const refreshWorkspaces = () => {
-    store.syncFrom([], ws.listModels(), ws.listRuns());
+    const models = localModels();
+    store.syncFrom([], models, ws.listRuns(models));
     store.save();
     hub.emit({ type: 'store', updated_at: store.data.updated_at });
   };
@@ -110,6 +132,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   }
 
   function registerWs(ref: string, opts: { grade?: boolean; fast?: boolean }) {
+    guardRef(ref);
     const pr = ws.parseRef(ref);
     const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
     if (w.discarded) throw new HttpError(409, `${ref} 在回收站里，不参与评估；先恢复再登记`);
@@ -168,15 +191,16 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     deliverableDir: t.deliverable, timeLimit: t.time_limit, materials: t.materials, condition: t.condition, suite: t.suite === 'v2' ? 'v2' : 'v1',
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
   /** 可以直接拿来用的运行：已创建、没开始、没交付、没登记 */
-  const claimable = (vendor: string, model: string, tkey: string): WorkspaceRun | undefined => ws.listRuns().find((w) =>
-    w.vendor === vendor && w.model === model && w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final && fs.existsSync(ws.files(w.ref).prompt));
+  const claimable = (profile: ModelProfile, tkey: string): WorkspaceRun | undefined => ws.listRuns(ws.localModels([profile])).find((w) =>
+    w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final && fs.existsSync(ws.files(w.ref).prompt));
   async function promptFor(q: { vendor?: string | null; model?: string | null; task: string; variant?: string | null }) {
     const { s, t } = await findTask(q.task);
     const variant = q.variant || null;
     if (Object.keys(t.variants || {}).length && !variant) throw new HttpError(400, `${t.id} 需要选择变体（${Object.keys(t.variants).join(' / ')}）`);
     if (!q.vendor || !q.model) return { ...renderPrompt(s, t, variant, null, null), ref: null, workspace: null, index: null, exists: false };
     const tkey = t.id + (variant || '');
-    const cur = claimable(q.vendor, q.model, tkey);
+    const prof = findModel(q.vendor, q.model);
+    const cur = prof && !deletion(modelKey(q.vendor, q.model)) ? claimable(prof, tkey) : undefined;
     const index = cur ? cur.index : ws.nextIndex(q.vendor, q.model, tkey);
     const wsAbs = cur?.workspace || ws.wsPath(q.vendor, q.model, tkey, index);
     return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
@@ -229,14 +253,17 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   }
 
   async function claimRun(b: { vendor: string; model: string; task: string; variant?: string | null; index?: number; start?: boolean; harness?: string; open?: boolean; quota_before?: number | null; quota_unit?: string }) {
+    requireModel(b.vendor, b.model);
     const { s, t } = await findTask(b.task);
     const variant = b.variant || null;
     const tkey = t.id + (variant || '');
-    const prof = store.data.models.find((m) => m.vendor === b.vendor && m.name === b.model);
-    const harness = b.harness || prof?.harness || harnessName(settings().default_harness);
-    let run = claimable(b.vendor, b.model, tkey);
+    const prof = requireModel(b.vendor, b.model);
+    ws.checkedModelPath(prof.vendor, prof.name);
+    const harness = b.harness || prof.harness || harnessName(settings().default_harness);
+    let run = claimable(prof, tkey);
     if (!run || (b.index && run.index !== b.index)) {
       await ensureMaterials(t);
+      requireModel(b.vendor, b.model);
       run = ws.createRun({ vendor: b.vendor, model: b.model, task: t, variant, harness, taskDir: taskDirOf(t), index: b.index, prompt: (wsAbs, n) => renderPrompt(s, t, variant, wsAbs, n).text });
       store.log('ws-create', run.ref);
     } else if (harness && harness !== run.harness) run = ws.patchRun(run.ref, { harness });
@@ -246,6 +273,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     let opened: string | null = null;
     if (b.open) {
       await scanShell();
+      requireModel(b.vendor, b.model);
       const h = harnessByName(harness);
       if (h) { try { opened = openHarness(h.id, run.workspace || null).how; } catch (e) { opened = `未能打开：${(e as Error).message}`; } }
       else opened = `请手动打开 ${harness || 'harness'}，并进入提示词中的工作目录`;
@@ -290,7 +318,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   const detectTick = () => {
     let changed = false;
     for (const w of store.data.workspaces) {
-      if (w.grader_run_id) continue;
+      if (w.grader_run_id || store.isRemovedReference(w)) continue;
       try {
         if (ws.absorbFinal(w.ref)) changed = true;
         const p = ws.parseRef(w.ref);
@@ -342,6 +370,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const at = new Date().toISOString();
     const stop = !!b.stop;
     let ref = b.ref || store.data.runs.find((r) => r.run_id === b.run_id)?.ws_ref || null;
+    if (ref) guardRef(ref);
     if (ref && !fs.existsSync(ws.files(ref).run) && !fs.existsSync(ws.files(ref).ws)) ref = null; // 工作区不在本机
     if (ref) {
       const pr = ws.parseRef(ref);
@@ -379,6 +408,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   function restoreRun(id: string) {
     const t = (store.data.trash || []).find((x) => x.id === id);
     if (!t) throw new HttpError(404, `回收站里没有：${id}`);
+    if (t.ref) guardRef(t.ref);
     if (t.run_id) moveGrader(t.run_id, 'runs');
     if (t.ref && fs.existsSync(ws.files(t.ref).run)) {
       const pr = ws.parseRef(t.ref);
@@ -395,6 +425,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     for (const id of ids) {
       const t = (store.data.trash || []).find((x) => x.id === id);
       if (!t) continue; // 只能永久删除回收站里的条目：进行中 / 已评分的运行不会被这个接口误删
+      if (t.ref) guardRef(t.ref);
       let removed = 0;
       if (t.ref) { releaseFolder(ws.files(t.ref).ws); removed += ws.purgeRun(t.ref).length; }
       if (t.run_id && RID.test(t.run_id)) {
@@ -427,8 +458,9 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.post('/api/sync', () => sync());
 
   // 模型
-  R.get('/api/models', () => store.data.models);
-  R.post('/api/models', async (req) => {
+  R.get('/api/models', () => store.data.models.filter((m) => !deletion(modelKey(m.vendor, m.name))));
+  const normalizedModelPart = (value: string) => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase();
+  async function saveModel(req: Req, allowCreate: boolean) {
     const b = await readJson(req);
     if (b.input && !b.name) {
       const p = parseModelInput(String(b.input));
@@ -436,20 +468,80 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       b.name = p.name;
     }
     if (!b.vendor) throw new HttpError(400, `无法从“${b.name}”推断供应商，请手动选择或输入“供应商/模型”`);
-    if (!b.harness && !store.data.models.some((m) => m.vendor === b.vendor && m.name === b.name)) {
+    const vendor = checkName('供应商', b.vendor);
+    const name = checkName('模型', b.name);
+    const key = modelKey(vendor, name);
+    assertWritableModel(key);
+    if (!findModel(vendor, name) && allowCreate && b.create === true && b.harness == null) {
       await scanShell();
       const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
-      b.harness = recommendHarness(b.vendor, installed)?.name || '';
+      b.harness = recommendHarness(vendor, installed)?.name || '';
     }
-    const m = ws.upsertModel(b);
-    store.log('model', `新增/更新模型 ${m.vendor}/${m.name}`);
-    refreshWorkspaces();
+    assertWritableModel(key);
+    const existing = findModel(vendor, name);
+    if (!existing) {
+      if (!allowCreate || b.create !== true) requireModel(vendor, name);
+      if (/%[0-9a-f]{2}/i.test(vendor + '/' + name)) throw new HttpError(400, '名称包含 URL 转义，请输入原始名称');
+      const other = store.data.models.find((m) => normalizedModelPart(m.vendor) === normalizedModelPart(vendor)
+        && normalizedModelPart(m.name) === normalizedModelPart(name));
+      if (other) throw new HttpError(409, `相近的模型档案已存在：${modelKey(other.vendor, other.name)}`);
+    }
+    const { display, harness, family, release, notes, tags, color, billing } = b;
+    const fields = { display, harness, family, release, notes, tags, color, billing };
+    const supplied = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+    const m = ws.upsertModel({ ...existing, ...supplied, vendor, name });
+    const models = existing ? store.data.models.map((p) => p === existing ? m : p)
+      : [...store.data.models, m].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
+    store.commit({ ...store.data, models, history: [{ at: new Date().toISOString(), action: 'model', detail: `新增/更新模型 ${key}` }, ...store.data.history].slice(0, 300) });
+    publishStore();
     return m;
+  }
+  R.post('/api/models', (req) => saveModel(req, true));
+  R.patch('/api/models', (req) => saveModel(req, false));
+  function modelDeletion(vendor: string, name: string) {
+    const profile = findModel(vendor, name);
+    if (!profile) throw new HttpError(404, '模型档案不存在');
+    const target = inspectModelDeletion(store, ws, cfg.benchData, profile);
+    const job = jobs.list.find((j) => (j.status === 'queued' || j.status === 'running') &&
+      j.subject?.refs?.some((ref) => ref.startsWith(modelKey(vendor, name) + '/')));
+    if (job) throw new HttpError(409, `模型仍有后台任务：${job.title}`);
+    return target;
+  }
+  R.get('/api/models/delete', (req) => {
+    const vendor = req.query.get('vendor') || '', name = req.query.get('name') || '';
+    const target = modelDeletion(vendor, name);
+    return { directory: target.dir, exists: target.exists, workspaces: target.refs.size, trash: target.trash };
+  });
+  R.post('/api/models/delete', async (req) => {
+    const { vendor, name, confirm } = await readJson(req);
+    if (typeof vendor !== 'string' || typeof name !== 'string' || confirm !== modelKey(vendor, name)) {
+      throw new HttpError(400, '永久删除需要输入完整的供应商/模型名称');
+    }
+    const key = modelKey(vendor, name);
+    const marker = deletion(key);
+    if (marker && !marker.pending) return { ok: true };
+    const target = modelDeletion(vendor, name);
+    if (!marker) store.commit({ ...store.data, model_deletions: {
+      ...store.data.model_deletions, [key]: { at: new Date().toISOString(), pending: true },
+    } });
+    try {
+      if (target.exists) {
+        releaseFolder(target.dir);
+        fs.rmSync(target.dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+      }
+      store.finishModelDeletion(key);
+    } catch (e) {
+      throw new HttpError(409, `永久删除尚未完成，请解除占用后重试：${(e as Error).message}`);
+    } finally { publishStore(); }
+    return { ok: true };
   });
   R.post('/api/models/report', async (req) => {
     const { vendor, name } = await readJson(req);
+    requireModel(vendor, name);
     const md = modelReport(store.data, await getAgg(), await loadSpec(), vendor, name);
     const agg = await getAgg();
+    requireModel(vendor, name);
+    ws.checkedModelPath(vendor, name);
     const dir = writeModelReport(cfg.modelDir, vendor, name, md, { board: agg.board.filter((b) => b.model === name), tasks: agg.tasks.filter((t) => t.entrant.startsWith(name + ' @ ')), generated_at: agg.generated_at });
     return { dir: toRel(cfg.root, dir), file: toRel(cfg.root, path.join(dir, 'REPORT.md')), markdown: md };
   });
@@ -459,15 +551,20 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.post('/api/ws/scan', () => { refreshWorkspaces(); return store.data.workspaces; });
   R.get('/api/ws/prompt', async (req) => {
     const q = req.query;
-    const model = q.get('for') ? parseModelInput(q.get('for')!) : null;
+    const input = q.get('for');
+    const [vendor, name] = input?.split('/') || [];
+    const model = findModel(vendor, name) || (input ? parseModelInput(input) : null);
     return promptFor({ task: q.get('task') || '', variant: q.get('variant'), vendor: model?.vendor || q.get('vendor'), model: model?.name || q.get('model') });
   });
   R.post('/api/ws/claim', async (req) => claimRun(await readJson(req)));
   R.post('/api/ws/create', async (req) => {
     const b = await readJson(req);
+    requireModel(b.vendor, b.model);
     const { s, t: task } = await findTask(b.task);
     const variant = b.variant || null;
     await ensureMaterials(task);
+    requireModel(b.vendor, b.model);
+    ws.checkedModelPath(b.vendor, b.model);
     const run = ws.createRun({ vendor: b.vendor, model: b.model, task, variant, harness: b.harness || '', taskDir: taskDirOf(task), prompt: (wsAbs, n) => renderPrompt(s, task, variant, wsAbs, n).text });
     const pr = { text: fs.readFileSync(ws.files(run.ref).prompt, 'utf8'), warnings: renderPrompt(s, task, variant, null, null).warnings };
     const warnings = [...pr.warnings];
@@ -480,6 +577,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
 
   // 额度记录：开跑前 / 结束后剩余额度；结束时按模型计费方式折算费用写入用量（未手填费用时）
   const applyQuota = (ref: string, q: { before?: number | null; after?: number | null; unit?: string }) => {
+    guardRef(ref);
     const pr = ws.parseRef(ref);
     const cur = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
     const now = new Date().toISOString();
@@ -531,6 +629,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.post('/api/eff/quota-log', async (req) => {
     const b = await readJson(req);
     const key = String(b.model || '');
+    assertWritableModel(key);
     if (!store.data.models.some((m) => `${m.vendor}/${m.name}` === key)) throw new HttpError(404, `没有这个模型：${key}`);
     const e = effStore(); e.quota_log ??= {};
     const list = (e.quota_log[key] ??= []);
@@ -660,7 +759,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const installed = detectHarnesses().filter((h) => h.installed).map((h) => h.id);
     const h = recommendHarness(p.vendor, installed);
     const exists = store.data.models.some((m) => m.vendor === p.vendor && m.name === p.name);
-    return { ...p, icon: iconFor(p.vendor, p.name), harness: h ? { id: h.id, name: h.name } : null, exists, vendors: ws.vendors() };
+    return { ...p, icon: iconFor(p.vendor, p.name), harness: h ? { id: h.id, name: h.name } : null, exists, vendors: [...new Set(store.data.models.map((m) => m.vendor))] };
   });
 
   // AI 评审提示词（给评分 Agent）
@@ -690,6 +789,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     return undefined;
   });
   const liveRun = (ref: string) => {
+    guardRef(ref);
     const pr = ws.parseRef(ref);
     const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
     if (w.discarded) throw new HttpError(409, `${ref} 在回收站里；先在「运行 → 回收站」恢复它`);
@@ -732,6 +832,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   });
   R.post('/api/ws/patch', async (req) => {
     const { discarded: _d, ...b } = await readJson(req); // 作废 / 恢复只走回收站接口（要同时挪动评分目录）
+    guardRef(b.ref);
     if (typeof b.final_message === 'string') ws.writeFinal(b.ref, b.final_message);
     const r = ws.patchRun(b.ref, b);
     refreshWorkspaces();
@@ -945,6 +1046,9 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   });
   R.post('/api/settings', async (req) => {
     const b = await readJson(req);
+    if (b.current_model && (!store.data.models.some((m) => modelKey(m.vendor, m.name) === b.current_model) || deletion(b.current_model))) {
+      throw new HttpError(409, '当前选择引用了未登记或已删除的模型');
+    }
     if ('custom_harnesses' in b) {
       if (!Array.isArray(b.custom_harnesses)) throw new HttpError(400, '自定义 harness 必须是名称列表');
       try { b.custom_harnesses = customHarnessNames(b.custom_harnesses.map(normalizeHarnessName)); } catch (e) { throw new HttpError(400, (e as Error).message); }

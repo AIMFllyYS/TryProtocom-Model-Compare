@@ -168,6 +168,8 @@ export interface BenchStore {
   models: ModelProfile[]; runs: StoreRun[]; workspaces: WorkspaceRun[]; notes: StoreNote[];
   history: StoreHistory[]; spec?: SpecData | null;
   trash?: TrashEntry[];
+  /** 本机永久删除记录。pending 表示磁盘或存储清理尚待完成。 */
+  model_deletions?: Record<string, { at: string; pending?: true }>;
   /** 速度与价格的人工记录：用时核实、直接估价、额度读数。键为评分 run_id / 供应商/模型 */
   eff?: EffStore;
 }

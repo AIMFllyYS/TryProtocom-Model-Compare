@@ -15,7 +15,7 @@
 | 交付 | `wb detect` | 未登记运行的交付清单进度、`FINAL_MESSAGE.md` 是否出现、是否已结束、预览入口 |
 | AI 评审 | `wb ai-prompt [run_id\|ref]` | 给评分 Agent 的提示词：skills 路径（`.agents/skills/…`，备用绝对路径）+ `wb pending/score` 步骤 |
 | Skills | `wb skills sync` | 把 `skills/` 镜像到 `.agents/skills/`（不含 `hidden/`） |
-| 运行 | `wb run new <供应商>/<模型> <题号> [--variant A\|C] [--harness X]` | 新建干净工作目录 `rN/`，复制预置素材，保存提示词。返回 `run.ref`、`workspace`、`warnings` |
+| 运行 | `wb run new <供应商>/<模型> <题号> [--variant A\|C] [--harness X]` | 为已登记模型创建 `rN/`，复制预置素材并留档提示词。陌生模型须先执行 `wb model add`。返回 `run.ref`、`workspace`、`warnings` |
 | | `wb run list [--model 供应商/模型] [--task T05]` | 工作区运行列表（状态、计时、交付、回复、bench 运行 id、预览入口） |
 | | `wb run start <ref>` | 记录开始时间 |
 | | `wb run finish <ref> [--final-file f.md \| --final "…"] [--wall-min N] [--active-min N] [--cost-usd N] [--input-tokens N] [--output-tokens N] [--timed-out] [--register] [--no-grade] [--fast]` | 记录结束、保存最后回复与用量；`--register` 同时登记到 bench-grader 并（默认）评分 |

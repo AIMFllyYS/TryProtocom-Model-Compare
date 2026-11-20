@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Check, ClipboardCopy, Clock3, Copy, ExternalLink, FileCheck2, FolderOpen, Info, ListChecks, Lock, Package, Search, ShieldCheck, TriangleAlert, Users } from 'lucide-react';
 import type { SpecItem, SpecTask, WorkspaceRun } from '../../shared/types';
 import { deliverableFor, FINAL_FILE } from '../../shared/deliverables';
-import { get, post } from '../api';
+import { get, patch, post } from '../api';
 import { useWb } from '../state';
 import { go, href, useLocal, useRoute } from '../lib/router';
 import { cls, copyText, fmt, METHOD_LABEL, TIER_LABEL, wsStatus } from '../lib/format';
@@ -77,7 +77,7 @@ function TaskView({ t }: { t: SpecTask }) {
       const r = await post<{ run: WorkspaceRun; text: string; opened: string | null }>('/api/ws/claim', { vendor, model, task: t.id, variant: v, index: pr.index, start: autoStart, harness, open });
       if (r.text !== pr.text) { await copyText(r.text); toast.warn('工作目录序号有变化，已复制更新后的提示词'); }
       setCopied({ ref: r.run.ref, ws: r.run.workspace || '', opened: r.opened });
-      if (harness && harness !== prof?.harness && prof) void post('/api/models', { ...prof, harness });
+      if (harness && harness !== prof?.harness && prof) void patch('/api/models', { vendor, name: model, harness }).catch((e) => toast.error(e.message));
       toast.ok(`已复制提示词 · 工作目录 ${r.run.ref.split('/').slice(2).join('/')} 已就绪${autoStart ? '，开始计时' : ''}`, { action: { label: '查看运行', run: () => go('runs', [r.run.ref]) } });
       if (r.opened) toast.info(r.opened);
       await wb.refresh(['store']);

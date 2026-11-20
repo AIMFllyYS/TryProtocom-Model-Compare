@@ -5,7 +5,7 @@ import type { Billing, ModelProfile, SpecTask, WorkspaceRun } from '../../shared
 import { HARNESSES, harnessHint } from '../../shared/vendors';
 import { deliverableFor } from '../../shared/deliverables';
 import { QUOTA_UNITS, unitPrice } from '../../shared/quota';
-import { get, post } from '../api';
+import { get, patch, post } from '../api';
 import { useWb } from '../state';
 import { go } from '../lib/router';
 import { cls, copyText, fmt } from '../lib/format';
@@ -59,7 +59,7 @@ export function LaunchPad({ model, onClose, initialTask }: { model: ModelProfile
       const r = await post<{ run: WorkspaceRun; text: string; opened: string | null }>('/api/ws/claim', { vendor: model.vendor, model: model.name, task: slot.t.id, variant: slot.v, index: pr.index, start: true, harness: hname, open: !!target });
       let copied = ok;
       if (r.text !== pr.text) copied = await copyText(r.text);
-      if (hname && hname !== model.harness) { setHarness(hname); void post('/api/models', { ...model, harness: hname }); }
+      if (hname && hname !== model.harness) { setHarness(hname); void patch('/api/models', { vendor: model.vendor, name: model.name, harness: hname }).catch((e) => toast.error(e.message)); }
       setStamp({ run: r.run, opened: r.opened, copied, text: r.text });
       await wb.refresh(['store']);
     } catch (e: any) { toast.error(e.message); }
@@ -208,7 +208,7 @@ export function QuotaForm({ run, model, phase, compact, onSaved }: { run: Worksp
   const used = phase === 'after' && before != null && val !== '' ? Math.max(0, before - Number(val)) : null;
   const save = async () => {
     try {
-      if (edit || JSON.stringify(bill) !== JSON.stringify(model.billing || null)) await post('/api/models', { ...model, billing: { ...bill, unit } });
+      if (edit || JSON.stringify(bill) !== JSON.stringify(model.billing || null)) await patch('/api/models', { vendor: model.vendor, name: model.name, billing: { ...bill, unit } });
       if (val !== '' && bill.mode === 'subscription') await post('/api/ws/quota', { ref: run.ref, unit, [phase]: Number(val) });
       setSaved(true); setEdit(false);
       await wb.refresh(['store']);

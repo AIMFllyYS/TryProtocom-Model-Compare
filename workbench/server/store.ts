@@ -34,6 +34,18 @@ export function trashEntryOf(w: WorkspaceRun | undefined, run: StoreRun | undefi
   };
 }
 
+type ModelReference = { vendor?: string | null; model?: string; ref?: string | null; ws_ref?: string | null };
+
+export function referencedModelKeys(row: ModelReference): string[] {
+  const fromRef = (row.ref || row.ws_ref)?.split('/').slice(0, 2).join('/');
+  const fromFields = row.vendor && row.model ? `${row.vendor}/${row.model}` : null;
+  return [...new Set([fromRef, fromFields].filter((k): k is string => !!k && k.includes('/')))];
+}
+
+function belongsToTarget(target: string, key: string): boolean {
+  return target === key || target.startsWith(key + '/');
+}
+
 export class StoreFile {
   data: BenchStore;
   constructor(public file: string) {
@@ -68,6 +80,32 @@ export class StoreFile {
       try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* preserve original error */ }
     }
   }
+  commit(data: BenchStore) {
+    const previous = this.data;
+    this.data = data;
+    try { this.save(); } catch (error) { this.data = previous; throw error; }
+  }
+
+  finishModelDeletion(key: string) {
+    const next = structuredClone(this.data);
+    const marker = next.model_deletions![key];
+    next.model_deletions![key] = { at: marker.at };
+    next.models = next.models.filter((m) => `${m.vendor}/${m.name}` !== key);
+    next.workspaces = next.workspaces.filter((w) => !referencedModelKeys(w).includes(key));
+    next.trash = next.trash?.filter((t) => !referencedModelKeys(t).includes(key));
+    next.notes = next.notes.filter((n) => !belongsToTarget(n.target, key));
+    if (next.eff?.quota_log) delete next.eff.quota_log[key];
+    if (next.settings.current_model === key) next.settings.current_model = '';
+    next.history = [{ at: marker.at, action: 'model-delete', detail: key }, ...next.history].slice(0, 300);
+    this.commit(next);
+  }
+
+  isRemovedReference(row: ModelReference): boolean {
+    const keys = referencedModelKeys(row);
+    return keys.some((key) => !!this.data.model_deletions?.[key])
+      || (!keys.length && !!row.model && !this.data.models.some((m) => m.name === row.model)
+        && Object.keys(this.data.model_deletions || {}).some((key) => key.split('/')[1] === row.model));
+  }
   log(action: string, detail?: string) {
     this.data.history.unshift({ at: new Date().toISOString(), action, detail });
     this.data.history.splice(300);
@@ -96,14 +134,10 @@ export class StoreFile {
         graded: !!row.graded, score: row.score || null, usage: row.usage || {}, manual: row.manual || {}, artifacts: row.artifacts || {},
         notes: row.notes || [], dir: row.dir, has_final_message: !!row.has_final_message, synced_at: now, origin: machineName(),
       };
-      byId.set(run.run_id, run);
+      if (!this.isRemovedReference(run)) byId.set(run.run_id, run);
     }
-    // 模型档案：本机扫描为准，导入的其他模型保留
-    const mm = new Map(this.data.models.map((x) => [`${x.vendor}/${x.name}`, x]));
-    for (const x of models) mm.set(`${x.vendor}/${x.name}`, x);
-    this.data.models = [...mm.values()].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
     const wm = new Map(this.data.workspaces.map((x) => [x.ref, x]));
-    for (const w of wss) wm.set(w.ref, w);
+    for (const w of wss) if (!this.isRemovedReference(w)) wm.set(w.ref, w);
     // 本机已删除的工作区：如果属于本机模型目录则移除
     const local = new Set(wss.map((w) => w.ref));
     const localModels = new Set(models.map((x) => `${x.vendor}/${x.name}`));
@@ -181,35 +215,42 @@ export class StoreFile {
     const trash = new Map((this.data.trash || []).map((t) => [t.id, t]));
     const liveRefs = new Set(this.data.workspaces.map((w) => w.ref));
     const liveIds = new Set(this.data.runs.map((r) => r.run_id));
-    for (const t of other.trash || []) if (!trash.has(t.id) && !(t.ref && liveRefs.has(t.ref)) && !(t.run_id && liveIds.has(t.run_id))) trash.set(t.id, t);
+    for (const t of other.trash || []) if (!this.isRemovedReference(t) && !(t.run && this.isRemovedReference(t.run))
+      && !(t.ws && this.isRemovedReference(t.ws)) && !trash.has(t.id) && !(t.ref && liveRefs.has(t.ref)) && !(t.run_id && liveIds.has(t.run_id))) trash.set(t.id, t);
     this.data.trash = [...trash.values()];
     const trashedIds = new Set(this.data.trash.map((t) => t.run_id).filter(Boolean) as string[]);
     const trashedRefs = new Set(this.data.trash.map((t) => t.ref).filter(Boolean) as string[]);
     const runs = new Map(this.data.runs.map((r) => [r.run_id, r]));
+    const removedIds = new Set<string>();
     for (const r of other.runs || []) {
+      if (this.isRemovedReference(r)) { removedIds.add(r.run_id); continue; }
       if (trashedIds.has(r.run_id)) continue;
       const cur = runs.get(r.run_id);
       if (!cur || (r.synced_at || '') > (cur.synced_at || '')) { runs.set(r.run_id, r); stat.runs++; }
     }
     this.data.runs = [...runs.values()];
     const models = new Map(this.data.models.map((m) => [`${m.vendor}/${m.name}`, m]));
-    for (const m of other.models || []) if (!models.has(`${m.vendor}/${m.name}`)) { models.set(`${m.vendor}/${m.name}`, m); stat.models++; }
+    for (const m of other.models || []) {
+      const key = `${m.vendor}/${m.name}`;
+      if (!models.has(key) && !this.data.model_deletions?.[key]) { models.set(key, m); stat.models++; }
+    }
     this.data.models = [...models.values()];
     const wss = new Map(this.data.workspaces.map((w) => [w.ref, w]));
-    for (const w of other.workspaces || []) if (!wss.has(w.ref) && !trashedRefs.has(w.ref)) { wss.set(w.ref, w); stat.workspaces++; }
+    for (const w of other.workspaces || []) if (!this.isRemovedReference(w) && !wss.has(w.ref) && !trashedRefs.has(w.ref)) { wss.set(w.ref, w); stat.workspaces++; }
     this.data.workspaces = [...wss.values()];
     const notes = new Set(this.data.notes.map((n) => n.id));
-    for (const n of other.notes || []) if (!notes.has(n.id)) { this.data.notes.push(n); stat.notes++; }
+    for (const n of other.notes || []) if (!notes.has(n.id) && !removedIds.has(n.target) && !Object.keys(this.data.model_deletions || {}).some((k) => belongsToTarget(n.target, k))) { this.data.notes.push(n); stat.notes++; }
     if (!this.data.spec && other.spec) this.data.spec = other.spec;
     // 速度与价格的人工记录：按条目合并，较新的决定覆盖；额度读数按 id 去重
     if (other.eff) {
       const e = (this.data.eff ??= {});
       for (const k of ['time_review', 'cost'] as const) {
         const mine: Record<string, { at: string }> = (e[k] ??= {}) as Record<string, { at: string }>;
-        for (const [id, v] of Object.entries(other.eff[k] || {})) if (!mine[id] || (v.at || '') > (mine[id].at || '')) mine[id] = v;
+        for (const [id, v] of Object.entries(other.eff[k] || {})) if (!removedIds.has(id) && (!mine[id] || (v.at || '') > (mine[id].at || ''))) mine[id] = v;
       }
       e.quota_log ??= {};
       for (const [key, list] of Object.entries(other.eff.quota_log || {})) {
+        if (this.data.model_deletions?.[key]) continue;
         const cur = new Map((e.quota_log[key] || []).map((x) => [x.id, x]));
         for (const x of list || []) if (!cur.has(x.id)) cur.set(x.id, x);
         e.quota_log[key] = [...cur.values()].sort((a, b) => a.at.localeCompare(b.at));

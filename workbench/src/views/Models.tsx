@@ -1,9 +1,9 @@
 // 模型：按供应商分组的模型卡片；详情页含雷达、逐题得分、运行矩阵与单模型报告。
-import { useMemo, useState } from 'react';
-import { ArrowRight, Boxes, FileText, FolderOpen, Pencil, Plus, Rocket, Star, Trophy } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowRight, Boxes, FileText, FolderOpen, Pencil, Plus, Rocket, Star, Trash2, Trophy } from 'lucide-react';
 import type { ModelProfile, WorkspaceRun } from '../../shared/types';
 import { vendorById } from '../../shared/vendors';
-import { post } from '../api';
+import { get, post } from '../api';
 import { useWb } from '../state';
 import { go, href, useRoute } from '../lib/router';
 import { cls, fmt, splitEntrant, wsStatus } from '../lib/format';
@@ -76,6 +76,7 @@ function ModelList() {
               {list.map((m) => {
                 const s = stats.get(modelKey(m))!;
                 const isCur = wb.current === modelKey(m);
+                const pendingDelete = wb.store?.model_deletions?.[modelKey(m)]?.pending;
                 return (
                   <a key={m.name} className={cls('model-card glass sheen', isCur && 'cur')} href={href('models', [m.vendor, m.name])}>
                     <span className="sheen-l" aria-hidden />
@@ -85,7 +86,7 @@ function ModelList() {
                         <div className="model-card-n ellipsis">{wb.blind ? '（盲评中）' : m.display || m.name}</div>
                         <div className="row gap-s muted xs"><HarnessIcon name={m.harness} size="xs" /><span className="ellipsis">{m.harness || '未设置 harness'}</span></div>
                       </div>
-                      {isCur ? <Badge tone="accent" dot>测评中</Badge> : s.rank ? <Badge>#{s.rank}</Badge> : null}
+                      {pendingDelete ? <Badge tone="warn">待完成删除</Badge> : isCur ? <Badge tone="accent" dot>测评中</Badge> : s.rank ? <Badge>#{s.rank}</Badge> : null}
                     </div>
                     <div className="model-card-q">
                       <div><span className="muted xs">质量分</span><div className="big-num">{s.quality == null ? '—' : fmt.n(s.quality)}</div></div>
@@ -93,7 +94,7 @@ function ModelList() {
                         <div className="task-dots">{(wb.spec?.tasks || []).map((t) => <i key={t.id} className={cls(s.tasks.has(t.id) && 'on')} title={t.id} />)}</div>
                         <div className="muted xs">{s.tasks.size}/{nTasks} 题有交付 · {s.runs} 次运行{s.last ? ` · ${fmt.ago(s.last)}` : ''}</div>
                       </div>
-                      <Btn size="sm" tone="primary" icon={<Rocket size={14} />} onClick={(e) => { e.preventDefault(); e.stopPropagation(); launch(modelKey(m)); }}>开始测评</Btn>
+                      {!pendingDelete && <Btn size="sm" tone="primary" icon={<Rocket size={14} />} onClick={(e) => { e.preventDefault(); e.stopPropagation(); launch(modelKey(m)); }}>开始测评</Btn>}
                     </div>
                   </a>
                 );
@@ -108,11 +109,68 @@ function ModelList() {
   );
 }
 
+interface DeletionPreview {
+  directory: string;
+  exists: boolean;
+  workspaces: number;
+  trash: number;
+}
+
+function DeleteModelDialog({ model, onClose }: { model: ModelProfile; onClose: () => void }) {
+  const wb = useWb();
+  const { vendor, name } = model;
+  const key = modelKey(model);
+  const [preview, setPreview] = useState<DeletionPreview | null>(null);
+  const [error, setError] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void get<DeletionPreview>('/api/models/delete', { vendor, name }).then(
+      (result) => { if (current) setPreview(result); },
+      (e: Error) => { if (current) setError(e.message); },
+    );
+    return () => { current = false; };
+  }, [vendor, name]);
+
+  async function remove() {
+    if (!preview || confirm !== key || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await post('/api/models/delete', { vendor, name, confirm });
+      await wb.refresh(['store', 'agg']);
+      toast.ok(`已永久删除 ${key}`);
+      go('models');
+    } catch (e) {
+      setError((e as Error).message);
+      await wb.refresh(['store']);
+    } finally { setBusy(false); }
+  }
+  const close = () => { if (!busy) onClose(); };
+  return <Modal open onClose={close} title="永久删除这个模型？" width={560}
+    footer={<><Btn tone="ghost" disabled={busy} onClick={close}>取消</Btn><Btn tone="danger" busy={busy} disabled={!preview || confirm !== key || busy} onClick={() => void remove()}>永久删除</Btn></>}>
+    <div className="stack">
+      <strong>{key}</strong>
+      {preview && <>
+        <div><code style={{ overflowWrap: 'anywhere' }}>{preview.directory}</code>{!preview.exists && <p className="small muted">本机已无此目录。</p>}</div>
+        <p className="alert warn">将永久清除模型档案和目录内的全部内容，以及 {preview.workspaces} 条关联工作区记录（其中回收站条目 {preview.trash} 条）、专属备注和额度读数。删除后无法恢复。</p>
+        <label className="stack s">输入完整模型键以确认
+          <input className="input" aria-label="完整模型键" autoComplete="off" spellCheck={false} autoFocus value={confirm} disabled={busy} onChange={(e) => setConfirm(e.target.value)} />
+        </label>
+      </>}
+      {!preview && !error && <p role="status">正在核查模型目录与测评记录…</p>}
+      {error && <div className="alert warn" role="alert">{error}</div>}
+    </div>
+  </Modal>;
+}
+
 function ModelDetail({ vendor, name }: { vendor: string; name: string }) {
   const wb = useWb();
   const nm = useNamer();
   const m = wb.store?.models.find((x) => x.vendor === vendor && x.name === name);
   const [edit, setEdit] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [report, setReport] = useState<{ markdown: string; file: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const entrants = (wb.agg?.board || []).filter((b) => b.model === name && (!b.vendor || b.vendor === vendor));
@@ -123,6 +181,7 @@ function ModelDetail({ vendor, name }: { vendor: string; name: string }) {
   const dims = (wb.spec?.dims || []).filter((d) => d.kind === 'quality');
   const tasksRows = (wb.agg?.tasks || []).filter((t) => t.entrant === row?.entrant);
   const isCur = wb.current === modelKey(m);
+  const pendingDelete = !!wb.store?.model_deletions?.[modelKey(m)]?.pending;
   const gen = async () => {
     setBusy(true);
     try { setReport(await post<{ markdown: string; file: string }>('/api/models/report', { vendor, name })); } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
@@ -143,15 +202,20 @@ function ModelDetail({ vendor, name }: { vendor: string; name: string }) {
           {m.notes && <p className="dim small mt">{m.notes}</p>}
         </div>
         <div className="stack s" style={{ alignItems: 'flex-end' }}>
-          <div className="row gap-s">{isCur ? <Badge tone="accent" size="lg" dot>当前测评模型</Badge> : <Btn icon={<Star size={15} />} onClick={() => wb.setCurrent(modelKey(m))}>设为当前</Btn>}<Btn tone="primary" size="lg" icon={<Rocket size={16} />} onClick={() => launch(modelKey(m))}>开始测评</Btn></div>
-          <div className="row gap-s">
+          {!pendingDelete && <div className="row gap-s">{isCur ? <Badge tone="accent" size="lg" dot>当前测评模型</Badge> : <Btn icon={<Star size={15} />} onClick={() => wb.setCurrent(modelKey(m))}>设为当前</Btn>}<Btn tone="primary" size="lg" icon={<Rocket size={16} />} onClick={() => launch(modelKey(m))}>开始测评</Btn></div>}
+          <div className="row gap-s wrap">
+            {!pendingDelete && <>
             <Btn size="sm" icon={<ArrowRight size={14} />} onClick={() => { wb.setCurrent(modelKey(m)); go('tasks'); }}>题目页</Btn>
             <Btn size="sm" icon={<Pencil size={13} />} onClick={() => setEdit(true)}>编辑</Btn>
             <Btn size="sm" icon={<FolderOpen size={13} />} onClick={() => void post('/api/open-folder', { path: `model/${vendor}/${name}` }).catch((e) => toast.error(e.message))}>目录</Btn>
             <Btn size="sm" icon={<FileText size={13} />} busy={busy} onClick={() => void gen()}>生成报告</Btn>
+            </>}
+            <Btn size="sm" tone="danger" icon={<Trash2 size={14} />} onClick={() => setDeleteOpen(true)}>{pendingDelete ? '继续永久删除' : '永久删除模型'}</Btn>
           </div>
         </div>
       </div>
+      {pendingDelete && <div className="alert warn mt">上次永久删除未完成。此模型已暂停使用，可继续清理。</div>}
+      {deleteOpen && <DeleteModelDialog key={modelKey(m)} model={m} onClose={() => setDeleteOpen(false)} />}
 
       <div className="grid g-4 mt-l">
         <Stat label="名次" icon={<Trophy size={13} />} value={row ? `#${row.rank}` : '—'} sub={row ? `${wb.agg?.board.length} 个参赛者中` : '尚无评分结果'} />
