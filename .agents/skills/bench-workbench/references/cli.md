@@ -41,6 +41,25 @@
 | 存储 | `wb store export <文件>` / `wb store import <文件>` | 导出 / 合并导入可移植存储文件 |
 | 界面 | `wb ui <open\|preview\|run\|compare\|review\|spec> [key=value…]` | 遥控已打开的界面，例如 `wb ui run ref=OpenAI/GPT-6.1-Sol/T05/r1` |
 
+## 离线上下文命令
+
+```text
+wb context preflight "<ref>" --json
+wb context audit "<ref|run_id>" [--log "明确日志"] [--save] --json
+wb context audit --all [--save] --json
+wb context review "<ref|run_id>" --finding <id> --decision confirmed|dismissed --note "依据" --save --json
+wb context export "<ref|run_id>" --format json|csv
+wb context export --all --format json|csv
+```
+
+`context` 是 HTTP 的例外：直接执行本地 Python，不启动服务、镜像技能、同步存储或调用模型。支持 `WB_ROOT`、`WB_PYTHON`、`WB_MODEL_DIR`、`WB_BENCH_DATA`。默认只读；`--save` 只写独立 `context-audits` 目录。批量排除回收站，并在固定层级逐层检查后再枚举目录，不进入符号链接或目录联接。`--log` 可重复但仅用于单个运行。export 只导出已有报告到 stdout，不写榜单。解析/目标错误在 JSON 的 `error` 字段报告并非零退出；preflight 准备错误同样非零退出，但未知覆盖不等于准备失败。
+
+提示词只对新创建运行增加冻结的边界前缀；prepared 旧档不重算，采用新版需显式 `wb run new`。`context_policy` 包含提示词/原生成结果/模板哈希和指定技能的发车前快照。手工粘贴的实际发送文本默认未知，剪贴板成功不等于实际发送已核验。
+
+报告将约束版本、日志覆盖、线索类别、人工复核和发送来源分开存储，不返回“上下文干净”。`review` 只保存复核记录；过期报告须重审。独立证据不随 `bench-store.json` 自动迁移，缺失时 UI 显示证据不可用。新旧条件不完全可比，不改历史评分/AC13、榜单排序或采样规则。
+
+`GET /api/context` 读取独立报告列表，`GET /api/context?ref=...` 或 `?run_id=...` 读取单个报告；不扫描日志、不生成报告。运行页支持约束/审计筛选和独立 JSON/CSV 导出。
+
 ## 状态字段
 
 - 工作区运行 `status`：`prepared`（已创建）→ `running`（已开始）→ `finished`（已结束未登记）→ `registered`（已登记）→ `graded`（已评分）。

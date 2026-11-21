@@ -2,6 +2,7 @@
 //  1. 发给被测模型的提示词 = 统一「运行约定」头 + prompt.md 原文（按 references/run-protocol.md 处理 A/C 段、T06 分隔线、TTS 占位符）
 //  2. 发给评分 Agent 的「AI 评审提示词」（配合 .agents/skills 下的 bench-workbench + bench-grader）
 import { deliverableFor, FINAL_FILE } from './deliverables';
+import { addContextPolicy } from './context-policy';
 
 export interface PromptResult { text: string; warnings: string[] }
 
@@ -75,8 +76,8 @@ export function runHeader(h: RunHeaderInput): string {
 
 export function buildRunPrompt(raw: string, h: RunHeaderInput, opts: { tts?: string; header?: boolean } = {}): PromptResult {
   const body = buildPrompt(raw, h.taskId, h.variant, opts);
-  if (opts.header === false) return body;
-  return { text: runHeader(h) + body.text.replace(/^\s+/, ''), warnings: body.warnings };
+  const baseline = opts.header === false ? body.text : runHeader(h) + body.text.replace(/^\s+/, '');
+  return { text: addContextPolicy(baseline), warnings: body.warnings };
 }
 
 export interface ReviewPromptInput {

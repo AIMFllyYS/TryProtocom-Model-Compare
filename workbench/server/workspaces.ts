@@ -13,6 +13,7 @@ import type { ModelProfile, SpecTask, WorkspaceRun } from '../shared/types';
 import { deliverableFor, evalDeliverable, FINAL_FILE, type Deliverable, type DetectResult } from '../shared/deliverables';
 import { HttpError } from './http';
 import { TASK_DIR } from '../shared/workspace-ref';
+import { makeContextPolicy, snapshotSkills } from './context-policy';
 
 const BAD = /[<>:"/\\|?*\u0000-\u001f]/;
 const DEVICE = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i;
@@ -262,16 +263,18 @@ export class Workspaces {
     // 预置素材：复制 materials/ 下的全部内容到工作目录根（assets/、studyspot-legacy/ …）；hidden/ 永不复制
     const mat = path.join(input.taskDir, 'materials');
     if (isDir(mat)) for (const e of fs.readdirSync(mat)) fs.cpSync(path.join(mat, e), path.join(ws, e), { recursive: true });
-    // 让工作目录成为独立的项目根：Codex / Claude Code / Cursor 等按 git 根向上查找 skills 与规则，
-    // 这样被测 Agent 不会发现仓库根目录 .agents/skills 里的评分 skill（防止评分细则泄露给被测模型）。
+    // 独立 Git 根影响部分 harness 的项目发现；不代表限制全局技能或操作系统读取。
+    // 初始化结果由离线 preflight 实测核验，失败不能视为隔离验证通过。
     try { spawnSync('git', ['init', '-q'], { cwd: ws, timeout: 10000, windowsHide: true }); } catch { /* 没装 git 时跳过 */ }
     const run: WorkspaceRun = {
       schema: 1, ref: `${vendor}/${model}/${tkey}/r${n}`, vendor, model, task: task.id, variant: input.variant, tkey, index: n,
       harness: input.harness, created_at: new Date().toISOString(), started_at: null, ended_at: null, deliverable_dir: task.deliverable,
       grader_run_id: null, usage: {}, notes: '',
     };
+    const text = typeof input.prompt === 'function' ? input.prompt(ws, n) : input.prompt;
+    run.context_policy = makeContextPolicy(text, task.prompt, task.id, input.variant, ws);
     this.saveRun(run);
-    fs.writeFileSync(`${ws}.prompt.md`, typeof input.prompt === 'function' ? input.prompt(ws, n) : input.prompt, 'utf8');
+    fs.writeFileSync(`${ws}.prompt.md`, text, 'utf8');
     return this.readRun(vendor, model, tkey, n);
   }
 
@@ -283,6 +286,11 @@ export class Workspaces {
   patchRun(ref: string, patch: Partial<WorkspaceRun>): WorkspaceRun {
     const p = this.parseRef(ref);
     const cur = this.readRun(p.vendor, p.model, p.tkey, p.index);
+    // 仅首次发车前更新；旧运行和已交付运行绝不补写准备快照。
+    if (patch.started_at && !patch.ended_at && !cur.started_at && !cur.ended_at && !cur.grader_run_id && !cur.detect?.final && !cur.detect?.dir_exists && cur.context_policy && !cur.context_policy.launched_at) {
+      cur.context_policy.skills = snapshotSkills(this.files(ref).ws, cur.context_policy.skills);
+      cur.context_policy.launched_at = new Date().toISOString();
+    }
     const allowed: (keyof WorkspaceRun)[] = ['harness', 'started_at', 'ended_at', 'timed_out', 'notes', 'usage', 'grader_run_id', 'deliverable_dir', 'quota', 'discarded'];
     for (const k of allowed) if (k in patch) (cur as any)[k] = (patch as any)[k];
     if (cur.discarded == null) delete cur.discarded;

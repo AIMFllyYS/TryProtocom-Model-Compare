@@ -33,10 +33,10 @@ __export(index_exports, {
   startServer: () => startServer
 });
 module.exports = __toCommonJS(index_exports);
-var import_node_fs10 = __toESM(require("node:fs"), 1);
+var import_node_fs12 = __toESM(require("node:fs"), 1);
 var import_node_http2 = __toESM(require("node:http"), 1);
-var import_node_path9 = __toESM(require("node:path"), 1);
-var import_node_child_process5 = require("node:child_process");
+var import_node_path11 = __toESM(require("node:path"), 1);
+var import_node_child_process6 = require("node:child_process");
 
 // shared/itemAnalysis.ts
 var itemMean = (xs) => xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : 0;
@@ -915,6 +915,42 @@ function petJobs(jobs, now = Date.now(), windowMs = 15 * 6e4, max = 6) {
   return [...act, ...recent].slice(0, max);
 }
 
+// shared/context-policy.ts
+var CONTEXT_POLICY_VERSION = "context-boundary/v1";
+var CONTEXT_POLICY_START = "<!-- benchmark-context-boundary:v1:start -->";
+var CONTEXT_POLICY_END = "<!-- benchmark-context-boundary:v1:end -->";
+var CONTEXT_POLICY_BLOCK = `${CONTEXT_POLICY_START}
+## \u672C\u6B21\u6D4B\u8BC4\u7684\u4E0A\u4E0B\u6587\u8FB9\u754C
+- \u4EC5\u4F9D\u636E\u672C\u9898\u3001\u968F\u9898\u6750\u6599\u3001\u672C\u5DE5\u4F5C\u76EE\u5F55\u5185\u672C\u8F6E\u751F\u6210\u7684\u5185\u5BB9\u53CA\u539F\u9898\u5141\u8BB8\u7684\u516C\u5171\u6280\u672F\u8D44\u6599\u72EC\u7ACB\u5B8C\u6210\u3002
+- \u4E0D\u68C0\u7D22\u3001\u8BFB\u53D6\u6216\u5F15\u7528\u8DE8\u4F1A\u8BDD\u8BB0\u5FC6\u3001\u5386\u53F2\u5BF9\u8BDD\u3001\u5176\u4ED6\u8FD0\u884C\u7684\u4EA7\u7269\u6216\u89E3\u9898\u7ECF\u9A8C\uFF0C\u4EE5\u53CA\u8BC4\u5206\u5668\u3001\u9690\u85CF\u6D4B\u8BD5\u548C\u8BC4\u5206\u7ED3\u679C\uFF1B\u4E0D\u5F97\u901A\u8FC7\u7EC8\u7AEF\u3001\u641C\u7D22\u3001\u6D4F\u89C8\u5668\u3001MCP\u6216\u5B50\u667A\u80FD\u4F53\u95F4\u63A5\u83B7\u53D6\uFF0C\u4E5F\u4E0D\u4E3B\u52A8\u628A\u672C\u8F6E\u5185\u5BB9\u5199\u5165\u5171\u4EAB\u8BB0\u5FC6\u3002
+- Skill\u4EC5\u9650\u672C\u9898\u660E\u786E\u63D0\u4F9B\u6216\u6307\u5B9A\u8005\uFF1B\u672A\u6307\u5B9A\u5373\u4E0D\u7528\u3002\u4E0D\u8C03\u7528\u5176\u4ED6\u5168\u5C40\u6216\u4E2A\u4EBA\u6280\u80FD\uFF0C\u4E0D\u641C\u7D22\u5B89\u88C5\u65B0\u6280\u80FD\uFF0C\u4E0D\u590D\u5236\u5176\u5185\u5BB9\u8FDB\u672C\u76EE\u5F55\u7ED5\u8FC7\u9650\u5236\uFF1B\u539F\u9898A/C\u6761\u4EF6\u4E0D\u53D8\u3002
+- \u539F\u9898\u5141\u8BB8\u7684\u7EC8\u7AEF\u3001\u6D4F\u89C8\u5668\u3001\u4F9D\u8D56\u3001\u7F16\u8BD1\u5668\u548C\u5DE5\u5177\u5E2E\u52A9\u53EF\u6B63\u5E38\u4F7F\u7528\uFF1B\u4E0D\u501F\u6B64\u6D4F\u89C8\u5176\u4ED6\u9879\u76EE\u6216\u66F4\u6539\u4E2A\u4EBAharness\u914D\u7F6E\u3002
+- \u82E5\u76F8\u5173\u5386\u53F2\u4FE1\u606F\u5DF2\u81EA\u52A8\u6CE8\u5165\u6216\u610F\u5916\u8BFB\u5230\uFF0C\u505C\u6B62\u7EE7\u7EED\u83B7\u53D6\uFF0C\u4E0D\u5F15\u7528\u6216\u636E\u6B64\u4F18\u5316\uFF0C\u4ECD\u7EE7\u7EED\u4EA4\u4ED8\uFF1B\u5728\u5DF2\u6709\u7684FINAL_MESSAGE.md\u4E2D\u8BF4\u660E\u6765\u6E90\u7C7B\u522B\u548C\u53D7\u5F71\u54CD\u73AF\u8282\uFF0C\u4E0D\u590D\u8FF0\u76F8\u5173\u5185\u5BB9\uFF0C\u4E0D\u58F0\u79F0\u5DF2\u6E05\u9664\u6C61\u67D3\u3002\u5B50\u667A\u80FD\u4F53\u540C\u6837\u9075\u5B88\u3002
+${CONTEXT_POLICY_END}
+
+`;
+function addContextPolicy(text) {
+  return text.startsWith(CONTEXT_POLICY_BLOCK) ? text : CONTEXT_POLICY_BLOCK + text;
+}
+function stripContextPolicy(text) {
+  if (!text.startsWith(CONTEXT_POLICY_BLOCK)) throw new Error("\u7F3A\u5C11\u6216\u5DF2\u6539\u52A8\u4E0A\u4E0B\u6587\u7EA6\u675F\u6BB5");
+  const rest = text.slice(CONTEXT_POLICY_BLOCK.length);
+  if (rest.includes(CONTEXT_POLICY_START)) throw new Error("\u4E0A\u4E0B\u6587\u7EA6\u675F\u6BB5\u91CD\u590D");
+  return rest;
+}
+function contextPolicyVersion(text) {
+  try {
+    stripContextPolicy(text);
+    return CONTEXT_POLICY_VERSION;
+  } catch {
+    return text.includes("benchmark-context-boundary:") ? "unknown" : "legacy";
+  }
+}
+function contextPolicyWarnings(text) {
+  const version = contextPolicyVersion(text);
+  return version === "legacy" ? ["\u65E7\u7248\u7EA6\u675F\uFF0C\u672A\u589E\u5F3A\uFF1A\u4FDD\u7559\u539F\u63D0\u793A\u8BCD\uFF1B\u91C7\u7528\u65B0\u589E\u7EA6\u675F\u8BF7\u663E\u5F0F\u521B\u5EFA\u65B0\u8FD0\u884C\u3002"] : version === "unknown" ? ["\u7EA6\u675F\u7248\u672C\u672A\u77E5\u6216\u6B63\u6587\u88AB\u6539\u52A8\uFF0C\u8BF7\u5728\u53D1\u9001\u524D\u6838\u5BF9\u5B58\u6863\u3002"] : [];
+}
+
 // shared/prompt.ts
 function buildPrompt(raw, taskId, variant, opts = {}) {
   const warnings = [];
@@ -973,8 +1009,8 @@ function runHeader(h) {
 }
 function buildRunPrompt(raw, h, opts = {}) {
   const body = buildPrompt(raw, h.taskId, h.variant, opts);
-  if (opts.header === false) return body;
-  return { text: runHeader(h) + body.text.replace(/^\s+/, ""), warnings: body.warnings };
+  const baseline = opts.header === false ? body.text : runHeader(h) + body.text.replace(/^\s+/, "");
+  return { text: addContextPolicy(baseline), warnings: body.warnings };
 }
 function reviewPrompt(p) {
   const sep = p.root.includes("\\") ? "\\" : "/";
@@ -2909,12 +2945,97 @@ function listReports(reportsDir) {
 }
 
 // server/workspaces.ts
-var import_node_fs9 = __toESM(require("node:fs"), 1);
-var import_node_path8 = __toESM(require("node:path"), 1);
+var import_node_fs10 = __toESM(require("node:fs"), 1);
+var import_node_path9 = __toESM(require("node:path"), 1);
 var import_node_child_process4 = require("node:child_process");
 
 // shared/workspace-ref.ts
 var TASK_DIR = /^(T\d{2}|V\d{2}|B[1-8])([A-Z])?$/;
+
+// server/context-policy.ts
+var import_node_fs9 = __toESM(require("node:fs"), 1);
+var import_node_path8 = __toESM(require("node:path"), 1);
+var import_node_crypto3 = __toESM(require("node:crypto"), 1);
+var hash = (s) => import_node_crypto3.default.createHash("sha256").update(s).digest("hex");
+var VIDEO_SKILLS = ["hyperframes", "hyperframes-core", "hyperframes-cli", "hyperframes-animation", "hyperframes-keyframes", "hyperframes-audio", "hyperframes-registry", "hyperframes-creative", "hyperframes-studio", "hyperframes-media", "media-use", "general-video", "product-launch-video", "gsap"];
+function declaredSkills(task, variant) {
+  const minecraft = ["T02", "V03"].includes(task);
+  const video = ["T04", "V08"].includes(task) || ["T03", "V07"].includes(task) && variant === "C";
+  const names = minecraft ? ["minecraft-stop-motion-director"] : video ? VIDEO_SKILLS : [];
+  return { mode: names.length ? "provided" : "none", names, roots: [], status: names.length ? "pending" : "not_applicable", source: minecraft ? "\u9898\u76EE\u968F\u9644\u6280\u80FD\u5305" : video ? "\u9898\u76EE\u6307\u5B9A HyperFrames \u5B98\u65B9\u6280\u80FD\uFF0C\u672C\u5730\u5FEB\u7167" : "\u9898\u76EE\u672A\u6307\u5B9A\u6280\u80FD" };
+}
+function snapshotSkills(workspace, current) {
+  if (current.mode === "none") return current;
+  const roots = [], files = {};
+  let unsafe = false;
+  const safe2 = (p) => {
+    const rel = import_node_path8.default.relative(import_node_fs9.default.realpathSync(workspace), import_node_fs9.default.realpathSync(p));
+    return !rel.startsWith("..") && !import_node_path8.default.isAbsolute(rel) && !import_node_fs9.default.lstatSync(p).isSymbolicLink() && !import_node_path8.default.relative(import_node_path8.default.resolve(p), import_node_fs9.default.realpathSync(p));
+  };
+  const walk = (p) => {
+    if (!safe2(p)) {
+      unsafe = true;
+      return;
+    }
+    const stat = import_node_fs9.default.lstatSync(p);
+    if (stat.isDirectory()) for (const e of import_node_fs9.default.readdirSync(p)) walk(import_node_path8.default.join(p, e));
+    else if (stat.isFile()) files[import_node_path8.default.relative(workspace, p).split(import_node_path8.default.sep).join("/")] = hash(import_node_fs9.default.readFileSync(p));
+  };
+  try {
+    for (const base of ["skills", ".agents/skills"]) for (const name of current.names) {
+      const rel = `${base}/${name}`, p = import_node_path8.default.join(workspace, rel);
+      if (!import_node_fs9.default.existsSync(p)) continue;
+      if (!safe2(p)) {
+        unsafe = true;
+        continue;
+      }
+      const entry = import_node_path8.default.join(p, "SKILL.md");
+      if (import_node_fs9.default.existsSync(entry)) {
+        roots.push(rel);
+        walk(p);
+      }
+    }
+  } catch {
+    unsafe = true;
+  }
+  const required = current.names[0];
+  const present = roots.some((r) => r.endsWith("/" + required));
+  return { ...current, roots, files, status: unsafe ? "unknown" : present ? "recorded" : "pending", captured_at: (/* @__PURE__ */ new Date()).toISOString() };
+}
+function snapshotMaterials(workspace) {
+  const snapshot = { status: "recorded", files: {}, captured_at: (/* @__PURE__ */ new Date()).toISOString() };
+  const walk = (p) => {
+    if (import_node_fs9.default.lstatSync(p).isSymbolicLink() || import_node_path8.default.relative(import_node_path8.default.resolve(p), import_node_fs9.default.realpathSync(p))) {
+      snapshot.status = "unknown";
+      return;
+    }
+    if (import_node_fs9.default.lstatSync(p).isDirectory()) {
+      for (const name of import_node_fs9.default.readdirSync(p)) if (name !== ".git") walk(import_node_path8.default.join(p, name));
+    } else if (import_node_fs9.default.lstatSync(p).isFile()) snapshot.files[import_node_path8.default.relative(workspace, p).split(import_node_path8.default.sep).join("/")] = hash(import_node_fs9.default.readFileSync(p));
+  };
+  try {
+    walk(workspace);
+  } catch {
+    snapshot.status = "unknown";
+  }
+  return snapshot;
+}
+function makeContextPolicy(text, raw, task, variant, workspace) {
+  if (!text.startsWith(CONTEXT_POLICY_BLOCK)) return void 0;
+  const baseline = stripContextPolicy(text);
+  return {
+    version: CONTEXT_POLICY_VERSION,
+    generator_version: "context-generator/1",
+    policy_sha256: hash(CONTEXT_POLICY_BLOCK),
+    base_prompt_sha256: hash(baseline),
+    prompt_sha256: hash(text),
+    task_prompt_sha256: hash(raw),
+    insertion: { offset: 0, byte_length: Buffer.byteLength(CONTEXT_POLICY_BLOCK) },
+    header_enabled: baseline.startsWith("# \u8FD0\u884C\u7EA6\u5B9A"),
+    skills: snapshotSkills(workspace, declaredSkills(task, variant)),
+    materials: snapshotMaterials(workspace)
+  };
+}
 
 // server/workspaces.ts
 var BAD = /[<>:"/\\|?*\u0000-\u001f]/;
@@ -2926,18 +3047,18 @@ function checkName(kind, s) {
 }
 var readJson2 = (p) => {
   try {
-    return JSON.parse(import_node_fs9.default.readFileSync(p, "utf8"));
+    return JSON.parse(import_node_fs10.default.readFileSync(p, "utf8"));
   } catch {
     return null;
   }
 };
 var writeJson = (p, d) => {
-  import_node_fs9.default.mkdirSync(import_node_path8.default.dirname(p), { recursive: true });
-  import_node_fs9.default.writeFileSync(p, JSON.stringify(d, null, 2) + "\n", "utf8");
+  import_node_fs10.default.mkdirSync(import_node_path9.default.dirname(p), { recursive: true });
+  import_node_fs10.default.writeFileSync(p, JSON.stringify(d, null, 2) + "\n", "utf8");
 };
 var isDir = (p) => {
   try {
-    return import_node_fs9.default.statSync(p).isDirectory();
+    return import_node_fs10.default.statSync(p).isDirectory();
   } catch {
     return false;
   }
@@ -2950,13 +3071,13 @@ function findVideo(root) {
     if (depth > 2) return;
     let es = [];
     try {
-      es = import_node_fs9.default.readdirSync(dir, { withFileTypes: true });
+      es = import_node_fs10.default.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const e of es) {
       if (e.name === "node_modules" || e.name === ".git" || e.name === "assets") continue;
-      const fp = import_node_path8.default.join(dir, e.name);
+      const fp = import_node_path9.default.join(dir, e.name);
       if (e.isDirectory()) walk(fp, depth + 1);
       else if (VIDEO_NAME.test(e.name)) hits.push(fp);
     }
@@ -2966,7 +3087,7 @@ function findVideo(root) {
   return hits[0] || null;
 }
 function rankVideo(file) {
-  const name = import_node_path8.default.basename(file).toLowerCase();
+  const name = import_node_path9.default.basename(file).toLowerCase();
   if (name === "final.mp4") return 5;
   if (/^final\./.test(name) && !/raw/.test(name)) return 4;
   if (/raw/.test(name)) return 1;
@@ -2975,26 +3096,26 @@ function rankVideo(file) {
 var Workspaces = class {
   constructor(modelDir) {
     this.modelDir = modelDir;
-    import_node_fs9.default.mkdirSync(modelDir, { recursive: true });
+    import_node_fs10.default.mkdirSync(modelDir, { recursive: true });
   }
   modelDir;
   modelPath(vendor, name) {
-    return import_node_path8.default.join(this.modelDir, vendor, name);
+    return import_node_path9.default.join(this.modelDir, vendor, name);
   }
   /** Require the literal registered path, including casing, on Windows. */
   checkedModelPath(vendor, name) {
     if (checkName("\u4F9B\u5E94\u5546", vendor) !== vendor || checkName("\u6A21\u578B", name) !== name) throw new HttpError(400, "\u9700\u8981\u539F\u59CB\u6A21\u578B\u8DEF\u5F84");
-    const root = import_node_path8.default.resolve(this.modelDir);
-    if (!import_node_fs9.default.lstatSync(root).isDirectory() || import_node_path8.default.relative(root, import_node_fs9.default.realpathSync(root))) throw new HttpError(409, "\u6A21\u578B\u6839\u76EE\u5F55\u7ECF\u8FC7\u94FE\u63A5\u6216\u76EE\u5F55\u8054\u63A5");
+    const root = import_node_path9.default.resolve(this.modelDir);
+    if (!import_node_fs10.default.lstatSync(root).isDirectory() || import_node_path9.default.relative(root, import_node_fs10.default.realpathSync(root))) throw new HttpError(409, "\u6A21\u578B\u6839\u76EE\u5F55\u7ECF\u8FC7\u94FE\u63A5\u6216\u76EE\u5F55\u8054\u63A5");
     let dir = root;
     let exists = true;
     for (const part of [vendor, name]) {
       const parent = dir;
-      dir = import_node_path8.default.join(parent, part);
+      dir = import_node_path9.default.join(parent, part);
       if (!exists) continue;
-      const entries = import_node_fs9.default.readdirSync(parent);
-      const stat = import_node_fs9.default.lstatSync(dir, { throwIfNoEntry: false });
-      if (stat && (!entries.includes(part) || !stat.isDirectory() || import_node_path8.default.relative(dir, import_node_fs9.default.realpathSync(dir)))) {
+      const entries = import_node_fs10.default.readdirSync(parent);
+      const stat = import_node_fs10.default.lstatSync(dir, { throwIfNoEntry: false });
+      if (stat && (!entries.includes(part) || !stat.isDirectory() || import_node_path9.default.relative(dir, import_node_fs10.default.realpathSync(dir)))) {
         throw new HttpError(409, `\u6A21\u578B\u8DEF\u5F84\u5B58\u5728\u522B\u540D\u3001\u94FE\u63A5\u6216\u5E76\u975E\u76EE\u5F55\uFF1A${dir}`);
       }
       exists = !!stat;
@@ -3013,11 +3134,11 @@ var Workspaces = class {
   upsertModel(input) {
     const vendor = checkName("\u4F9B\u5E94\u5546", input.vendor), name = checkName("\u6A21\u578B", input.name);
     const { dir } = this.checkedModelPath(vendor, name);
-    const file = import_node_path8.default.join(dir, "model.json");
-    const stat = import_node_fs9.default.lstatSync(file, { throwIfNoEntry: false });
+    const file = import_node_path9.default.join(dir, "model.json");
+    const stat = import_node_fs10.default.lstatSync(file, { throwIfNoEntry: false });
     if (stat && (!stat.isFile() || stat.nlink !== 1)) throw new HttpError(409, "\u6A21\u578B\u6863\u6848\u8DEF\u5F84\u5E76\u975E\u72EC\u7ACB\u6587\u4EF6");
     const prof = { created_at: (/* @__PURE__ */ new Date()).toISOString(), ...input, schema: 1, vendor, name };
-    import_node_fs9.default.mkdirSync(dir, { recursive: true });
+    import_node_fs10.default.mkdirSync(dir, { recursive: true });
     writeJson(file, prof);
     return prof;
   }
@@ -3028,18 +3149,18 @@ var Workspaces = class {
       for (const t of this.dirs(md)) {
         const tm = TASK_DIR.exec(t);
         if (!tm) continue;
-        const td = import_node_path8.default.join(md, t);
+        const td = import_node_path9.default.join(md, t);
         const seen = /* @__PURE__ */ new Set();
-        for (const f2 of import_node_fs9.default.readdirSync(td)) {
-          const rm = /^r(\d+)\.run\.json$/.exec(f2) || (isDir(import_node_path8.default.join(td, f2)) ? RUN_DIR.exec(f2) : null);
+        for (const f2 of import_node_fs10.default.readdirSync(td)) {
+          const rm = /^r(\d+)\.run\.json$/.exec(f2) || (isDir(import_node_path9.default.join(td, f2)) ? RUN_DIR.exec(f2) : null);
           if (!rm) continue;
           const n = Number(rm[1]);
           if (seen.has(n)) continue;
           seen.add(n);
-          const base = import_node_path8.default.join(td, `r${n}`);
+          const base = import_node_path9.default.join(td, `r${n}`);
           const metadata = `${base}.run.json`;
-          if (strict && import_node_fs9.default.existsSync(metadata) && !readJson2(metadata)) throw new HttpError(409, `\u65E0\u6CD5\u8BFB\u53D6\u8FD0\u884C\u767B\u8BB0\uFF1A${metadata}`);
-          if (!import_node_fs9.default.existsSync(metadata) && isDir(base) && import_node_fs9.default.readdirSync(base).every((name) => name === ".git")) continue;
+          if (strict && import_node_fs10.default.existsSync(metadata) && !readJson2(metadata)) throw new HttpError(409, `\u65E0\u6CD5\u8BFB\u53D6\u8FD0\u884C\u767B\u8BB0\uFF1A${metadata}`);
+          if (!import_node_fs10.default.existsSync(metadata) && isDir(base) && import_node_fs10.default.readdirSync(base).every((name) => name === ".git")) continue;
           out.push(this.readRun(m.vendor, m.name, t, n));
         }
       }
@@ -3058,8 +3179,8 @@ var Workspaces = class {
   }
   files(ref) {
     const { vendor, model, tkey, index } = this.parseRef(ref);
-    const td = import_node_path8.default.join(this.modelPath(vendor, model), tkey);
-    const b = import_node_path8.default.join(td, `r${index}`);
+    const td = import_node_path9.default.join(this.modelPath(vendor, model), tkey);
+    const b = import_node_path9.default.join(td, `r${index}`);
     return { taskDir: td, ws: b, run: `${b}.run.json`, prompt: `${b}.prompt.md`, final: `${b}.final.md`, transcript: `${b}.transcript.json` };
   }
   readRun(vendor, model, tkey, index) {
@@ -3085,16 +3206,16 @@ var Workspaces = class {
       ref
     };
     run.workspace = f2.ws;
-    run.has_final = import_node_fs9.default.existsSync(f2.final);
-    const droot = run.deliverable_dir ? import_node_path8.default.join(f2.ws, run.deliverable_dir) : f2.ws;
+    run.has_final = import_node_fs10.default.existsSync(f2.final);
+    const droot = run.deliverable_dir ? import_node_path9.default.join(f2.ws, run.deliverable_dir) : f2.ws;
     run.has_deliverable = !!run.deliverable_dir && isDir(droot);
     const d = deliverableFor(run.task, run.deliverable_dir);
-    const pv = d.preview && run.has_deliverable ? import_node_path8.default.join(droot, d.preview) : null;
+    const pv = d.preview && run.has_deliverable ? import_node_path9.default.join(droot, d.preview) : null;
     const root = run.has_deliverable ? droot : f2.ws;
-    run.entry = pv && import_node_fs9.default.existsSync(pv) ? import_node_path8.default.relative(f2.ws, pv).split(import_node_path8.default.sep).join("/") : this.detectEntry(root, f2.ws, d.kind === "video");
+    run.entry = pv && import_node_fs10.default.existsSync(pv) ? import_node_path9.default.relative(f2.ws, pv).split(import_node_path9.default.sep).join("/") : this.detectEntry(root, f2.ws, d.kind === "video");
     run.detect = this.detect(f2.ws, d, run.deliverable_dir);
     try {
-      run.final_at = new Date(import_node_fs9.default.statSync(import_node_path8.default.join(f2.ws, FINAL_FILE)).mtimeMs).toISOString();
+      run.final_at = new Date(import_node_fs10.default.statSync(import_node_path9.default.join(f2.ws, FINAL_FILE)).mtimeMs).toISOString();
     } catch {
       run.final_at = run.detect?.last_change ? new Date(run.detect.last_change).toISOString() : null;
     }
@@ -3105,7 +3226,7 @@ var Workspaces = class {
     const dd = { ...d, dir: d.dir || dirName };
     const exists = (rel, dir) => {
       try {
-        const s = import_node_fs9.default.statSync(import_node_path8.default.join(ws, rel));
+        const s = import_node_fs10.default.statSync(import_node_path9.default.join(ws, rel));
         return dir ? s.isDirectory() : true;
       } catch {
         return false;
@@ -3113,7 +3234,7 @@ var Workspaces = class {
     };
     const list = (rel) => {
       try {
-        return import_node_fs9.default.readdirSync(import_node_path8.default.join(ws, rel));
+        return import_node_fs10.default.readdirSync(import_node_path9.default.join(ws, rel));
       } catch {
         return [];
       }
@@ -3125,40 +3246,40 @@ var Workspaces = class {
       if (depth > 3) return;
       let es = [];
       try {
-        es = import_node_fs9.default.readdirSync(p, { withFileTypes: true });
+        es = import_node_fs10.default.readdirSync(p, { withFileTypes: true });
       } catch {
         return;
       }
       for (const e of es) {
         if (e.name === "node_modules" || e.name === ".git") continue;
-        const fp = import_node_path8.default.join(p, e.name);
+        const fp = import_node_path9.default.join(p, e.name);
         try {
-          const m = import_node_fs9.default.statSync(fp).mtimeMs;
+          const m = import_node_fs10.default.statSync(fp).mtimeMs;
           if (!last || m > last) last = m;
         } catch {
         }
         if (e.isDirectory()) walk(fp, depth + 1);
       }
     };
-    if (dd.dir && isDir(import_node_path8.default.join(ws, dd.dir))) walk(import_node_path8.default.join(ws, dd.dir), 0);
-    return { dir_exists: !!dd.dir && isDir(import_node_path8.default.join(ws, dd.dir)), checks, done: req.filter((c) => c.ok).length, total: req.length, final: import_node_fs9.default.existsSync(import_node_path8.default.join(ws, FINAL_FILE)), last_change: last };
+    if (dd.dir && isDir(import_node_path9.default.join(ws, dd.dir))) walk(import_node_path9.default.join(ws, dd.dir), 0);
+    return { dir_exists: !!dd.dir && isDir(import_node_path9.default.join(ws, dd.dir)), checks, done: req.filter((c) => c.ok).length, total: req.length, final: import_node_fs10.default.existsSync(import_node_path9.default.join(ws, FINAL_FILE)), last_change: last };
   }
   /** 模型写出 FINAL_MESSAGE.md 后：导入为 rN.final.md，并以文件时间结束计时。返回是否有变化。 */
   absorbFinal(ref) {
     const f2 = this.files(ref);
-    const src = import_node_path8.default.join(f2.ws, FINAL_FILE);
-    if (!import_node_fs9.default.existsSync(src)) return false;
+    const src = import_node_path9.default.join(f2.ws, FINAL_FILE);
+    if (!import_node_fs10.default.existsSync(src)) return false;
     let changed = false;
-    const txt = import_node_fs9.default.readFileSync(src, "utf8");
-    const cur = import_node_fs9.default.existsSync(f2.final) ? import_node_fs9.default.readFileSync(f2.final, "utf8") : null;
+    const txt = import_node_fs10.default.readFileSync(src, "utf8");
+    const cur = import_node_fs10.default.existsSync(f2.final) ? import_node_fs10.default.readFileSync(f2.final, "utf8") : null;
     if (cur == null) {
-      import_node_fs9.default.writeFileSync(f2.final, txt, "utf8");
+      import_node_fs10.default.writeFileSync(f2.final, txt, "utf8");
       changed = true;
     }
     const p = this.parseRef(ref);
     const run = this.readRun(p.vendor, p.model, p.tkey, p.index);
     if (!run.ended_at && !run.grader_run_id) {
-      run.ended_at = new Date(import_node_fs9.default.statSync(src).mtimeMs).toISOString();
+      run.ended_at = new Date(import_node_fs10.default.statSync(src).mtimeMs).toISOString();
       if (!run.started_at) run.started_at = run.created_at;
       run.auto_finished = true;
       this.saveRun(run);
@@ -3169,23 +3290,23 @@ var Workspaces = class {
   /** 页面题先找 HTML。视频题先找成片，工程里的 index.html 不作为入口。 */
   detectEntry(root, ws, preferVideo = false) {
     if (!isDir(root)) return null;
-    const rel = (p) => import_node_path8.default.relative(ws, p).split(import_node_path8.default.sep).join("/");
+    const rel = (p) => import_node_path9.default.relative(ws, p).split(import_node_path9.default.sep).join("/");
     if (preferVideo) {
       for (const c of ["final.mp4", "renders/final.mp4", "render/final.mp4", "renders/master.mp4"]) {
-        const p = import_node_path8.default.join(root, c);
-        if (import_node_fs9.default.existsSync(p)) return rel(p);
+        const p = import_node_path9.default.join(root, c);
+        if (import_node_fs10.default.existsSync(p)) return rel(p);
       }
       const found = findVideo(root);
       if (found) return rel(found);
     }
     for (const c of ["dist/index.html", "index.html", "final.mp4", "renders/final.mp4", "FIXES.md", "README.md"]) {
-      const p = import_node_path8.default.join(root, c);
-      if (import_node_fs9.default.existsSync(p)) return rel(p);
+      const p = import_node_path9.default.join(root, c);
+      if (import_node_fs10.default.existsSync(p)) return rel(p);
     }
     if (!preferVideo) {
       try {
-        const v = import_node_fs9.default.readdirSync(root).find((x) => /\.(mp4|webm|mov)$/i.test(x));
-        if (v) return rel(import_node_path8.default.join(root, v));
+        const v = import_node_fs10.default.readdirSync(root).find((x) => /\.(mp4|webm|mov)$/i.test(x));
+        if (v) return rel(import_node_path9.default.join(root, v));
       } catch {
       }
     }
@@ -3193,13 +3314,13 @@ var Workspaces = class {
   }
   /** 下一个可用的运行序号（题目页据此预先生成带绝对路径的提示词）。 */
   nextIndex(vendor, model, tkey) {
-    const td = import_node_path8.default.join(this.modelPath(vendor, model), tkey);
+    const td = import_node_path9.default.join(this.modelPath(vendor, model), tkey);
     let n = 1;
-    while (import_node_fs9.default.existsSync(import_node_path8.default.join(td, `r${n}`)) || import_node_fs9.default.existsSync(import_node_path8.default.join(td, `r${n}.run.json`))) n++;
+    while (import_node_fs10.default.existsSync(import_node_path9.default.join(td, `r${n}`)) || import_node_fs10.default.existsSync(import_node_path9.default.join(td, `r${n}.run.json`))) n++;
     return n;
   }
   wsPath(vendor, model, tkey, n) {
-    return import_node_path8.default.join(this.modelPath(vendor, model), tkey, `r${n}`);
+    return import_node_path9.default.join(this.modelPath(vendor, model), tkey, `r${n}`);
   }
   createRun(input) {
     const { vendor, model, task } = input;
@@ -3209,14 +3330,14 @@ var Workspaces = class {
     if (input.variant && !(task.variants || {})[input.variant]) throw new HttpError(400, `${task.id} \u6CA1\u6709\u53D8\u4F53 ${input.variant}`);
     this.parseRef(`${vendor}/${model}/${task.id}${input.variant || ""}/r1`);
     const tkey = task.id + (input.variant || "");
-    const td = import_node_path8.default.join(this.modelPath(vendor, model), tkey);
-    import_node_fs9.default.mkdirSync(td, { recursive: true });
+    const td = import_node_path9.default.join(this.modelPath(vendor, model), tkey);
+    import_node_fs10.default.mkdirSync(td, { recursive: true });
     let n = input.index && input.index > 0 ? input.index : this.nextIndex(vendor, model, tkey);
-    if (import_node_fs9.default.existsSync(import_node_path8.default.join(td, `r${n}`)) || import_node_fs9.default.existsSync(import_node_path8.default.join(td, `r${n}.run.json`))) n = this.nextIndex(vendor, model, tkey);
-    const ws = import_node_path8.default.join(td, `r${n}`);
-    import_node_fs9.default.mkdirSync(ws, { recursive: true });
-    const mat = import_node_path8.default.join(input.taskDir, "materials");
-    if (isDir(mat)) for (const e of import_node_fs9.default.readdirSync(mat)) import_node_fs9.default.cpSync(import_node_path8.default.join(mat, e), import_node_path8.default.join(ws, e), { recursive: true });
+    if (import_node_fs10.default.existsSync(import_node_path9.default.join(td, `r${n}`)) || import_node_fs10.default.existsSync(import_node_path9.default.join(td, `r${n}.run.json`))) n = this.nextIndex(vendor, model, tkey);
+    const ws = import_node_path9.default.join(td, `r${n}`);
+    import_node_fs10.default.mkdirSync(ws, { recursive: true });
+    const mat = import_node_path9.default.join(input.taskDir, "materials");
+    if (isDir(mat)) for (const e of import_node_fs10.default.readdirSync(mat)) import_node_fs10.default.cpSync(import_node_path9.default.join(mat, e), import_node_path9.default.join(ws, e), { recursive: true });
     try {
       (0, import_node_child_process4.spawnSync)("git", ["init", "-q"], { cwd: ws, timeout: 1e4, windowsHide: true });
     } catch {
@@ -3239,8 +3360,10 @@ var Workspaces = class {
       usage: {},
       notes: ""
     };
+    const text = typeof input.prompt === "function" ? input.prompt(ws, n) : input.prompt;
+    run.context_policy = makeContextPolicy(text, task.prompt, task.id, input.variant, ws);
     this.saveRun(run);
-    import_node_fs9.default.writeFileSync(`${ws}.prompt.md`, typeof input.prompt === "function" ? input.prompt(ws, n) : input.prompt, "utf8");
+    import_node_fs10.default.writeFileSync(`${ws}.prompt.md`, text, "utf8");
     return this.readRun(vendor, model, tkey, n);
   }
   saveRun(run) {
@@ -3250,6 +3373,10 @@ var Workspaces = class {
   patchRun(ref, patch) {
     const p = this.parseRef(ref);
     const cur = this.readRun(p.vendor, p.model, p.tkey, p.index);
+    if (patch.started_at && !patch.ended_at && !cur.started_at && !cur.ended_at && !cur.grader_run_id && !cur.detect?.final && !cur.detect?.dir_exists && cur.context_policy && !cur.context_policy.launched_at) {
+      cur.context_policy.skills = snapshotSkills(this.files(ref).ws, cur.context_policy.skills);
+      cur.context_policy.launched_at = (/* @__PURE__ */ new Date()).toISOString();
+    }
     const allowed = ["harness", "started_at", "ended_at", "timed_out", "notes", "usage", "grader_run_id", "deliverable_dir", "quota", "discarded"];
     for (const k of allowed) if (k in patch) cur[k] = patch[k];
     if (cur.discarded == null) delete cur.discarded;
@@ -3259,43 +3386,126 @@ var Workspaces = class {
   /** 永久删除一次运行在模型工作区里的全部文件：rN/ 以及 rN.run.json / .prompt.md / .final.md / .transcript.json / .shots/。 */
   purgeRun(ref) {
     const f2 = this.files(ref);
-    const root = import_node_path8.default.resolve(this.modelDir) + import_node_path8.default.sep;
+    const root = import_node_path9.default.resolve(this.modelDir) + import_node_path9.default.sep;
     const targets = [f2.ws, f2.run, f2.prompt, f2.final, f2.transcript, `${f2.ws}.shots`];
     const removed = [];
     for (const t of targets) {
-      const abs = import_node_path8.default.resolve(t);
+      const abs = import_node_path9.default.resolve(t);
       if (!abs.startsWith(root)) throw new HttpError(400, `\u62D2\u7EDD\u5220\u9664\u5DE5\u4F5C\u533A\u4E4B\u5916\u7684\u8DEF\u5F84\uFF1A${abs}`);
-      if (!import_node_fs9.default.existsSync(abs)) continue;
-      import_node_fs9.default.rmSync(abs, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+      if (!import_node_fs10.default.existsSync(abs)) continue;
+      import_node_fs10.default.rmSync(abs, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
       removed.push(abs);
     }
     try {
-      if (!import_node_fs9.default.readdirSync(f2.taskDir).length) import_node_fs9.default.rmdirSync(f2.taskDir);
+      if (!import_node_fs10.default.readdirSync(f2.taskDir).length) import_node_fs10.default.rmdirSync(f2.taskDir);
     } catch {
     }
     return removed;
   }
   writeFinal(ref, text) {
-    import_node_fs9.default.writeFileSync(this.files(ref).final, text, "utf8");
+    import_node_fs10.default.writeFileSync(this.files(ref).final, text, "utf8");
   }
   writeTranscript(ref, data) {
     writeJson(this.files(ref).transcript, data);
   }
   dirs(p) {
     try {
-      return import_node_fs9.default.readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+      return import_node_fs10.default.readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
     } catch {
       return [];
     }
   }
   mtime(p) {
     try {
-      return import_node_fs9.default.statSync(p).mtime.toISOString();
+      return import_node_fs10.default.statSync(p).mtime.toISOString();
     } catch {
       return (/* @__PURE__ */ new Date()).toISOString();
     }
   }
 };
+
+// server/context-audit.ts
+var import_node_fs11 = __toESM(require("node:fs"), 1);
+var import_node_path10 = __toESM(require("node:path"), 1);
+var import_node_crypto4 = __toESM(require("node:crypto"), 1);
+var import_node_child_process5 = require("node:child_process");
+var hash2 = (s) => import_node_crypto4.default.createHash("sha256").update(s).digest("hex");
+function safe(root, p) {
+  const rel = import_node_path10.default.relative(root, p);
+  if (rel === ".." || rel.startsWith(".." + import_node_path10.default.sep) || import_node_path10.default.isAbsolute(rel)) return false;
+  try {
+    return !import_node_fs11.default.lstatSync(p).isSymbolicLink() && !import_node_path10.default.relative(p, import_node_fs11.default.realpathSync(p));
+  } catch {
+    return false;
+  }
+}
+function read(root, file) {
+  try {
+    return safe(root, file) ? JSON.parse(import_node_fs11.default.readFileSync(file, "utf8")) : null;
+  } catch {
+    return null;
+  }
+}
+function readContextReport(data, target) {
+  const root = import_node_path10.default.join(data, "context-audits"), dir = import_node_path10.default.join(root, hash2(target));
+  if (!safe(data, root) || !safe(root, dir)) return null;
+  const idx = read(root, import_node_path10.default.join(dir, "current.json"));
+  if (!/^report-[a-f0-9]+\.json$/.test(idx?.report || "")) return null;
+  const file = import_node_path10.default.join(dir, idx.report);
+  const report = read(root, file);
+  if (!report || report.schema !== "context-audit/1") return null;
+  report.report_file = file;
+  report.stale = [...report.sources, ...report.inputs || []].some((s) => {
+    try {
+      const st = import_node_fs11.default.statSync(s.path, { bigint: true });
+      return Number(st.size) !== s.size || String(st.mtimeNs) !== s.mtime_ns;
+    } catch {
+      return true;
+    }
+  });
+  const reviews = import_node_fs11.default.readdirSync(dir).filter((n) => /^review-[a-f0-9]+\.json$/.test(n)).map((n) => read(root, import_node_path10.default.join(dir, n))).filter(Boolean).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  for (const f2 of report.findings) for (const r of reviews) {
+    if (r.finding_id === f2.id && r.evidence_id === f2.evidence_id && ["confirmed", "dismissed"].includes(r.decision)) {
+      f2.review_state = r.decision;
+      f2.review_note = r.note;
+    }
+  }
+  report.pending_count = report.findings.filter((f2) => f2.review_state === "pending").length;
+  return report;
+}
+function listContextReports(data) {
+  const root = import_node_path10.default.join(data, "context-audits");
+  if (!safe(data, root)) return [];
+  const out = [];
+  for (const name of import_node_fs11.default.readdirSync(root)) {
+    if (!/^[a-f0-9]{64}$/.test(name)) continue;
+    const dir = import_node_path10.default.join(root, name);
+    const index = read(root, import_node_path10.default.join(dir, "current.json"));
+    const report = /^report-[a-f0-9]+\.json$/.test(index?.report || "") ? read(root, import_node_path10.default.join(dir, index.report)) : null;
+    const target = index?.ref || index?.run_id || report?.ref || report?.run_id;
+    if (!target || hash2(target) !== name) continue;
+    const full = readContextReport(data, target);
+    if (full) out.push(full);
+  }
+  return out;
+}
+function auditAfterRegistration(cfg, ref, done) {
+  if (!cfg.python) {
+    done("Python \u4E0D\u53EF\u7528\uFF0C\u5BA1\u8BA1\u672A\u8FD0\u884C");
+    return;
+  }
+  const script = import_node_path10.default.join(cfg.graderDir, "scripts", "audit_context.py");
+  if (!import_node_fs11.default.existsSync(script)) {
+    done("\u5BA1\u8BA1\u811A\u672C\u4E0D\u53EF\u7528");
+    return;
+  }
+  (0, import_node_child_process5.execFile)(
+    cfg.python,
+    ["-B", script, "--root", cfg.root, "--data", cfg.benchData, "--model-dir", cfg.modelDir, "audit", ref, "--save", "--json"],
+    { cwd: cfg.root, timeout: 12e4, maxBuffer: 8 * 1024 * 1024, windowsHide: true, encoding: "utf8" },
+    (error) => done(error ? "\u5BA1\u8BA1\u5931\u8D25\u6216\u8D85\u65F6\uFF0C\u53EF\u7528 wb context audit \u91CD\u8BD5\uFF1B\u767B\u8BB0\u4E0E\u8BC4\u5206\u4E0D\u53D7\u5F71\u54CD" : void 0)
+  );
+}
 
 // server/index.ts
 async function startServer(over = {}) {
@@ -3327,7 +3537,7 @@ async function startServer(over = {}) {
   const publishStore = () => hub.emit({ type: "store", updated_at: store.data.updated_at });
   const R = new Router();
   const startedAt = Date.now();
-  const bench = import_node_path9.default.join(cfg.graderDir, "scripts", "bench.py");
+  const bench = import_node_path11.default.join(cfg.graderDir, "scripts", "bench.py");
   const py = () => {
     if (!cfg.python) throw new HttpError(500, "\u672A\u627E\u5230 Python 3");
     return cfg.python;
@@ -3342,7 +3552,7 @@ async function startServer(over = {}) {
     } catch (e) {
       if (store.data.spec) spec = { ...store.data.spec, _source: "cache" };
       else {
-        const html = import_node_fs10.default.readFileSync(import_node_path9.default.join(cfg.root, "benchmark-spec.html"), "utf8");
+        const html = import_node_fs12.default.readFileSync(import_node_path11.default.join(cfg.root, "benchmark-spec.html"), "utf8");
         const m = /<script id="spec" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
         if (!m) throw e;
         const d = JSON.parse(m[1].replace(/<\\\//g, "</"));
@@ -3366,7 +3576,7 @@ async function startServer(over = {}) {
     });
     const p = (async () => {
       let snap = { runs: [] };
-      if (import_node_fs10.default.existsSync(import_node_path9.default.join(cfg.benchData, "runs"))) snap = await callBridge(cfg, ["snapshot", "--data", cfg.benchData, "--root", cfg.root], 6e5);
+      if (import_node_fs12.default.existsSync(import_node_path11.default.join(cfg.benchData, "runs"))) snap = await callBridge(cfg, ["snapshot", "--data", cfg.benchData, "--root", cfg.root], 6e5);
       const models = localModels();
       store.syncFrom(snap.runs, models, ws.listRuns(models));
       store.log("sync", `\u540C\u6B65 ${snap.runs.length} \u6B21\u8FD0\u884C`);
@@ -3393,33 +3603,33 @@ async function startServer(over = {}) {
     if (opts.fast) args.push("--fast");
     if (opts.skip) args.push("--skip-graded");
     if (opts.task) args.push("--task", opts.task);
-    const ids = runDirs === "all" ? store.data.runs.filter((r) => !opts.task || r.task === opts.task).map((r) => r.run_id) : runDirs.map((d) => import_node_path9.default.basename(d));
+    const ids = runDirs === "all" ? store.data.runs.filter((r) => !opts.task || r.task === opts.task).map((r) => r.run_id) : runDirs.map((d) => import_node_path11.default.basename(d));
     const refs = [.../* @__PURE__ */ new Set([...opts.refs || [], ...store.data.workspaces.filter((w) => w.grader_run_id && ids.includes(w.grader_run_id)).map((w) => w.ref)])];
-    return graderJob("grade", runDirs === "all" ? `\u8BC4\u5206\uFF1A\u5168\u90E8\u8FD0\u884C${opts.task ? " \xB7 " + opts.task : ""}` : `\u8BC4\u5206\uFF1A${runDirs.map((d) => import_node_path9.default.basename(d)).join(", ")}`, args, async () => sync(), { run_ids: ids, refs });
+    return graderJob("grade", runDirs === "all" ? `\u8BC4\u5206\uFF1A\u5168\u90E8\u8FD0\u884C${opts.task ? " \xB7 " + opts.task : ""}` : `\u8BC4\u5206\uFF1A${runDirs.map((d) => import_node_path11.default.basename(d)).join(", ")}`, args, async () => sync(), { run_ids: ids, refs });
   }
   function registerWs(ref, opts) {
     guardRef(ref);
     const pr = ws.parseRef(ref);
     const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
     if (w.discarded) throw new HttpError(409, `${ref} \u5728\u56DE\u6536\u7AD9\u91CC\uFF0C\u4E0D\u53C2\u4E0E\u8BC4\u4F30\uFF1B\u5148\u6062\u590D\u518D\u767B\u8BB0`);
-    if (w.grader_run_id && import_node_fs10.default.existsSync(import_node_path9.default.join(cfg.benchData, "runs", w.grader_run_id))) throw new HttpError(409, `\u5DF2\u767B\u8BB0\u4E3A ${w.grader_run_id}\uFF1B\u5982\u9700\u91CD\u65B0\u767B\u8BB0\u8BF7\u5148\u5728 run.json \u6E05\u7A7A grader_run_id`);
+    if (w.grader_run_id && import_node_fs12.default.existsSync(import_node_path11.default.join(cfg.benchData, "runs", w.grader_run_id))) throw new HttpError(409, `\u5DF2\u767B\u8BB0\u4E3A ${w.grader_run_id}\uFF1B\u5982\u9700\u91CD\u65B0\u767B\u8BB0\u8BF7\u5148\u5728 run.json \u6E05\u7A7A grader_run_id`);
     if (!w.harness) throw new HttpError(400, "\u8BF7\u5148\u586B\u5199 harness\uFF08\u4F8B\u5982 Claude Code / Codex CLI / Kiro\uFF09");
     const f2 = ws.files(ref);
-    const src = w.deliverable_dir ? import_node_path9.default.join(f2.ws, w.deliverable_dir) : f2.ws;
-    if (!import_node_fs10.default.existsSync(src)) throw new HttpError(400, `\u4EA4\u4ED8\u76EE\u5F55\u4E0D\u5B58\u5728\uFF1A${toRel(cfg.root, src)}\uFF08\u6A21\u578B\u5E94\u5728\u5DE5\u4F5C\u76EE\u5F55\u4E0B\u65B0\u5EFA ${w.deliverable_dir}/\uFF09`);
+    const src = w.deliverable_dir ? import_node_path11.default.join(f2.ws, w.deliverable_dir) : f2.ws;
+    if (!import_node_fs12.default.existsSync(src)) throw new HttpError(400, `\u4EA4\u4ED8\u76EE\u5F55\u4E0D\u5B58\u5728\uFF1A${toRel(cfg.root, src)}\uFF08\u6A21\u578B\u5E94\u5728\u5DE5\u4F5C\u76EE\u5F55\u4E0B\u65B0\u5EFA ${w.deliverable_dir}/\uFF09`);
     const extra = { vendor: w.vendor, ws_ref: w.ref };
     if (w.usage && Object.keys(w.usage).length) extra.usage = w.usage;
     if (w.timed_out) extra.timed_out = true;
     const args = ["init-run", "--task", w.task, "--model", w.model, "--harness", w.harness, "--src", src, "--workspace", f2.ws, "--run-index", String(w.index), "--extra", JSON.stringify(extra)];
     if (w.variant) args.push("--variant", w.variant);
-    if (import_node_fs10.default.existsSync(f2.final)) args.push("--final-message", f2.final);
-    if (w.task === "T06" && import_node_fs10.default.existsSync(f2.transcript)) args.push("--transcript", f2.transcript);
+    if (import_node_fs12.default.existsSync(f2.final)) args.push("--final-message", f2.final);
+    if (w.task === "T06" && import_node_fs12.default.existsSync(f2.transcript)) args.push("--transcript", f2.transcript);
     if (w.started_at) args.push("--started-at", w.started_at);
     if (w.ended_at) args.push("--ended-at", w.ended_at);
     return graderJob("register", `\u767B\u8BB0\uFF1A${ref}`, args, async (code, lines) => {
       if (code !== 0) throw new Error("init-run \u5931\u8D25");
       const last = [...lines].reverse().find((l) => /runs[\\/][^\\/\s]+\s*$/.test(l.trim()));
-      const rid = last ? import_node_path9.default.basename(last.trim()) : null;
+      const rid = last ? import_node_path11.default.basename(last.trim()) : null;
       if (!rid) throw new Error("\u65E0\u6CD5\u4ECE\u8F93\u51FA\u4E2D\u89E3\u6790\u8FD0\u884C id");
       ws.patchRun(ref, { grader_run_id: rid });
       store.log("register", `${ref} \u2192 ${rid}`);
@@ -3429,16 +3639,20 @@ async function startServer(over = {}) {
         refreshWorkspaces();
         return { run_id: rid, discarded: true };
       }
-      if (opts.grade) gradeRuns([import_node_path9.default.join(cfg.benchData, "runs", rid)], { fast: opts.fast, refs: [ref] });
+      auditAfterRegistration(cfg, ref, (error) => {
+        if (error) console.warn(`[context-audit] ${ref}: ${error}`);
+        hub.emit({ type: "context-audit", ref, error });
+      });
+      if (opts.grade) gradeRuns([import_node_path11.default.join(cfg.benchData, "runs", rid)], { fast: opts.fast, refs: [ref] });
       else await sync();
       return { run_id: rid };
     }, { refs: [ref] }, { afterFatal: true });
   }
   const openFolder = (p) => {
     const cmd = process.platform === "win32" ? "explorer" : process.platform === "darwin" ? "open" : "xdg-open";
-    (0, import_node_child_process5.spawn)(cmd, [p], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+    (0, import_node_child_process6.spawn)(cmd, [p], { detached: true, stdio: "ignore", windowsHide: false }).unref();
   };
-  const taskDirOf = (task) => spec?.materials_state?.[task.id]?.dir || import_node_path9.default.join(cfg.graderDir, "tasks", import_node_fs10.default.readdirSync(import_node_path9.default.join(cfg.graderDir, "tasks")).find((d) => d.startsWith(task.id + "-")) || task.id);
+  const taskDirOf = (task) => spec?.materials_state?.[task.id]?.dir || import_node_path11.default.join(cfg.graderDir, "tasks", import_node_fs12.default.readdirSync(import_node_path11.default.join(cfg.graderDir, "tasks")).find((d) => d.startsWith(task.id + "-")) || task.id);
   const findTask = async (id) => {
     const s = await loadSpec();
     const t = s.tasks.find((x) => x.id === String(id || "").toUpperCase());
@@ -3464,20 +3678,24 @@ async function startServer(over = {}) {
     condition: t.condition,
     suite: t.suite === "v2" ? "v2" : "v1"
   }, { tts: settings().tts_command, header: settings().prompt_header !== false });
-  const claimable = (profile, tkey) => ws.listRuns(ws.localModels([profile])).find((w) => w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final && import_node_fs10.default.existsSync(ws.files(w.ref).prompt));
+  const claimable = (profile, tkey) => ws.listRuns(ws.localModels([profile])).find((w) => w.tkey === tkey && !w.discarded && !w.started_at && !w.grader_run_id && !w.detect?.dir_exists && !w.detect?.final && import_node_fs12.default.existsSync(ws.files(w.ref).prompt));
   async function promptFor(q) {
     const { s, t } = await findTask(q.task);
     const variant = q.variant || null;
     if (Object.keys(t.variants || {}).length && !variant) throw new HttpError(400, `${t.id} \u9700\u8981\u9009\u62E9\u53D8\u4F53\uFF08${Object.keys(t.variants).join(" / ")}\uFF09`);
-    if (!q.vendor || !q.model) return { ...renderPrompt(s, t, variant, null, null), ref: null, workspace: null, index: null, exists: false };
+    if (!q.vendor || !q.model) {
+      const prompt2 = renderPrompt(s, t, variant, null, null);
+      return { ...prompt2, policy_version: contextPolicyVersion(prompt2.text), prompt_provenance: "actual_sent_unknown", ref: null, workspace: null, index: null, exists: false };
+    }
     const tkey = t.id + (variant || "");
     const prof = findModel(q.vendor, q.model);
     const cur = prof && !deletion(modelKey2(q.vendor, q.model)) ? claimable(prof, tkey) : void 0;
     const index = cur ? cur.index : ws.nextIndex(q.vendor, q.model, tkey);
     const wsAbs = cur?.workspace || ws.wsPath(q.vendor, q.model, tkey, index);
-    return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
+    const prompt = cur ? { text: import_node_fs12.default.readFileSync(ws.files(cur.ref).prompt, "utf8"), warnings: [] } : renderPrompt(s, t, variant, wsAbs, index);
+    return { ...prompt, warnings: [...prompt.warnings, ...contextPolicyWarnings(prompt.text)], policy_version: contextPolicyVersion(prompt.text), prompt_provenance: "actual_sent_unknown", ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
   }
-  const buildScript = import_node_path9.default.join(cfg.graderDir, "scripts", "build_materials.py");
+  const buildScript = import_node_path11.default.join(cfg.graderDir, "scripts", "build_materials.py");
   const GENERATED_TASKS = /* @__PURE__ */ new Set(["T03", "T04", "V07", "V08"]);
   function missingMaterials(t) {
     const dir = taskDirOf(t);
@@ -3490,11 +3708,11 @@ async function startServer(over = {}) {
         const re = new RegExp("^" + m.slice(cut + 1).replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$", "i");
         let ok = false;
         try {
-          ok = import_node_fs10.default.readdirSync(import_node_path9.default.join(dir, m.slice(0, cut))).some((f2) => re.test(f2));
+          ok = import_node_fs12.default.readdirSync(import_node_path11.default.join(dir, m.slice(0, cut))).some((f2) => re.test(f2));
         } catch {
         }
         if (!ok) out.push(m);
-      } else if (!import_node_fs10.default.existsSync(import_node_path9.default.join(dir, m))) out.push(m);
+      } else if (!import_node_fs12.default.existsSync(import_node_path11.default.join(dir, m))) out.push(m);
     }
     return out;
   }
@@ -3503,9 +3721,9 @@ async function startServer(over = {}) {
     let miss = missingMaterials(t);
     if (!miss.length) return;
     let genErr = "";
-    if (GENERATED_TASKS.has(t.id) && import_node_fs10.default.existsSync(buildScript) && cfg.python) {
+    if (GENERATED_TASKS.has(t.id) && import_node_fs12.default.existsSync(buildScript) && cfg.python) {
       building ||= new Promise((resolve) => {
-        (0, import_node_child_process5.execFile)(cfg.python, [buildScript], { cwd: cfg.graderDir, timeout: 18e4, windowsHide: true, encoding: "utf8" }, (err, _o, stderr) => {
+        (0, import_node_child_process6.execFile)(cfg.python, [buildScript], { cwd: cfg.graderDir, timeout: 18e4, windowsHide: true, encoding: "utf8" }, (err, _o, stderr) => {
           if (err) genErr = String(stderr || err.message).trim().split(/\r?\n/).slice(-2).join(" ");
           building = null;
           resolve();
@@ -3517,7 +3735,7 @@ async function startServer(over = {}) {
       void loadSpec(true);
     }
     if (!miss.length) return;
-    const where = import_node_path9.default.join(taskDirOf(t), "materials");
+    const where = import_node_path11.default.join(taskDirOf(t), "materials");
     const hint = GENERATED_TASKS.has(t.id) ? `\u81EA\u52A8\u751F\u6210\u6CA1\u6709\u6210\u529F${genErr ? `\uFF08${genErr}\uFF09` : ""}\uFF1A\u8BF7\u786E\u8BA4 Python \u88C5\u4E86 numpy\uFF0C\u518D\u5230\u300C\u8BBE\u7F6E \u2192 \u8BC4\u6D4B\u673A\u300D\u70B9\u201C\u751F\u6210\u7D20\u6750\u201D\u3002` : `\u8BF7\u628A\u7D20\u6750\u653E\u8FDB ${where} \u5BF9\u5E94\u4F4D\u7F6E\u540E\u518D\u53D1\u8F66\u3002`;
     throw new HttpError(409, `${t.id} \u7684\u9884\u7F6E\u7D20\u6750\u4E0D\u9F50\uFF0C\u5DF2\u505C\u6B62\u53D1\u8F66\uFF08\u7F3A\u7D20\u6750\u7684\u8FD0\u884C\u4F1A\u4F5C\u5E9F\uFF09\uFF1A${miss.join("\u3001")}\u3002${hint}`);
   }
@@ -3538,7 +3756,7 @@ async function startServer(over = {}) {
     } else if (harness && harness !== run.harness) run = ws.patchRun(run.ref, { harness });
     if (b.start !== false && !run.started_at) run = ws.patchRun(run.ref, { started_at: (/* @__PURE__ */ new Date()).toISOString(), ended_at: null });
     if (b.quota_before != null) run = applyQuota(run.ref, { before: Number(b.quota_before), unit: b.quota_unit });
-    const text = import_node_fs10.default.readFileSync(ws.files(run.ref).prompt, "utf8");
+    const text = import_node_fs12.default.readFileSync(ws.files(run.ref).prompt, "utf8");
     let opened = null;
     if (b.open) {
       await scanShell();
@@ -3553,31 +3771,31 @@ async function startServer(over = {}) {
       } else opened = `\u8BF7\u624B\u52A8\u6253\u5F00 ${harness || "harness"}\uFF0C\u5E76\u8FDB\u5165\u63D0\u793A\u8BCD\u4E2D\u7684\u5DE5\u4F5C\u76EE\u5F55`;
     }
     refreshWorkspaces();
-    return { run, text, opened };
+    return { run, text, opened, policy_version: contextPolicyVersion(text), warnings: contextPolicyWarnings(text), prompt_provenance: "actual_sent_unknown" };
   }
-  const agentsSkills = import_node_path9.default.join(cfg.root, ".agents", "skills");
+  const agentsSkills = import_node_path11.default.join(cfg.root, ".agents", "skills");
   function mirrorSkills() {
     let copied = 0;
     for (const name of ["bench-grader", "bench-workbench"]) {
-      const src = import_node_path9.default.join(cfg.root, "skills", name);
-      const dst = import_node_path9.default.join(agentsSkills, name);
-      if (!import_node_fs10.default.existsSync(src)) continue;
+      const src = import_node_path11.default.join(cfg.root, "skills", name);
+      const dst = import_node_path11.default.join(agentsSkills, name);
+      if (!import_node_fs12.default.existsSync(src)) continue;
       const walk = (a, b) => {
-        import_node_fs10.default.mkdirSync(b, { recursive: true });
-        for (const e of import_node_fs10.default.readdirSync(a, { withFileTypes: true })) {
+        import_node_fs12.default.mkdirSync(b, { recursive: true });
+        for (const e of import_node_fs12.default.readdirSync(a, { withFileTypes: true })) {
           if (e.name === "hidden" || e.name === "__pycache__" || e.name.endsWith(".pyc")) continue;
-          const sa = import_node_path9.default.join(a, e.name), sb = import_node_path9.default.join(b, e.name);
+          const sa = import_node_path11.default.join(a, e.name), sb = import_node_path11.default.join(b, e.name);
           if (e.isDirectory()) walk(sa, sb);
           else {
-            const st = import_node_fs10.default.statSync(sa);
+            const st = import_node_fs12.default.statSync(sa);
             let same = false;
             try {
-              const tb = import_node_fs10.default.statSync(sb);
+              const tb = import_node_fs12.default.statSync(sb);
               same = tb.size === st.size && tb.mtimeMs >= st.mtimeMs;
             } catch {
             }
             if (!same) {
-              import_node_fs10.default.copyFileSync(sa, sb);
+              import_node_fs12.default.copyFileSync(sa, sb);
               copied++;
             }
           }
@@ -3585,7 +3803,7 @@ async function startServer(over = {}) {
       };
       walk(src, dst);
     }
-    import_node_fs10.default.writeFileSync(import_node_path9.default.join(agentsSkills, "README.md"), "# .agents/skills\n\n\u7531 Bench Workbench \u81EA\u52A8\u4ECE `skills/` \u955C\u50CF\uFF08\u4E0D\u542B `hidden/`\uFF09\u3002\u8BF7\u4FEE\u6539 `skills/` \u4E0B\u7684\u6E90\u6587\u4EF6\uFF0C\u4E0D\u8981\u76F4\u63A5\u6539\u8FD9\u91CC\u3002\n", "utf8");
+    import_node_fs12.default.writeFileSync(import_node_path11.default.join(agentsSkills, "README.md"), "# .agents/skills\n\n\u7531 Bench Workbench \u81EA\u52A8\u4ECE `skills/` \u955C\u50CF\uFF08\u4E0D\u542B `hidden/`\uFF09\u3002\u8BF7\u4FEE\u6539 `skills/` \u4E0B\u7684\u6E90\u6587\u4EF6\uFF0C\u4E0D\u8981\u76F4\u63A5\u6539\u8FD9\u91CC\u3002\n", "utf8");
     return { copied, dir: agentsSkills };
   }
   try {
@@ -3628,17 +3846,17 @@ async function startServer(over = {}) {
   };
   const detectTimer = setInterval(detectTick, 3e3);
   detectTimer.unref();
-  const graderTrash = import_node_path9.default.join(cfg.benchData, "trash");
+  const graderTrash = import_node_path11.default.join(cfg.benchData, "trash");
   const RID = /^[\w.-]+$/;
   function moveGrader(rid, to) {
     if (!RID.test(rid)) throw new HttpError(400, `\u8FD0\u884C id \u4E0D\u5408\u6CD5\uFF1A${rid}`);
-    const live = import_node_path9.default.join(cfg.benchData, "runs", rid), bin = import_node_path9.default.join(graderTrash, rid);
+    const live = import_node_path11.default.join(cfg.benchData, "runs", rid), bin = import_node_path11.default.join(graderTrash, rid);
     const [src, dst] = to === "trash" ? [live, bin] : [bin, live];
-    if (!import_node_fs10.default.existsSync(src)) return false;
-    if (import_node_fs10.default.existsSync(dst)) throw new HttpError(409, `\u76EE\u6807\u5DF2\u5B58\u5728\uFF1A${toRel(cfg.root, dst)}`);
-    import_node_fs10.default.mkdirSync(import_node_path9.default.dirname(dst), { recursive: true });
+    if (!import_node_fs12.default.existsSync(src)) return false;
+    if (import_node_fs12.default.existsSync(dst)) throw new HttpError(409, `\u76EE\u6807\u5DF2\u5B58\u5728\uFF1A${toRel(cfg.root, dst)}`);
+    import_node_fs12.default.mkdirSync(import_node_path11.default.dirname(dst), { recursive: true });
     try {
-      import_node_fs10.default.renameSync(src, dst);
+      import_node_fs12.default.renameSync(src, dst);
     } catch (e) {
       throw new HttpError(409, `\u8BC4\u5206\u76EE\u5F55\u88AB\u5360\u7528\uFF0C\u6682\u65F6\u632A\u4E0D\u52A8\uFF08${e.code || "EBUSY"}\uFF09\uFF1A\u5173\u6389\u6B63\u5728\u9884\u89C8\u5B83\u7684\u7A97\u53E3\u540E\u518D\u8BD5`);
     }
@@ -3646,8 +3864,8 @@ async function startServer(over = {}) {
   }
   const busyJob = (keys) => jobs.list.find((j) => (j.status === "running" || j.status === "queued") && keys.some((k) => k && jobs.info(j).title.includes(k)));
   function releaseFolder(dir) {
-    const base = import_node_path9.default.resolve(dir).toLowerCase();
-    const inside = (p) => !!p && (import_node_path9.default.resolve(p).toLowerCase() + import_node_path9.default.sep).startsWith(base + import_node_path9.default.sep);
+    const base = import_node_path11.default.resolve(dir).toLowerCase();
+    const inside = (p) => !!p && (import_node_path11.default.resolve(p).toLowerCase() + import_node_path11.default.sep).startsWith(base + import_node_path11.default.sep);
     let np = 0, nv = 0;
     for (const p of procs.all()) if (p.status === "running" && inside(p.cwd)) {
       try {
@@ -3666,7 +3884,7 @@ async function startServer(over = {}) {
     const stop = !!b.stop;
     let ref = b.ref || store.data.runs.find((r) => r.run_id === b.run_id)?.ws_ref || null;
     if (ref) guardRef(ref);
-    if (ref && !import_node_fs10.default.existsSync(ws.files(ref).run) && !import_node_fs10.default.existsSync(ws.files(ref).ws)) ref = null;
+    if (ref && !import_node_fs12.default.existsSync(ws.files(ref).run) && !import_node_fs12.default.existsSync(ws.files(ref).ws)) ref = null;
     if (ref) {
       const pr = ws.parseRef(ref);
       const w2 = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
@@ -3704,7 +3922,7 @@ async function startServer(over = {}) {
     if (!t) throw new HttpError(404, `\u56DE\u6536\u7AD9\u91CC\u6CA1\u6709\uFF1A${id}`);
     if (t.ref) guardRef(t.ref);
     if (t.run_id) moveGrader(t.run_id, "runs");
-    if (t.ref && import_node_fs10.default.existsSync(ws.files(t.ref).run)) {
+    if (t.ref && import_node_fs12.default.existsSync(ws.files(t.ref).run)) {
       const pr = ws.parseRef(t.ref);
       const w = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
       ws.patchRun(t.ref, { discarded: null, ...w.discarded?.set_ended ? { ended_at: null } : {} });
@@ -3725,9 +3943,9 @@ async function startServer(over = {}) {
         removed += ws.purgeRun(t.ref).length;
       }
       if (t.run_id && RID.test(t.run_id)) {
-        const bin = import_node_path9.default.join(graderTrash, t.run_id);
-        if (import_node_fs10.default.existsSync(bin)) {
-          import_node_fs10.default.rmSync(bin, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+        const bin = import_node_path11.default.join(graderTrash, t.run_id);
+        if (import_node_fs12.default.existsSync(bin)) {
+          import_node_fs12.default.rmSync(bin, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
           removed++;
         }
       }
@@ -3757,6 +3975,15 @@ async function startServer(over = {}) {
   });
   R.get("/api/spec", async (req) => loadSpec(req.query.get("refresh") === "1"));
   R.get("/api/store", () => store.data);
+  R.get("/api/context", (req) => {
+    const target = req.query.get("ref") || req.query.get("run_id");
+    if (target) {
+      const ref = store.data.runs.find((r) => r.run_id === target)?.ws_ref || target;
+      return readContextReport(cfg.benchData, ref) || readContextReport(cfg.benchData, target);
+    }
+    const trashed = new Set((store.data.trash || []).flatMap((t) => [t.ref, t.run_id]).filter(Boolean));
+    return listContextReports(cfg.benchData).filter((r) => !trashed.has(r.ref) && !trashed.has(r.run_id));
+  });
   R.get("/api/aggregate", (req) => {
     const v = req.query.get("view") || "history";
     if (!["history", "simple", "full"].includes(v)) throw new HttpError(400, `\u672A\u77E5\u699C\u5355\u89C6\u56FE\uFF1A${v}\uFF08\u53EF\u9009 history / simple / full\uFF09`);
@@ -3830,7 +4057,7 @@ async function startServer(over = {}) {
     try {
       if (target.exists) {
         releaseFolder(target.dir);
-        import_node_fs10.default.rmSync(target.dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+        import_node_fs12.default.rmSync(target.dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
       }
       store.finishModelDeletion(key);
     } catch (e) {
@@ -3848,7 +4075,7 @@ async function startServer(over = {}) {
     requireModel(vendor, name);
     ws.checkedModelPath(vendor, name);
     const dir = writeModelReport(cfg.modelDir, vendor, name, md, { board: agg.board.filter((b) => b.model === name), tasks: agg.tasks.filter((t) => t.entrant.startsWith(name + " @ ")), generated_at: agg.generated_at });
-    return { dir: toRel(cfg.root, dir), file: toRel(cfg.root, import_node_path9.default.join(dir, "REPORT.md")), markdown: md };
+    return { dir: toRel(cfg.root, dir), file: toRel(cfg.root, import_node_path11.default.join(dir, "REPORT.md")), markdown: md };
   });
   R.get("/api/ws", () => store.data.workspaces);
   R.post("/api/ws/scan", () => {
@@ -3872,12 +4099,12 @@ async function startServer(over = {}) {
     requireModel(b.vendor, b.model);
     ws.checkedModelPath(b.vendor, b.model);
     const run = ws.createRun({ vendor: b.vendor, model: b.model, task, variant, harness: b.harness || "", taskDir: taskDirOf(task), prompt: (wsAbs, n) => renderPrompt(s, task, variant, wsAbs, n).text });
-    const pr = { text: import_node_fs10.default.readFileSync(ws.files(run.ref).prompt, "utf8"), warnings: renderPrompt(s, task, variant, null, null).warnings };
+    const pr = { text: import_node_fs12.default.readFileSync(ws.files(run.ref).prompt, "utf8"), warnings: renderPrompt(s, task, variant, null, null).warnings };
     const warnings = [...pr.warnings];
     if (task.id === "T06") warnings.push("T06 \u4E3A\u6709\u4EBA\u503C\u5B88\uFF1A\u6309 hidden/intent.md \u56DE\u7B54\u6A21\u578B\u63D0\u95EE\uFF0C\u5E76\u5728\u5B8C\u6210\u65F6\u586B\u5199 transcript_notes\u3002");
     store.log("ws-create", run.ref);
     refreshWorkspaces();
-    return { run, prompt: pr.text, warnings, workspace: run.workspace };
+    return { run, prompt: pr.text, warnings, workspace: run.workspace, policy_version: contextPolicyVersion(pr.text), prompt_provenance: "actual_sent_unknown" };
   });
   R.get("/api/ws/detect", () => {
     detectTick();
@@ -3981,10 +4208,10 @@ async function startServer(over = {}) {
     const m = /^data:image\/png;base64,(.+)$/.exec(String(b.data || ""));
     if (!m) throw new HttpError(400, "\u9700\u8981 PNG data URL");
     const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const dir = b.ref ? `${ws.files(b.ref).ws}.shots` : import_node_path9.default.join(cfg.runtimeDir, "shots");
-    import_node_fs10.default.mkdirSync(dir, { recursive: true });
-    const file = import_node_path9.default.join(dir, `${stamp}${b.label ? "-" + String(b.label).replace(/[^\w.-]+/g, "-").slice(0, 40) : ""}.png`);
-    import_node_fs10.default.writeFileSync(file, Buffer.from(m[1], "base64"));
+    const dir = b.ref ? `${ws.files(b.ref).ws}.shots` : import_node_path11.default.join(cfg.runtimeDir, "shots");
+    import_node_fs12.default.mkdirSync(dir, { recursive: true });
+    const file = import_node_path11.default.join(dir, `${stamp}${b.label ? "-" + String(b.label).replace(/[^\w.-]+/g, "-").slice(0, 40) : ""}.png`);
+    import_node_fs12.default.writeFileSync(file, Buffer.from(m[1], "base64"));
     store.log("shot", toRel(cfg.root, file));
     return { path: toRel(cfg.root, file) };
   });
@@ -4023,20 +4250,20 @@ async function startServer(over = {}) {
   let petProc = null;
   const petRunning = () => !!petProc && petProc.exitCode == null;
   const electronExe = () => {
-    const p = import_node_path9.default.join(cfg.root, "workbench", "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
-    return import_node_fs10.default.existsSync(p) ? p : null;
+    const p = import_node_path11.default.join(cfg.root, "workbench", "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
+    return import_node_fs12.default.existsSync(p) ? p : null;
   };
-  const petMain = import_node_path9.default.join(cfg.root, "workbench", "desktop", "app", "pet.cjs");
+  const petMain = import_node_path11.default.join(cfg.root, "workbench", "desktop", "app", "pet.cjs");
   const PET_KINDS = ["register", "grade"];
   let petDismissed = false;
   const launchPet = (open) => {
     if (petRunning()) return { ok: true, running: true, already: true };
     const exe = electronExe();
     if (!exe) throw new HttpError(404, "\u672A\u5B89\u88C5 Electron\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm install \u540E\u518D\u53EC\u5524\u684C\u9762\u5BA0\u7269");
-    if (!import_node_fs10.default.existsSync(petMain)) throw new HttpError(404, "\u684C\u9762\u5BA0\u7269\u5C1A\u672A\u6784\u5EFA\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm run build");
+    if (!import_node_fs12.default.existsSync(petMain)) throw new HttpError(404, "\u684C\u9762\u5BA0\u7269\u5C1A\u672A\u6784\u5EFA\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C npm run build");
     const env = { ...process.env, WB_URL: `http://127.0.0.1:${cfg.port}`, WB_PET_OPEN: open || "" };
     delete env.ELECTRON_RUN_AS_NODE;
-    const p = (0, import_node_child_process5.spawn)(exe, [petMain], { cwd: import_node_path9.default.dirname(petMain), env, detached: true, stdio: "ignore", windowsHide: false });
+    const p = (0, import_node_child_process6.spawn)(exe, [petMain], { cwd: import_node_path11.default.dirname(petMain), env, detached: true, stdio: "ignore", windowsHide: false });
     petProc = p;
     p.on("exit", () => {
       if (petProc === p) petProc = null;
@@ -4055,7 +4282,7 @@ async function startServer(over = {}) {
       }
     } else if (!jobs.busy(PET_KINDS)) petDismissed = false;
   };
-  R.get("/api/pet", () => ({ available: !!electronExe() && import_node_fs10.default.existsSync(petMain), running: petRunning(), auto: settings().pet_auto !== false }));
+  R.get("/api/pet", () => ({ available: !!electronExe() && import_node_fs12.default.existsSync(petMain), running: petRunning(), auto: settings().pet_auto !== false }));
   R.post("/api/pet", async (req) => {
     const b = await readJson(req);
     if (b.action === "quit") {
@@ -4112,11 +4339,11 @@ async function startServer(over = {}) {
   });
   R.post("/api/skills/sync", () => mirrorSkills());
   R.get("/api/source.zip", (req, res) => {
-    const r = (0, import_node_child_process5.spawnSync)("git", ["rev-parse", "--short", "HEAD"], { cwd: cfg.root, encoding: "utf8", windowsHide: true });
+    const r = (0, import_node_child_process6.spawnSync)("git", ["rev-parse", "--short", "HEAD"], { cwd: cfg.root, encoding: "utf8", windowsHide: true });
     if (r.status !== 0) throw new HttpError(500, "\u5F53\u524D\u76EE\u5F55\u4E0D\u662F git \u4ED3\u5E93\uFF0C\u65E0\u6CD5\u6253\u5305\u6E90\u7801");
     const rev = r.stdout.trim();
     res.writeHead(200, { "content-type": "application/zip", "content-disposition": `attachment; filename="TryProtocom-Model-Compare-${rev}.zip"` });
-    const p = (0, import_node_child_process5.spawn)("git", ["archive", "--format=zip", `--prefix=TryProtocom-Model-Compare/`, "HEAD"], { cwd: cfg.root, windowsHide: true });
+    const p = (0, import_node_child_process6.spawn)("git", ["archive", "--format=zip", `--prefix=TryProtocom-Model-Compare/`, "HEAD"], { cwd: cfg.root, windowsHide: true });
     p.stdout.pipe(res);
     p.on("error", () => res.end());
     return void 0;
@@ -4146,7 +4373,7 @@ async function startServer(over = {}) {
       const cur = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
       if (cur.ended_at) return cur.ended_at;
       try {
-        const m = import_node_fs10.default.statSync(import_node_path9.default.join(ws.files(b.ref).ws, FINAL_FILE)).mtimeMs;
+        const m = import_node_fs12.default.statSync(import_node_path11.default.join(ws.files(b.ref).ws, FINAL_FILE)).mtimeMs;
         if (!cur.started_at || m > Date.parse(cur.started_at)) return new Date(m).toISOString();
       } catch {
       }
@@ -4189,7 +4416,7 @@ async function startServer(over = {}) {
   });
   R.get("/api/ws/final", (req) => {
     const f2 = ws.files(req.query.get("ref") || "");
-    return { text: import_node_fs10.default.existsSync(f2.final) ? import_node_fs10.default.readFileSync(f2.final, "utf8") : "", prompt: import_node_fs10.default.existsSync(f2.prompt) ? import_node_fs10.default.readFileSync(f2.prompt, "utf8") : "" };
+    return { text: import_node_fs12.default.existsSync(f2.final) ? import_node_fs12.default.readFileSync(f2.final, "utf8") : "", prompt: import_node_fs12.default.existsSync(f2.prompt) ? import_node_fs12.default.readFileSync(f2.prompt, "utf8") : "" };
   });
   R.post("/api/ws/register", async (req) => {
     const b = await readJson(req);
@@ -4198,7 +4425,7 @@ async function startServer(over = {}) {
   R.post("/api/open-folder", async (req) => {
     const b = await readJson(req);
     const p = b.ref ? ws.files(b.ref).ws : resolveSafe(cfg.root, b.path || "");
-    if (!import_node_fs10.default.existsSync(p)) throw new HttpError(404, "\u76EE\u5F55\u4E0D\u5B58\u5728");
+    if (!import_node_fs12.default.existsSync(p)) throw new HttpError(404, "\u76EE\u5F55\u4E0D\u5B58\u5728");
     openFolder(p);
     return { ok: true, path: p };
   });
@@ -4206,10 +4433,10 @@ async function startServer(over = {}) {
   R.get("/api/runs/:id", async (req) => {
     const run = store.data.runs.find((r) => r.run_id === req.params.id);
     if (!run) throw new HttpError(404, "\u8FD0\u884C\u4E0D\u5B58\u5728");
-    const rd = import_node_path9.default.join(cfg.benchData, "runs", run.run_id);
-    const metrics = import_node_fs10.default.existsSync(import_node_path9.default.join(rd, "metrics.json")) ? JSON.parse(import_node_fs10.default.readFileSync(import_node_path9.default.join(rd, "metrics.json"), "utf8")) : null;
-    const final = import_node_fs10.default.existsSync(import_node_path9.default.join(rd, "final_message.md")) ? import_node_fs10.default.readFileSync(import_node_path9.default.join(rd, "final_message.md"), "utf8") : null;
-    return { run, metrics, final_message: final, local: import_node_fs10.default.existsSync(rd) };
+    const rd = import_node_path11.default.join(cfg.benchData, "runs", run.run_id);
+    const metrics = import_node_fs12.default.existsSync(import_node_path11.default.join(rd, "metrics.json")) ? JSON.parse(import_node_fs12.default.readFileSync(import_node_path11.default.join(rd, "metrics.json"), "utf8")) : null;
+    const final = import_node_fs12.default.existsSync(import_node_path11.default.join(rd, "final_message.md")) ? import_node_fs12.default.readFileSync(import_node_path11.default.join(rd, "final_message.md"), "utf8") : null;
+    return { run, metrics, final_message: final, local: import_node_fs12.default.existsSync(rd) };
   });
   R.post("/api/runs/:id/manual", async (req) => {
     const b = await readJson(req);
@@ -4244,29 +4471,29 @@ async function startServer(over = {}) {
       case "grade": {
         const ids = b.runs || [];
         if (b.all || !ids.length) return gradeRuns("all", { fast: b.fast, skip: b.skip_graded, task: b.task });
-        return gradeRuns(ids.map((id) => import_node_path9.default.join(cfg.benchData, "runs", id)), { fast: b.fast, skip: b.skip_graded });
+        return gradeRuns(ids.map((id) => import_node_path11.default.join(cfg.benchData, "runs", id)), { fast: b.fast, skip: b.skip_graded });
       }
       case "review":
         return graderJob("review", "\u751F\u6210\u8BC4\u5206\u5305\uFF08\u4EBA\u5DE5/agent/\u7528\u91CF\uFF09", ["review", ...b.task ? ["--task", b.task] : []], async () => sync());
       case "ingest": {
         if (b.what === "exploration") {
-          const dir = b.file ? import_node_path9.default.resolve(cfg.root, String(b.file)) : null;
+          const dir = b.file ? import_node_path11.default.resolve(cfg.root, String(b.file)) : null;
           return graderJob("ingest", "\u5BFC\u5165 Agent \u63A2\u7D22\u6D4B\u8BD5\u7ED3\u679C", ["ingest-exploration", ...dir ? ["--dir", dir] : []], async () => sync());
         }
         if (b.what === "sample") return graderJob("ingest", "\u62BD\u53D6 Agent \u6253\u5206\u7684\u4EBA\u5DE5\u590D\u6838\u6837\u672C", ["agent-sample", ...b.rate ? ["--rate", String(b.rate)] : []], async () => sync());
         if (b.what === "calibration") return graderJob("ingest", "Agent\u2194\u4EBA\u5DE5\u4E00\u81F4\u6027\u6821\u51C6", ["agent-calibration"], async () => null);
         const what = b.what === "pairwise" ? "ingest-pairwise" : "ingest-scores";
-        const file = import_node_path9.default.resolve(cfg.root, String(b.file || ""));
-        if (!b.file || !import_node_fs10.default.existsSync(file)) throw new HttpError(404, `\u627E\u4E0D\u5230\u8981\u5BFC\u5165\u7684\u6587\u4EF6\uFF1A${b.file || "(\u672A\u6307\u5B9A)"}`);
-        return graderJob("ingest", `\u5BFC\u5165\u8BC4\u5206\uFF1A${import_node_path9.default.basename(file)}`, [what, file, ...b.by ? ["--by", String(b.by)] : []], async () => sync());
+        const file = import_node_path11.default.resolve(cfg.root, String(b.file || ""));
+        if (!b.file || !import_node_fs12.default.existsSync(file)) throw new HttpError(404, `\u627E\u4E0D\u5230\u8981\u5BFC\u5165\u7684\u6587\u4EF6\uFF1A${b.file || "(\u672A\u6307\u5B9A)"}`);
+        return graderJob("ingest", `\u5BFC\u5165\u8BC4\u5206\uFF1A${import_node_path11.default.basename(file)}`, [what, file, ...b.by ? ["--by", String(b.by)] : []], async () => sync());
       }
       case "export": {
         const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace(/[:T]/g, "").replace(/^(\d{8})(\d{4})$/, "$1-$2");
-        const out = import_node_path9.default.join(cfg.reportsDir, `${stamp}-${(b.label || "leaderboard").replace(/[^\w.-]+/g, "-")}`);
+        const out = import_node_path11.default.join(cfg.reportsDir, `${stamp}-${(b.label || "leaderboard").replace(/[^\w.-]+/g, "-")}`);
         return graderJob("aggregate", "bench-grader \u6C47\u603B", ["aggregate"], () => {
           graderJob("export", `\u5BFC\u51FA\u62A5\u8868 \u2192 ${toRel(cfg.root, out)}`, ["export", "--formats", b.formats || "csv,md,xlsx,png,html", "--out", out], () => {
-            import_node_fs10.default.mkdirSync(out, { recursive: true });
-            import_node_fs10.default.copyFileSync(cfg.storeFile, import_node_path9.default.join(out, "bench-store.snapshot.json"));
+            import_node_fs12.default.mkdirSync(out, { recursive: true });
+            import_node_fs12.default.copyFileSync(cfg.storeFile, import_node_path11.default.join(out, "bench-store.snapshot.json"));
             return { dir: toRel(cfg.root, out) };
           }, void 0, { afterFatal: true });
           return null;
@@ -4277,12 +4504,12 @@ async function startServer(over = {}) {
       case "validate":
         return jobs.submit({ kind: "validate", title: "rubric \u81EA\u68C0", cmd: py(), args: [bench, "validate-rubrics"], cwd: cfg.graderDir });
       case "materials":
-        return jobs.submit({ kind: "materials", title: "\u751F\u6210 T03/T04 \u7EDF\u4E00\u7D20\u6750", cmd: py(), args: [import_node_path9.default.join(cfg.graderDir, "scripts", "build_materials.py")], cwd: cfg.graderDir, after: async () => {
+        return jobs.submit({ kind: "materials", title: "\u751F\u6210 T03/T04 \u7EDF\u4E00\u7D20\u6750", cmd: py(), args: [import_node_path11.default.join(cfg.graderDir, "scripts", "build_materials.py")], cwd: cfg.graderDir, after: async () => {
           await loadSpec(true);
           return null;
         } });
       case "build-spec":
-        return jobs.submit({ kind: "build-spec", title: "\u91CD\u65B0\u751F\u6210 benchmark-spec.html", cmd: py(), args: [bench, "build-spec", "--out", import_node_path9.default.join(cfg.root, "benchmark-spec.html")], cwd: cfg.graderDir, after: async () => {
+        return jobs.submit({ kind: "build-spec", title: "\u91CD\u65B0\u751F\u6210 benchmark-spec.html", cmd: py(), args: [bench, "build-spec", "--out", import_node_path11.default.join(cfg.root, "benchmark-spec.html")], cwd: cfg.graderDir, after: async () => {
           await loadSpec(true);
           return null;
         } });
@@ -4304,12 +4531,12 @@ async function startServer(over = {}) {
     if (b.kind === "proxy" || b.target) return previews.createProxy({ target: b.target, label: b.label });
     if (b.kind === "url" || b.url) return previews.createUrl({ url: b.url, label: b.label });
     let abs;
-    if (b.ref) abs = import_node_path9.default.join(ws.files(b.ref).ws, b.entry || "");
+    if (b.ref) abs = import_node_path11.default.join(ws.files(b.ref).ws, b.entry || "");
     else abs = resolveSafe(cfg.root, b.path || "");
-    if (!import_node_fs10.default.existsSync(abs)) throw new HttpError(404, `\u4E0D\u5B58\u5728\uFF1A${toRel(cfg.root, abs)}`);
-    const isDirP = import_node_fs10.default.statSync(abs).isDirectory();
-    const root = b.root ? resolveSafe(cfg.root, b.root) : isDirP ? abs : import_node_path9.default.dirname(abs);
-    const entry = isDirP ? "" : import_node_path9.default.relative(root, abs).split(import_node_path9.default.sep).join("/");
+    if (!import_node_fs12.default.existsSync(abs)) throw new HttpError(404, `\u4E0D\u5B58\u5728\uFF1A${toRel(cfg.root, abs)}`);
+    const isDirP = import_node_fs12.default.statSync(abs).isDirectory();
+    const root = b.root ? resolveSafe(cfg.root, b.root) : isDirP ? abs : import_node_path11.default.dirname(abs);
+    const entry = isDirP ? "" : import_node_path11.default.relative(root, abs).split(import_node_path11.default.sep).join("/");
     return previews.createStatic({ root, entry, label: b.label || toRel(cfg.root, abs), inject: b.inject !== false });
   });
   R.del("/api/preview/:id", (req) => ({ ok: previews.close(req.params.id) }));
@@ -4330,7 +4557,7 @@ async function startServer(over = {}) {
   R.get("/api/procs", () => procs.all());
   R.post("/api/procs", async (req) => {
     const b = await readJson(req);
-    const cwd = b.ref ? import_node_path9.default.join(ws.files(b.ref).ws, b.sub || "") : resolveSafe(cfg.root, b.cwd || "");
+    const cwd = b.ref ? import_node_path11.default.join(ws.files(b.ref).ws, b.sub || "") : resolveSafe(cfg.root, b.cwd || "");
     return procs.start({ cwd, cmd: b.cmd, name: b.name, env: b.env, autoPreview: b.autoPreview });
   });
   R.get("/api/procs/:id/output", (req) => procs.output(req.params.id, Number(req.query.get("from") || 0)));
@@ -4340,29 +4567,29 @@ async function startServer(over = {}) {
     return { ok: true };
   });
   R.get("/api/scripts", (req) => {
-    const dir = req.query.get("ref") ? import_node_path9.default.join(ws.files(req.query.get("ref")).ws, req.query.get("sub") || "") : resolveSafe(cfg.root, req.query.get("cwd") || "");
+    const dir = req.query.get("ref") ? import_node_path11.default.join(ws.files(req.query.get("ref")).ws, req.query.get("sub") || "") : resolveSafe(cfg.root, req.query.get("cwd") || "");
     const found = [];
     const scan2 = (d, depth) => {
-      if (depth > 2 || !import_node_fs10.default.existsSync(d)) return;
-      const pj = import_node_path9.default.join(d, "package.json");
-      if (import_node_fs10.default.existsSync(pj)) {
+      if (depth > 2 || !import_node_fs12.default.existsSync(d)) return;
+      const pj = import_node_path11.default.join(d, "package.json");
+      if (import_node_fs12.default.existsSync(pj)) {
         try {
-          found.push({ dir: toRel(cfg.root, d), scripts: JSON.parse(import_node_fs10.default.readFileSync(pj, "utf8")).scripts || {}, has_modules: import_node_fs10.default.existsSync(import_node_path9.default.join(d, "node_modules")) });
+          found.push({ dir: toRel(cfg.root, d), scripts: JSON.parse(import_node_fs12.default.readFileSync(pj, "utf8")).scripts || {}, has_modules: import_node_fs12.default.existsSync(import_node_path11.default.join(d, "node_modules")) });
         } catch {
         }
       }
-      for (const e of import_node_fs10.default.readdirSync(d, { withFileTypes: true })) if (e.isDirectory() && !["node_modules", ".git", "dist"].includes(e.name) && !e.name.startsWith(".")) scan2(import_node_path9.default.join(d, e.name), depth + 1);
+      for (const e of import_node_fs12.default.readdirSync(d, { withFileTypes: true })) if (e.isDirectory() && !["node_modules", ".git", "dist"].includes(e.name) && !e.name.startsWith(".")) scan2(import_node_path11.default.join(d, e.name), depth + 1);
     };
     scan2(dir, 0);
-    const pyApps = ["app.py", "server.py", "main.py"].filter((f2) => import_node_fs10.default.existsSync(import_node_path9.default.join(dir, f2)));
-    return { packages: found, python: pyApps, bench_json: import_node_fs10.default.existsSync(import_node_path9.default.join(dir, "bench.json")) ? JSON.parse(import_node_fs10.default.readFileSync(import_node_path9.default.join(dir, "bench.json"), "utf8")) : null };
+    const pyApps = ["app.py", "server.py", "main.py"].filter((f2) => import_node_fs12.default.existsSync(import_node_path11.default.join(dir, f2)));
+    return { packages: found, python: pyApps, bench_json: import_node_fs12.default.existsSync(import_node_path11.default.join(dir, "bench.json")) ? JSON.parse(import_node_fs12.default.readFileSync(import_node_path11.default.join(dir, "bench.json"), "utf8")) : null };
   });
   R.post("/api/probe", async (req) => {
     const b = await readJson(req);
     let url2 = b.url;
     if (b.session) url2 = previews.public(previews.get(b.session)).url;
     if (!url2) throw new HttpError(400, "\u9700\u8981 url \u6216 session");
-    const shot = import_node_path9.default.join(cfg.runtimeDir, "shots", `shot-${Date.now()}.png`);
+    const shot = import_node_path11.default.join(cfg.runtimeDir, "shots", `shot-${Date.now()}.png`);
     const args = ["probe-page", "--url", url2, "--viewport", b.viewport || "1440x900", "--wait", String(b.wait ?? 2500), "--shot", shot];
     if (b.mobile) args.push("--mobile");
     if (b.full) args.push("--full");
@@ -4379,7 +4606,7 @@ async function startServer(over = {}) {
     store.save();
     const name = `bench-store-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.json`;
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-disposition": `attachment; filename="${name}"` });
-    import_node_fs10.default.createReadStream(cfg.storeFile).pipe(res);
+    import_node_fs12.default.createReadStream(cfg.storeFile).pipe(res);
     return void 0;
   });
   R.post("/api/store/import", async (req) => {
@@ -4463,23 +4690,23 @@ async function startServer(over = {}) {
   });
   function serveWeb(pathname, res) {
     const dist = cfg.webDist;
-    let p = import_node_path9.default.resolve(dist, "." + decodeURIComponent(pathname));
-    if (!p.startsWith(import_node_path9.default.resolve(dist)) || !import_node_fs10.default.existsSync(p) || import_node_fs10.default.statSync(p).isDirectory()) p = import_node_path9.default.join(dist, "index.html");
-    if (!import_node_fs10.default.existsSync(p)) {
+    let p = import_node_path11.default.resolve(dist, "." + decodeURIComponent(pathname));
+    if (!p.startsWith(import_node_path11.default.resolve(dist)) || !import_node_fs12.default.existsSync(p) || import_node_fs12.default.statSync(p).isDirectory()) p = import_node_path11.default.join(dist, "index.html");
+    if (!import_node_fs12.default.existsSync(p)) {
       res.writeHead(503, { "content-type": "text/html; charset=utf-8" });
       res.end('<meta charset="utf-8"><p style="font:15px system-ui;padding:30px">\u524D\u7AEF\u5C1A\u672A\u6784\u5EFA\uFF1A\u5728 workbench/ \u4E0B\u8FD0\u884C <code>npm run build</code>\uFF0C\u6216\u53CC\u51FB\u6839\u76EE\u5F55 Start-Workbench.cmd\u3002</p>');
       return;
     }
-    const immutable = p.includes(`${import_node_path9.default.sep}assets${import_node_path9.default.sep}`);
+    const immutable = p.includes(`${import_node_path11.default.sep}assets${import_node_path11.default.sep}`);
     res.writeHead(200, { "content-type": mimeOf(p), "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache", "x-frame-options": "SAMEORIGIN" });
-    import_node_fs10.default.createReadStream(p).pipe(res);
+    import_node_fs12.default.createReadStream(p).pipe(res);
   }
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(cfg.port, cfg.host, () => resolve());
   });
   const url = `http://127.0.0.1:${cfg.port}`;
-  import_node_fs10.default.writeFileSync(import_node_path9.default.join(cfg.runtimeDir, "runtime.json"), JSON.stringify({ url, port: cfg.port, token: cfg.token, pid: process.pid, started_at: startedAt, version: VERSION }, null, 2));
+  import_node_fs12.default.writeFileSync(import_node_path11.default.join(cfg.runtimeDir, "runtime.json"), JSON.stringify({ url, port: cfg.port, token: cfg.token, pid: process.pid, started_at: startedAt, version: VERSION }, null, 2));
   void loadSpec().then(() => sync()).catch((e) => console.error("[wb] \u521D\u6B21\u540C\u6B65\u5931\u8D25\uFF1A", e.message));
   async function close() {
     clearInterval(detectTimer);
@@ -4487,7 +4714,7 @@ async function startServer(over = {}) {
     previews.closeAll();
     for (const c of hub.clients) c.end();
     try {
-      import_node_fs10.default.unlinkSync(import_node_path9.default.join(cfg.runtimeDir, "runtime.json"));
+      import_node_fs12.default.unlinkSync(import_node_path11.default.join(cfg.runtimeDir, "runtime.json"));
     } catch {
     }
     await new Promise((r) => server.close(() => r()));
@@ -4506,7 +4733,7 @@ if (require.main === module && !process.versions.electron) {
     if (process.argv.includes("--open")) {
       const cmd = process.platform === "win32" ? "cmd" : process.platform === "darwin" ? "open" : "xdg-open";
       const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-      (0, import_node_child_process5.spawn)(cmd, args, { detached: true, stdio: "ignore" }).unref();
+      (0, import_node_child_process6.spawn)(cmd, args, { detached: true, stdio: "ignore" }).unref();
     }
     const bye = () => {
       void close().then(() => process.exit(0));

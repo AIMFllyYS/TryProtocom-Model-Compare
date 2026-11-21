@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// wb — Bench Workbench 命令行。所有命令都走本地服务的 HTTP API（未启动时自动后台启动），
+// wb — Bench Workbench 命令行。context 离线只读（--save 例外）；其他命令走本地 HTTP API，
 // 因此 CLI、界面与 Agent 看到的是同一份状态。加 --json 输出机器可读结果。
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { WORKSPACE_REF, WORKSPACE_REF_PREFIX } from '../shared/workspace-ref';
 import type { Aggregate, BenchStore, JobInfo, LogEntry, PreviewSession, SpecData, StoreRun, TrashEntry, WorkspaceRun } from '../shared/types';
 
@@ -135,6 +135,9 @@ const HELP = `wb — Bench Workbench CLI（工作台 http://127.0.0.1:41873）
 模型      wb models | wb model add <模型名|供应商/模型> [--vendor X] [--harness "Claude Code"]   只写模型名时自动识别供应商
 Harness   wb harness [--refresh] | wb harness open <id> [--ref 供应商/模型/题号/rN]
 交付      wb detect   各运行的交付清单进度、FINAL_MESSAGE.md 是否出现
+上下文    wb context preflight <ref> --json | wb context audit <ref|run_id> [--log 文件] [--save] --json
+          wb context audit --all [--save] --json | wb context export --all --format json|csv
+          wb context review <ref|run_id> --finding ID --decision confirmed|dismissed --note "依据" --save --json
 AI 评审   wb ai-prompt [run_id|ref]   给评分 Agent 的提示词（skills 路径 + 步骤）；不带参数 = 全部待评 Agent 项
 Skills    wb skills sync   把 skills/ 镜像到 .agents/skills/（不含 hidden/）
 宠物      wb pet | wb pet quit   桌面宠物（屏幕右下角的状态精灵：交付提醒、登记评分、截屏存证）
@@ -161,6 +164,16 @@ Skills    wb skills sync   把 skills/ 镜像到 .agents/skills/（不含 hidden
 
 async function main() {
   const [cmd, sub, ...rest] = pos;
+  // context 必须先于 HTTP 分支：原始参数直传，支持重复 --log，不触发 ensureServer。
+  if (cmd === 'context') {
+    const candidates = [process.env.WB_PYTHON, 'python', 'python3', 'py'].filter(Boolean) as string[];
+    const python = candidates.find((p) => { try { return spawnSync(p, ['-B', '-c', 'import sys;sys.exit(0 if sys.version_info.major == 3 else 1)'], { timeout: 8000, windowsHide: true, stdio: 'ignore' }).status === 0; } catch { return false; } });
+    if (!python) die('未找到 Python 3；context 未启动任何服务');
+    const result = spawnSync(python, ['-B', path.join(ROOT, 'skills', 'bench-grader', 'scripts', 'audit_context.py'), '--root', ROOT, ...argv.slice(1)], { cwd: ROOT, windowsHide: true, stdio: 'inherit', env: { ...process.env, PYTHONUTF8: '1' } });
+    if (result.error) die(result.error.message);
+    process.exitCode = result.status ?? 1;
+    return;
+  }
   if (!cmd || flags.help || cmd === 'help') { console.log(HELP); return; }
   switch (cmd) {
     case 'serve': {

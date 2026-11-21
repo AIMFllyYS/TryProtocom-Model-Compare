@@ -5,6 +5,7 @@ import type { Billing, ModelProfile, SpecTask, WorkspaceRun } from '../../shared
 import { HARNESSES, harnessHint } from '../../shared/vendors';
 import { deliverableFor } from '../../shared/deliverables';
 import { QUOTA_UNITS, unitPrice } from '../../shared/quota';
+import { copyAuthoritativePrompt, contextPolicyVersion } from '../../shared/context-policy';
 import { get, patch, post } from '../api';
 import { useWb } from '../state';
 import { go } from '../lib/router';
@@ -51,19 +52,20 @@ export function LaunchPad({ model, onClose, initialTask }: { model: ModelProfile
   const installed = HARNESSES.filter((h) => wb.harness.find((x) => x.id === h.id)?.installed);
   const dock = [...installed].sort((a, b) => (a.name === harness ? -1 : b.name === harness ? 1 : 0)).slice(0, 6);
 
+  const dispatching = useRef(false);
   const dispatch = useCallback(async (target: string | null) => {
-    if (!pr?.text || !slot) return;
-    const ok = await copyText(pr.text); // 用户手势内先复制
+    if (!pr?.text || !slot || stamp || dispatching.current) return;
+    dispatching.current = true;
+    const ok = await copyAuthoritativePrompt('', pr.text, false, copyText); // 用户手势内先复制
     const hname = target ? HARNESSES.find((h) => h.id === target)?.name || harness : harness;
     try {
       const r = await post<{ run: WorkspaceRun; text: string; opened: string | null }>('/api/ws/claim', { vendor: model.vendor, model: model.name, task: slot.t.id, variant: slot.v, index: pr.index, start: true, harness: hname, open: !!target });
-      let copied = ok;
-      if (r.text !== pr.text) copied = await copyText(r.text);
+      const copied = await copyAuthoritativePrompt(pr.text, r.text, ok, copyText);
       if (hname && hname !== model.harness) { setHarness(hname); void patch('/api/models', { vendor: model.vendor, name: model.name, harness: hname }).catch((e) => toast.error(e.message)); }
       setStamp({ run: r.run, opened: r.opened, copied, text: r.text });
       await wb.refresh(['store']);
-    } catch (e: any) { toast.error(e.message); }
-  }, [pr, slot, model, harness, wb]);
+    } catch (e: any) { toast.error(e.message); } finally { dispatching.current = false; }
+  }, [pr, slot, model, harness, wb, stamp]);
 
   const next = () => { const i = slots.findIndex((s, k) => k > sel && doneOf(s) < need); setSel(i >= 0 ? i : Math.min(slots.length - 1, sel + 1)); };
   const total = slots.length * need;
@@ -85,7 +87,7 @@ export function LaunchPad({ model, onClose, initialTask }: { model: ModelProfile
         </nav>
         <div className="lp-center">
           {slot && !stamp && <Capsule slot={slot} pr={pr} onDrop={dispatch} />}
-          {slot && stamp && <StampCard stamp={stamp} model={model} slot={slot} onNext={next} onRecopy={() => void copyText(stamp.text).then((ok) => ok && setStamp({ ...stamp, copied: true }))} />}
+          {slot && stamp && <StampCard stamp={stamp} model={model} slot={slot} onNext={next} onRecopy={() => void copyAuthoritativePrompt('', stamp.text, false, copyText).then((ok) => { setStamp({ ...stamp, copied: ok }); if (!ok) toast.warn('复制仍未成功，请手动选择最终文本'); })} />}
         </div>
         <aside className="lp-dock" aria-label="harness 坞">
           <div className="lp-dock-h">发车坞</div>
@@ -160,13 +162,14 @@ function Capsule({ slot, pr, onDrop }: { slot: Slot; pr: PromptRes | null; onDro
         <div className="cap-ws mono"><FolderOpen size={12} />{pr?.workspace ? pr.workspace.split(/[\\/]/).slice(-4).join('\\') : '…'}<Badge tone={pr?.exists ? 'info' : 'accent'}>{pr?.exists ? '复用' : `r${pr?.index ?? '?'}`}</Badge></div>
         <pre className="cap-prompt">{pr ? pr.text.split('\n').slice(0, 14).join('\n') : ''}</pre>
       </div>
+      {pr?.warnings.map((w) => <div className="alert warn" key={w}>{w}</div>)}
       <p className="lp-hint muted small"><ArrowRight size={13} />拖到右侧 harness：复制提示词 + 打开它 + 记下时间戳。也可以直接点右侧按钮。</p>
     </div>
   );
 }
 
 /** 发车后的时间戳 + 额度记录 */
-function StampCard({ stamp, model, slot, onNext, onRecopy }: { stamp: { run: WorkspaceRun; opened: string | null; copied: boolean }; model: ModelProfile; slot: Slot; onNext: () => void; onRecopy: () => void }) {
+function StampCard({ stamp, model, slot, onNext, onRecopy }: { stamp: { run: WorkspaceRun; opened: string | null; copied: boolean; text: string }; model: ModelProfile; slot: Slot; onNext: () => void; onRecopy: () => void }) {
   const wb = useWb();
   const t = stamp.run.started_at ? new Date(stamp.run.started_at) : new Date();
   return (
@@ -179,7 +182,11 @@ function StampCard({ stamp, model, slot, onNext, onRecopy }: { stamp: { run: Wor
           <div className="muted xs">{t.toLocaleDateString('zh-CN')} · 只记时间戳，不在后台持续计时；模型写出 FINAL_MESSAGE.md 时自动记结束时间</div>
         </div>
       </div>
-      {!stamp.copied && <div className="alert warn">浏览器没允许自动写剪贴板（拖得太久）。<Btn size="xs" tone="tinted" onClick={onRecopy}>点此复制提示词</Btn></div>}
+      <div className="muted xs">约束：{contextPolicyVersion(stamp.text)} · {stamp.copied ? '最终提示词已复制' : '未复制最终提示词'} · 发送文本未核验</div>
+      {!stamp.copied && <div className="alert warn" role="status"><div className="stack s"><b>最终提示词复制失败；工作区已创建，计时已开始</b>
+        <span>剪贴板可能仍是旧预览。重试只复制最终存档，不重复发车。</span>
+        <textarea aria-label="最终权威提示词" readOnly value={stamp.text} rows={8} />
+        <Btn size="xs" tone="tinted" onClick={onRecopy}>重试复制最终提示词</Btn></div></div>}
       <QuotaForm run={stamp.run} model={model} phase="before" />
       <div className="row gap-s">
         <Btn icon={<FolderOpen size={14} />} onClick={() => void post('/api/open-folder', { ref: stamp.run.ref })}>工作目录</Btn>

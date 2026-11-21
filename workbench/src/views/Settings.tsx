@@ -61,7 +61,7 @@ function PromptSettings() {
   return (
     <>
       <Card title="复制提示词时">
-        <ToggleRow title="附带统一运行约定" desc="在题目原文前加入工作目录绝对路径、交付文件夹名、必须存在的文件与 FINAL_MESSAGE.md 约定。关闭后只发送 prompt.md 原文。" checked={s.prompt_header !== false} onChange={(v) => void save({ prompt_header: v })} />
+        <ToggleRow title="附带统一运行约定" desc="在题目原文前加入工作目录绝对路径、交付文件夹名、必须存在的文件与 FINAL_MESSAGE.md 约定。关闭只移除旧运行约定头；新运行仍保留版本化上下文边界。已存档运行不随设置变化。" checked={s.prompt_header !== false} onChange={(v) => void save({ prompt_header: v })} />
         <ToggleRow title="复制即开始计时" desc="复制提示词时记录开始时间；模型写出 FINAL_MESSAGE.md 时自动结束。" checked={s.auto_start !== false} onChange={(v) => void save({ auto_start: v })} />
         <ToggleRow title="复制后自动打开 harness" desc="题目页的「复制提示词」同时启动模型绑定的 harness（也可以随时用旁边的「复制并打开」按钮）。" checked={!!s.open_harness} onChange={(v) => void save({ open_harness: v })} />
       </Card>

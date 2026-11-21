@@ -127,6 +127,7 @@ export function WbProvider({ children, fallback }: { children: ReactNode; fallba
     if (!session) return;
     const onEvent = (e: WbEvent) => {
       switch (e.type) {
+        case 'context-audit': window.dispatchEvent(new CustomEvent('wb-context-audit', { detail: e })); break;
         case 'store':
           clearTimeout(storeTimer.current);
           storeTimer.current = window.setTimeout(() => void refresh(['store', 'agg']), 250);

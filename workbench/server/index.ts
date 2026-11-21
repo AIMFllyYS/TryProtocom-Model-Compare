@@ -9,6 +9,7 @@ import { aggregate } from '../shared/aggregate';
 import { FINAL_FILE } from '../shared/deliverables';
 import { petJobs } from '../shared/activity';
 import { buildRunPrompt, reviewPrompt } from '../shared/prompt';
+import { contextPolicyVersion, contextPolicyWarnings } from '../shared/context-policy';
 import { settleQuota } from '../shared/quota';
 import { parseModelInput, suggestHarness, harnessByName, harnessName, normalizeHarnessName, customHarnessNames, iconFor } from '../shared/vendors';
 import { detectHarnesses, openHarness, scanShell } from './harness';
@@ -23,6 +24,7 @@ import { callBridge } from './python';
 import { listReports, modelReport, writeModelReport } from './report';
 import { StoreFile, stageLabel, trashEntryOf } from './store';
 import { checkName, Workspaces } from './workspaces';
+import { auditAfterRegistration, listContextReports, readContextReport } from './context-audit';
 
 export interface StartedServer { cfg: Config; server: http.Server; url: string; close: () => Promise<void> }
 
@@ -160,6 +162,10 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       // 登记期间被移进了回收站：刚生成的评分目录也一起放进回收站，不评分
       const now = ws.readRun(pr.vendor, pr.model, pr.tkey, pr.index);
       if (now.discarded) { moveGrader(rid, 'trash'); refreshWorkspaces(); return { run_id: rid, discarded: true }; }
+      auditAfterRegistration(cfg, ref, (error) => {
+        if (error) console.warn(`[context-audit] ${ref}: ${error}`);
+        hub.emit({ type: 'context-audit', ref, error });
+      });
       if (opts.grade) gradeRuns([path.join(cfg.benchData, 'runs', rid)], { fast: opts.fast, refs: [ref] });
       else await sync();
       return { run_id: rid };
@@ -197,13 +203,17 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     const { s, t } = await findTask(q.task);
     const variant = q.variant || null;
     if (Object.keys(t.variants || {}).length && !variant) throw new HttpError(400, `${t.id} 需要选择变体（${Object.keys(t.variants).join(' / ')}）`);
-    if (!q.vendor || !q.model) return { ...renderPrompt(s, t, variant, null, null), ref: null, workspace: null, index: null, exists: false };
+    if (!q.vendor || !q.model) {
+      const prompt = renderPrompt(s, t, variant, null, null);
+      return { ...prompt, policy_version: contextPolicyVersion(prompt.text), prompt_provenance: 'actual_sent_unknown', ref: null, workspace: null, index: null, exists: false };
+    }
     const tkey = t.id + (variant || '');
     const prof = findModel(q.vendor, q.model);
     const cur = prof && !deletion(modelKey(q.vendor, q.model)) ? claimable(prof, tkey) : undefined;
     const index = cur ? cur.index : ws.nextIndex(q.vendor, q.model, tkey);
     const wsAbs = cur?.workspace || ws.wsPath(q.vendor, q.model, tkey, index);
-    return { ...renderPrompt(s, t, variant, wsAbs, index), ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
+    const prompt = cur ? { text: fs.readFileSync(ws.files(cur.ref).prompt, 'utf8'), warnings: [] as string[] } : renderPrompt(s, t, variant, wsAbs, index);
+    return { ...prompt, warnings: [...prompt.warnings, ...contextPolicyWarnings(prompt.text)], policy_version: contextPolicyVersion(prompt.text), prompt_provenance: 'actual_sent_unknown', ref: `${q.vendor}/${q.model}/${tkey}/r${index}`, workspace: wsAbs, index, exists: !!cur };
   }
   // ---------- 预置素材：发车前保证齐全 ----------
   // 素材在“每次运行创建时”复制进 rN/（而不是新增模型时）：每次运行都要一份没被动过的副本（T08 会就地修改种子仓库）。
@@ -279,7 +289,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
       else opened = `请手动打开 ${harness || 'harness'}，并进入提示词中的工作目录`;
     }
     refreshWorkspaces();
-    return { run, text, opened };
+    return { run, text, opened, policy_version: contextPolicyVersion(text), warnings: contextPolicyWarnings(text), prompt_provenance: 'actual_sent_unknown' };
   }
 
   // ---------- skills 镜像到 .agents/skills（Agent 软件的约定位置；不含 hidden/） ----------
@@ -450,6 +460,15 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
   R.get('/api/events', (req, res) => { hub.attach(res); return undefined; });
   R.get('/api/spec', async (req) => loadSpec(req.query.get('refresh') === '1'));
   R.get('/api/store', () => store.data);
+  R.get('/api/context', (req) => {
+    const target = req.query.get('ref') || req.query.get('run_id');
+    if (target) {
+      const ref = store.data.runs.find((r) => r.run_id === target)?.ws_ref || target;
+      return readContextReport(cfg.benchData, ref) || readContextReport(cfg.benchData, target);
+    }
+    const trashed = new Set((store.data.trash || []).flatMap((t) => [t.ref, t.run_id]).filter(Boolean));
+    return listContextReports(cfg.benchData).filter((r) => !trashed.has(r.ref) && !trashed.has(r.run_id));
+  });
   R.get('/api/aggregate', (req) => {
     const v = req.query.get('view') || 'history';
     if (!['history', 'simple', 'full'].includes(v)) throw new HttpError(400, `未知榜单视图：${v}（可选 history / simple / full）`);
@@ -571,7 +590,7 @@ export async function startServer(over: Partial<Config> = {}): Promise<StartedSe
     if (task.id === 'T06') warnings.push('T06 为有人值守：按 hidden/intent.md 回答模型提问，并在完成时填写 transcript_notes。');
     store.log('ws-create', run.ref);
     refreshWorkspaces();
-    return { run, prompt: pr.text, warnings, workspace: run.workspace };
+    return { run, prompt: pr.text, warnings, workspace: run.workspace, policy_version: contextPolicyVersion(pr.text), prompt_provenance: 'actual_sent_unknown' };
   });
   R.get('/api/ws/detect', () => { detectTick(); return store.data.workspaces.filter((w) => !w.grader_run_id).map((w) => ({ ref: w.ref, detect: w.detect, ended_at: w.ended_at, has_final: w.has_final, entry: w.entry })); });
 

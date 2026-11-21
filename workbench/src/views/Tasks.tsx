@@ -1,5 +1,6 @@
 // 题目：顶部 Tab 选题 → 一键复制带统一运行约定的提示词（自动建工作目录、开始计时、可选打开 harness）→ 交付要求与评分细则。
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { copyAuthoritativePrompt, contextPolicyVersion } from '../../shared/context-policy';
 import { ArrowRight, Check, ClipboardCopy, Clock3, Copy, ExternalLink, FileCheck2, FolderOpen, Info, ListChecks, Lock, Package, Search, ShieldCheck, TriangleAlert, Users } from 'lucide-react';
 import type { SpecItem, SpecTask, WorkspaceRun } from '../../shared/types';
 import { deliverableFor, FINAL_FILE } from '../../shared/deliverables';
@@ -53,8 +54,15 @@ function TaskView({ t }: { t: SpecTask }) {
   const [harness, setHarness] = useState(prof?.harness || '');
   useEffect(() => { setHarness(prof?.harness || findHarness(wb.store?.settings.default_harness)?.name || wb.store?.settings.default_harness || ''); }, [prof?.harness, wb.current, wb.store?.settings.default_harness]); // eslint-disable-line
   const [pr, setPr] = useState<PromptRes | null>(null);
-  const [copied, setCopied] = useState<{ ref: string; ws: string; opened?: string | null } | null>(null);
+  const [copied, setCopied] = useState<{ ref: string; ws: string; opened?: string | null; ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const dispatching = useRef(false);
+  const retryCopy = async () => {
+    if (!copied) return;
+    const ok = await copyAuthoritativePrompt('', copied.text, false, copyText);
+    setCopied({ ...copied, ok });
+    if (!ok) toast.warn('复制仍未成功，请手动选择最终文本');
+  };
   const settings = wb.store?.settings || {};
   const autoStart = settings.auto_start !== false;
   const d = deliverableFor(t.id, t.deliverable);
@@ -66,22 +74,25 @@ function TaskView({ t }: { t: SpecTask }) {
   useEffect(() => { setCopied(null); }, [t.id, v, wb.current]);
 
   const dispatch = async (open: boolean) => {
-    if (!pr?.text) return;
+    if (!pr?.text || dispatching.current) return;
+    if (copied && !copied.ok) { await retryCopy(); return; }
     if (!vendor || !model) {
       if (await copyText(pr.text)) toast.info('已复制（未选择测评模型：提示词里没有工作目录。先在右上角选择或新增模型）');
       return;
     }
-    await copyText(pr.text); // 先在用户手势内复制，保证剪贴板可写
+    dispatching.current = true;
+    const firstCopied = await copyAuthoritativePrompt('', pr.text, false, copyText);
     setBusy(true);
     try {
       const r = await post<{ run: WorkspaceRun; text: string; opened: string | null }>('/api/ws/claim', { vendor, model, task: t.id, variant: v, index: pr.index, start: autoStart, harness, open });
-      if (r.text !== pr.text) { await copyText(r.text); toast.warn('工作目录序号有变化，已复制更新后的提示词'); }
-      setCopied({ ref: r.run.ref, ws: r.run.workspace || '', opened: r.opened });
+      const ok = await copyAuthoritativePrompt(pr.text, r.text, firstCopied, copyText);
+      setCopied({ ref: r.run.ref, ws: r.run.workspace || '', opened: r.opened, ok, text: r.text });
       if (harness && harness !== prof?.harness && prof) void patch('/api/models', { vendor, name: model, harness }).catch((e) => toast.error(e.message));
-      toast.ok(`已复制提示词 · 工作目录 ${r.run.ref.split('/').slice(2).join('/')} 已就绪${autoStart ? '，开始计时' : ''}`, { action: { label: '查看运行', run: () => go('runs', [r.run.ref]) } });
+      if (ok) toast.ok(`已复制提示词 · 工作目录 ${r.run.ref.split('/').slice(2).join('/')} 已就绪${autoStart ? '，开始计时' : ''}`, { action: { label: '查看运行', run: () => go('runs', [r.run.ref]) } });
+      else toast.warn('工作区已创建，最终提示词未复制；请在下方重试，不要重新发车');
       if (r.opened) toast.info(r.opened);
       await wb.refresh(['store']);
-    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); dispatching.current = false; }
   };
 
   useEffect(() => {
@@ -144,7 +155,14 @@ function TaskView({ t }: { t: SpecTask }) {
             ) : <span className="row gap-s tone-text-warn"><Info size={13} />先选择测评模型：提示词会写入该模型的工作目录绝对路径。</span>}
           </div>
           {pr?.warnings.map((w, i) => <div key={i} className="alert warn mt-s"><TriangleAlert size={14} />{w}</div>)}
-          {copied && (
+          <div className="muted xs mt-s">约束：{contextPolicyVersion(copied?.text || pr?.text || '')} · 发送文本未核验</div>
+          {copied && !copied.ok && <div className="alert warn mt" role="status"><div className="stack s">
+            <b>最终提示词复制失败；工作区已创建{autoStart ? '，计时已开始' : ''}</b>
+            <span>剪贴板可能仍是旧预览，请使用下方最终存档文本。不回滚计时、不重复发车。</span>
+            <textarea aria-label="最终权威提示词" readOnly value={copied.text} rows={8} />
+            <Btn onClick={() => void retryCopy()}>重试复制最终提示词</Btn>
+          </div></div>}
+          {copied?.ok && (
             <div className="copied glass-thin">
               <span className="copied-ic"><Check size={16} strokeWidth={3} /></span>
               <div className="grow"><b>已复制，粘贴给 {harness || '被测模型'} 即可开始</b><div className="muted small">模型完成后写出 <code>{FINAL_FILE}</code>，工作台会自动结束计时并点亮交付清单。</div></div>
@@ -185,7 +203,7 @@ function TaskView({ t }: { t: SpecTask }) {
               </div>
             );
           })()}
-          <div className="alert mt"><Lock size={14} />隐藏测试、参考实现与意图表不会进入工作目录；工作目录是独立 git 根，被测 Agent 找不到评分 skill。</div>
+          <div className="alert mt"><Lock size={14} />隐藏测试、参考实现与意图表不会进入工作目录；独立 Git 根只限定部分项目发现机制，不等于操作系统或全局记忆隔离。</div>
         </Card>
 
         <Card title="本模型的运行" sub={vendor ? `规范要求 ${need} 次` : undefined} extra={vendor ? <span className="ring-lite">{done}/{need}</span> : undefined}>

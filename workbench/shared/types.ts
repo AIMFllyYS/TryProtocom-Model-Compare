@@ -113,6 +113,7 @@ export interface Billing {
 export interface RunQuota { unit?: string; before?: number | null; after?: number | null; at_before?: string | null; at_after?: string | null; used?: number | null; cost_usd?: number | null }
 export type WsStatus = 'prepared' | 'running' | 'finished' | 'registered' | 'graded' | 'reviewed';
 export interface WorkspaceRun {
+  context_policy?: import('./context-policy').ContextPolicyRecord;
   schema: 1; ref: string;            // 例：OpenAI/GPT-6.1-Sol/T05/r1
   vendor: string; model: string; task: string; variant: string | null; tkey: string; index: number;
   harness: string; created_at: string; started_at: string | null; ended_at: string | null;
@@ -287,6 +288,7 @@ export interface SessionInfo {
 /** SSE 事件 */
 export type WbEvent =
   | { type: 'hello'; at: number }
+  | { type: 'context-audit'; ref: string; error?: string }
   | { type: 'store'; updated_at: string }
   | { type: 'job'; job: JobInfo }
   | { type: 'job-line'; id: string; line: string }

@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Bot, ChevronRight, ChevronsDownUp, ChevronsUp, ChevronsUpDown, CircleCheck, CirclePlay, Copy, Ellipsis, FileCheck2, FolderOpen, Hourglass, LayoutGrid, List, Loader2, MonitorPlay, OctagonX, PencilLine, RefreshCw, Sparkles, Square, TimerReset, TriangleAlert, X } from 'lucide-react';
 import type { ItemScore, SpecItem, StoreRun, Usage, WorkspaceRun } from '../../shared/types';
 import { FINAL_FILE } from '../../shared/deliverables';
+import { contextPolicyVersion, type ContextAuditReport } from '../../shared/context-policy';
 import { get, post } from '../api';
 import { useWb } from '../state';
 import { go, href, useLocal, useRoute } from '../lib/router';
@@ -24,6 +25,54 @@ import { ActivityBanner, ActivityStrip, activityOf, isBusy, useRunActivity } fro
 
 export interface Row { key: string; ws?: WorkspaceRun; run?: StoreRun }
 type Col = 'running' | 'delivered' | 'grading' | 'done';
+
+const COVERAGE = { missing: '缺失', partial: '部分', parseable: '可见工具轨迹可解析' };
+const auditState = (r?: ContextAuditReport | null) => !r ? 'missing' : r.stale ? 'stale' : r.pending_count ? 'pending' : 'recorded';
+function useContextReports(target?: string) {
+  const [reports, setReports] = useState<ContextAuditReport[]>([]);
+  const [revision, refresh] = useState(0);
+  useEffect(() => {
+    let active = true;
+    get<ContextAuditReport[] | ContextAuditReport | null>('/api/context', target ? { ref: target } : undefined)
+      .then((r) => { if (active) setReports(Array.isArray(r) ? r : r ? [r] : []); }, () => { if (active) setReports([]); });
+    return () => { active = false; };
+  }, [target, revision]);
+  useEffect(() => {
+    const update = () => refresh((n) => n + 1);
+    window.addEventListener('wb-context-audit', update);
+    return () => window.removeEventListener('wb-context-audit', update);
+  }, []);
+  return { reports, refresh: () => refresh((n) => n + 1) };
+}
+function exportContext(reports: ContextAuditReport[], format: 'json' | 'csv') {
+  const csv = (v: unknown) => { const s = String(v ?? ''); return '"' + (/^[=+@\-\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""') + '"'; };
+  const text = format === 'json' ? JSON.stringify(reports, null, 2) : [
+    ['ref', 'run_id', 'policy_version', 'coverage', 'sent_prompt', 'pending_count', 'stale'],
+    ...reports.map((r) => [r.ref, r.run_id, r.policy_version, r.coverage.tools, r.prompt_provenance.sent, r.pending_count, r.stale]),
+  ].map((row) => row.map(csv).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([text], { type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = `context-audits.${format}`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function ContextAuditPanel({ row, prompt }: { row: Row; prompt?: string }) {
+  const target = row.ws?.ref || row.run!.run_id;
+  const { reports, refresh } = useContextReports(target);
+  const r = reports[0];
+  const version = r?.policy_version || row.ws?.context_policy?.version || (prompt ? contextPolicyVersion(prompt) : 'unknown');
+  const sent = r?.prompt_provenance.sent === 'verified' ? '实际发送已核验' : r?.prompt_provenance.sent === 'different' ? '实际发送存在差异' : '发送文本未核验';
+  return <Card className="mt" title="上下文审计" extra={<Btn size="xs" onClick={refresh}>刷新已存报告</Btn>}>
+    <div className="row gap-s wrap"><Badge>{version === 'legacy' ? '旧版约束，未增强' : version}</Badge><span>日志覆盖：{r ? COVERAGE[r.coverage.tools] : '证据不可用'}</span><span>待复核：{r?.pending_count ?? '未知'}</span><span>{sent}</span></div>
+    <p className="muted small mt-s">{r?.stale ? '报告已过期，请重新审计。' : ''}没有命中不代表上下文干净；初始注入{r?.coverage.initial_context === 'visible_partial' ? '仅部分可见' : '不可观察'}。独立于人工评分与 AC13，不自动改分、停跑或重跑。</p>
+    {!r && <p className="muted small">独立报告未随存储文件迁移，或尚未保存。可在评测侧执行下方命令。</p>}
+    <div className="row gap-s wrap"><code>wb context audit "{target}" --save --json</code><CopyBtn text={`wb context audit "${target}" --save --json`} />
+      {r && <><a href={'/api/context?' + new URLSearchParams({ ref: target })} target="_blank" rel="noreferrer">报告 JSON</a><Btn size="xs" onClick={() => exportContext([r], 'csv')}>审计 CSV</Btn></>}
+    </div>
+    {r?.findings.length ? <details className="mt"><summary>证据与复核（{r.findings.length}）</summary><ul className="plain-list small">
+      {r.findings.map((f) => <li key={f.id}><b>{f.finding_kind} · {f.review_state === 'pending' ? '待复核' : f.review_state === 'confirmed' ? '人工确认' : '误报已排除'}</b><p>{f.summary}</p>
+        <code>{f.source}:{f.line}</code> <CopyBtn text={`${f.source}:${f.line}`} /><div className="muted">线索 {f.id}{f.review_note ? ` · ${f.review_note}` : ''}</div></li>)}
+    </ul></details> : null}
+  </Card>;
+}
 
 export function useRows(): Row[] {
   const { store } = useWb();
@@ -130,6 +179,10 @@ function RunBoard({ rows }: { rows: Row[] }) {
   const [view, setView] = useLocal<'board' | 'list'>('runs.view', 'board');
   const [fModel, setFModel] = useLocal('runs.model', '');
   const [fTask, setFTask] = useLocal('runs.task', '');
+  const [fPolicy, setFPolicy] = useState('');
+  const [fAudit, setFAudit] = useState('');
+  const { reports: audits, refresh: refreshAudits } = useContextReports();
+  const auditFor = (r: Row) => audits.find((a) => a.ref === r.ws?.ref || !!r.run && a.run_id === r.run.run_id);
   // 默认「收起」：供应商展开、模型收起。单组标题点了就记下覆盖值，跟模式解耦
   const [mode, setMode] = useLocal<ExpandMode>('runs.expand', 'vendor');
   const [openModels, setOpenModels] = useState<Record<string, boolean>>({});
@@ -145,7 +198,10 @@ function RunBoard({ rows }: { rows: Row[] }) {
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   const list = rows.filter((r) => {
     const m = r.ws ? `${r.ws.vendor}/${r.ws.model}` : `${r.run!.vendor || ''}/${r.run!.model}`;
-    return (!fModel || m === fModel) && (!fTask || (r.ws?.task || r.run!.task) === fTask);
+    const audit = auditFor(r);
+    const policy = audit?.policy_version || r.ws?.context_policy?.version || (r.ws ? 'legacy' : 'unknown');
+    return (!fModel || m === fModel) && (!fTask || (r.ws?.task || r.run!.task) === fTask)
+      && (!fPolicy || policy === fPolicy) && (!fAudit || auditState(audit) === fAudit);
   }).sort((a, b) => String(b.ws?.started_at || b.ws?.created_at || b.run?.date || '').localeCompare(String(a.ws?.started_at || a.ws?.created_at || a.run?.date || '')));
   // 已经在登记 / 评分队列里的不再计入批量按钮，避免重复提交（第二次会 409 报“已登记”）
   const busy = (r: Row) => isBusy(activityOf(wb.jobs, r.ws?.ref, r.run?.run_id ?? r.ws?.grader_run_id));
@@ -181,6 +237,14 @@ function RunBoard({ rows }: { rows: Row[] }) {
         <span className="grow" />
         {pend && <span className="muted small">待人工 {pend.human} · 待 Agent {pend.agent} · 缺用量 {pend.usage_missing}</span>}
         <Seg size="sm" value={view} onChange={setView} options={[{ value: 'board', label: <LayoutGrid size={14} />, title: '看板' }, { value: 'list', label: <List size={14} />, title: '列表' }]} />
+      </div>
+      <div className="toolbar-row wrap">
+        <Select size="sm" value={fPolicy} onChange={setFPolicy} options={[{ value: '', label: '全部约束版本' }, { value: 'context-boundary/v1', label: '新增边界 v1' }, { value: 'legacy', label: '旧版约束' }, { value: 'unknown', label: '版本未知' }]} />
+        <Select size="sm" value={fAudit} onChange={setFAudit} options={[{ value: '', label: '全部审计状态' }, { value: 'missing', label: '证据不可用' }, { value: 'pending', label: '上下文待复核' }, { value: 'stale', label: '报告过期' }, { value: 'recorded', label: '已有报告 · 无待复核' }]} />
+        <Btn size="sm" onClick={refreshAudits}>刷新已存审计</Btn>
+        <Btn size="sm" onClick={() => exportContext(list.map(auditFor).filter((a): a is ContextAuditReport => !!a), 'json')}>审计 JSON</Btn>
+        <Btn size="sm" onClick={() => exportContext(list.map(auditFor).filter((a): a is ContextAuditReport => !!a), 'csv')}>审计 CSV</Btn>
+        <span className="muted xs">新旧约束的辅助条件不同；筛选不改变榜单与评分。无待复核不代表无污染。</span>
       </div>
       {!rows.length ? (
         <Card><Empty icon={<CirclePlay size={30} />} title="还没有运行" action={<Btn tone="primary" onClick={() => go('tasks')}>去题目页复制提示词</Btn>}>在「题目」页选题并点「复制提示词」，工作台会创建 <code>model/&lt;供应商&gt;/&lt;模型&gt;/&lt;题号&gt;/rN/</code> 并开始计时。</Empty></Card>
@@ -446,6 +510,7 @@ function RunDetail({ row }: { row: Row }) {
           <Btn tone="primary" onClick={() => void wb.runJob({ kind: 'grade', runs: [run!.run_id] }, '评分')}>开始评分</Btn></div></Card>
       )}
 
+      <ContextAuditPanel row={row} prompt={texts?.prompt} />
       <div className="mt-l">
         <Tabs value={tab} onChange={setTab} tabs={[
           { value: 'score', label: '得分', count: run?.score?.pending.length || undefined, tone: 'warn' },

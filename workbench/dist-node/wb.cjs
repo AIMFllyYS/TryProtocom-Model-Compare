@@ -177,6 +177,9 @@ var HELP = `wb \u2014 Bench Workbench CLI\uFF08\u5DE5\u4F5C\u53F0 http://127.0.0
 \u6A21\u578B      wb models | wb model add <\u6A21\u578B\u540D|\u4F9B\u5E94\u5546/\u6A21\u578B> [--vendor X] [--harness "Claude Code"]   \u53EA\u5199\u6A21\u578B\u540D\u65F6\u81EA\u52A8\u8BC6\u522B\u4F9B\u5E94\u5546
 Harness   wb harness [--refresh] | wb harness open <id> [--ref \u4F9B\u5E94\u5546/\u6A21\u578B/\u9898\u53F7/rN]
 \u4EA4\u4ED8      wb detect   \u5404\u8FD0\u884C\u7684\u4EA4\u4ED8\u6E05\u5355\u8FDB\u5EA6\u3001FINAL_MESSAGE.md \u662F\u5426\u51FA\u73B0
+\u4E0A\u4E0B\u6587    wb context preflight <ref> --json | wb context audit <ref|run_id> [--log \u6587\u4EF6] [--save] --json
+          wb context audit --all [--save] --json | wb context export --all --format json|csv
+          wb context review <ref|run_id> --finding ID --decision confirmed|dismissed --note "\u4F9D\u636E" --save --json
 AI \u8BC4\u5BA1   wb ai-prompt [run_id|ref]   \u7ED9\u8BC4\u5206 Agent \u7684\u63D0\u793A\u8BCD\uFF08skills \u8DEF\u5F84 + \u6B65\u9AA4\uFF09\uFF1B\u4E0D\u5E26\u53C2\u6570 = \u5168\u90E8\u5F85\u8BC4 Agent \u9879
 Skills    wb skills sync   \u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF08\u4E0D\u542B hidden/\uFF09
 \u5BA0\u7269      wb pet | wb pet quit   \u684C\u9762\u5BA0\u7269\uFF08\u5C4F\u5E55\u53F3\u4E0B\u89D2\u7684\u72B6\u6001\u7CBE\u7075\uFF1A\u4EA4\u4ED8\u63D0\u9192\u3001\u767B\u8BB0\u8BC4\u5206\u3001\u622A\u5C4F\u5B58\u8BC1\uFF09
@@ -202,6 +205,21 @@ Skills    wb skills sync   \u628A skills/ \u955C\u50CF\u5230 .agents/skills/\uFF
 `;
 async function main() {
   const [cmd, sub, ...rest] = pos;
+  if (cmd === "context") {
+    const candidates = [process.env.WB_PYTHON, "python", "python3", "py"].filter(Boolean);
+    const python = candidates.find((p) => {
+      try {
+        return (0, import_node_child_process.spawnSync)(p, ["-B", "-c", "import sys;sys.exit(0 if sys.version_info.major == 3 else 1)"], { timeout: 8e3, windowsHide: true, stdio: "ignore" }).status === 0;
+      } catch {
+        return false;
+      }
+    });
+    if (!python) die("\u672A\u627E\u5230 Python 3\uFF1Bcontext \u672A\u542F\u52A8\u4EFB\u4F55\u670D\u52A1");
+    const result = (0, import_node_child_process.spawnSync)(python, ["-B", import_node_path.default.join(ROOT, "skills", "bench-grader", "scripts", "audit_context.py"), "--root", ROOT, ...argv.slice(1)], { cwd: ROOT, windowsHide: true, stdio: "inherit", env: { ...process.env, PYTHONUTF8: "1" } });
+    if (result.error) die(result.error.message);
+    process.exitCode = result.status ?? 1;
+    return;
+  }
   if (!cmd || flags.help || cmd === "help") {
     console.log(HELP);
     return;
